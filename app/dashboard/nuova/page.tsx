@@ -13,6 +13,28 @@ const TIPI: { value: TipoPratica; label: string; desc: string; emoji: string }[]
   { value: "PROGETTO", label: "Progetto comunale", desc: "Un progetto già avviato da seguire", emoji: "🏗️" },
 ];
 
+async function comprimi(file: File): Promise<Blob> {
+  return new Promise(resolve => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const MAX = 1280;
+      let { width, height } = img;
+      if (width > MAX || height > MAX) {
+        if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
+        else { width = Math.round(width * MAX / height); height = MAX; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width; canvas.height = height;
+      canvas.getContext("2d")!.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(blob => resolve(blob ?? file), "image/jpeg", 0.8);
+    };
+    img.onerror = () => resolve(file);
+    img.src = url;
+  });
+}
+
 export default function NuovaPraticaPage() {
   const router = useRouter();
   const [persone, setPersone] = useState<Persona[]>([]);
@@ -117,10 +139,10 @@ export default function NuovaPraticaPage() {
     if (!res.ok) { setLoading(false); return; }
     const p = await res.json();
 
-    // Carica le foto dopo aver creato la pratica
     for (const foto of fotoSelezionate) {
+      const blob = await comprimi(foto);
       const fd = new FormData();
-      fd.append("foto", foto);
+      fd.append("foto", blob, "foto.jpg");
       await fetch(`/api/pratiche/${p.id}/foto`, { method: "POST", body: fd });
     }
 

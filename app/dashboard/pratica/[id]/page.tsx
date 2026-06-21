@@ -168,12 +168,35 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
     setSavingNota(false);
   }
 
+  async function comprimi(file: File): Promise<Blob> {
+    return new Promise(resolve => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const MAX = 1280;
+        let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
+          else { width = Math.round(width * MAX / height); height = MAX; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d")!.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(blob => resolve(blob ?? file), "image/jpeg", 0.8);
+      };
+      img.onerror = () => resolve(file);
+      img.src = url;
+    });
+  }
+
   async function caricaFoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadingFoto(true);
+    const blob = await comprimi(file);
     const formData = new FormData();
-    formData.append("foto", file);
+    formData.append("foto", blob, "foto.jpg");
     const res = await fetch(`/api/pratiche/${id}/foto`, { method: "POST", body: formData });
     if (res.ok) {
       const foto = await res.json();
