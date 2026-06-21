@@ -3,7 +3,6 @@ import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { DELEGHE_LABEL, STATO_LABEL, TIPO_LABEL } from "@/lib/constants";
 import * as XLSX from "xlsx";
-import PDFDocument from "pdfkit";
 
 export async function GET(req: NextRequest) {
   const token = await getToken({ req });
@@ -65,60 +64,32 @@ export async function GET(req: NextRequest) {
   }
 
   if (formato === "pdf") {
-    const chunks: Buffer[] = [];
-    const doc = new PDFDocument({ margin: 30, size: "A4", layout: "landscape" });
-    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+    const headers = ["#", "Tipo", "Delega", "Titolo", "Stato", "Priorità", "Luogo", "Referente", "Segnalante", "Data"];
+    const righeHtml = righe.map((r, i) => {
+      const vals = Object.values(r).map(v => `<td>${String(v).replace(/</g, "&lt;")}</td>`).join("");
+      return `<tr style="background:${i % 2 === 0 ? "#f8fafc" : "#fff"}">${vals}</tr>`;
+    }).join("");
 
-    await new Promise<void>(resolve => {
-      doc.on("end", resolve);
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Pratiche Lerici</title>
+<style>
+  body { font-family: Arial, sans-serif; font-size: 11px; margin: 20px; }
+  h2 { color: #2563eb; margin-bottom: 4px; }
+  p { color: #666; margin: 0 0 12px; font-size: 10px; }
+  table { border-collapse: collapse; width: 100%; }
+  th { background: #2563eb; color: white; padding: 6px 8px; text-align: left; font-size: 10px; }
+  td { padding: 5px 8px; border-bottom: 1px solid #e2e8f0; }
+  @media print { button { display: none; } @page { size: landscape; margin: 15mm; } }
+</style></head><body>
+<h2>Assessore Lerici — Pratiche</h2>
+<p>Esportato il ${new Date().toLocaleDateString("it-IT")} — ${righe.length} pratiche</p>
+<button onclick="window.print()" style="margin-bottom:12px;padding:6px 16px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨️ Stampa / Salva PDF</button>
+<table><thead><tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr></thead>
+<tbody>${righeHtml}</tbody></table>
+</body></html>`;
 
-      // Titolo
-      doc.fontSize(14).font("Helvetica-Bold").text("Assessore Lerici — Pratiche", { align: "center" });
-      doc.fontSize(9).font("Helvetica").text(`Esportato il ${new Date().toLocaleDateString("it-IT")}`, { align: "center" });
-      doc.moveDown(0.5);
-
-      // Intestazioni tabella
-      const colX = [30, 55, 100, 175, 350, 420, 470, 530, 620, 700];
-      const headers = ["#", "Tipo", "Delega", "Titolo", "Stato", "Priorità", "Luogo", "Referente", "Segnalante", "Data"];
-      const colW =  [22, 42, 72, 172, 67, 47, 57, 87, 87, 60];
-
-      const drawRow = (cols: string[], y: number, bold = false) => {
-        doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(7);
-        cols.forEach((text, i) => {
-          doc.text(text, colX[i], y, { width: colW[i], lineBreak: false, ellipsis: true });
-        });
-      };
-
-      let y = doc.y + 5;
-
-      // Header row
-      doc.rect(28, y - 2, 784, 14).fill("#2563eb");
-      doc.fillColor("white");
-      drawRow(headers, y, true);
-      doc.fillColor("black");
-      y += 16;
-
-      // Data rows
-      righe.forEach((r, idx) => {
-        if (y > 550) {
-          doc.addPage({ margin: 30, size: "A4", layout: "landscape" });
-          y = 30;
-        }
-        if (idx % 2 === 0) doc.rect(28, y - 2, 784, 13).fill("#f1f5f9").stroke("#f1f5f9");
-        doc.fillColor("black");
-        drawRow(Object.values(r).map(String), y);
-        y += 14;
-      });
-
-      doc.end();
-    });
-
-    const pdf = Buffer.concat(chunks);
-    return new NextResponse(pdf, {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="pratiche-${new Date().toISOString().slice(0,10)}.pdf"`,
-      },
+    return new NextResponse(html, {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
     });
   }
 
