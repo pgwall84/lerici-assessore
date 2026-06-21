@@ -25,21 +25,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  let processed: Buffer;
-  let contentType = "image/jpeg";
-  try {
-    processed = await sharp(buffer)
-      .rotate()
-      .resize(1280, 1280, { fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality: 80 })
-      .toBuffer();
-  } catch {
-    // Se Sharp fallisce usa il file originale
-    processed = buffer;
-    contentType = file.type || "image/jpeg";
-  }
-
-  const ext = contentType.includes("png") ? "png" : "jpg";
+  const processed = buffer;
+  const contentType = file.type || "image/jpeg";
+  const ext = contentType.includes("png") ? "png" : contentType.includes("gif") ? "gif" : "jpg";
   const filename = `pratica-${praticaId}-${Date.now()}.${ext}`;
 
   const { error } = await supabase.storage.from(BUCKET).upload(filename, processed, {
