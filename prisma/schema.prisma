@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// PRATICA — entità centrale del sistema
+// ---------------------------------------------------------------------------
+model Pratica {
+  id          Int          @id @default(autoincrement())
+  tipo        TipoPratica
+  delega      Delega
+  titolo      String
+  descrizione String?
+  luogo       String?
+  stato       StatoPratica @default(APERTA)
+  priorita    Priorita     @default(NORMALE)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  chiusaAt    DateTime?
+
+  segnalante   Segnalante?
+  personaId    Int?
+  persona      Persona?       @relation(fields: [personaId], references: [id])
+  foto         Foto[]
+  note         Nota[]
+  appuntamenti Appuntamento[]
+  storico      StoricoStato[]
+}
+
+// ---------------------------------------------------------------------------
+// SEGNALANTE — dati del cittadino che ha fatto la segnalazione
+// ---------------------------------------------------------------------------
+model Segnalante {
+  id        Int     @id @default(autoincrement())
+  praticaId Int     @unique
+  pratica   Pratica @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  nome      String?
+  telefono  String?
+  email     String?
+}
+
+// ---------------------------------------------------------------------------
+// PERSONA — rubrica referenti (capisettore, esterni, cittadini ricorrenti)
+// ---------------------------------------------------------------------------
+model Persona {
+  id        Int       @id @default(autoincrement())
+  nome      String
+  cognome   String
+  ruolo     String?
+  telefono  String?
+  email     String?
+  createdAt DateTime  @default(now())
+  pratiche  Pratica[]
+}
+
+// ---------------------------------------------------------------------------
+// FOTO — allegati fotografici
+// ---------------------------------------------------------------------------
+model Foto {
+  id        Int      @id @default(autoincrement())
+  praticaId Int
+  pratica   Pratica  @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  path      String
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// NOTA — log editabile, ogni voce è un record separato (audit trail)
+// ---------------------------------------------------------------------------
+model Nota {
+  id        Int      @id @default(autoincrement())
+  praticaId Int
+  pratica   Pratica  @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  testo     String
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// STORICO STATO — audit trail dei cambi di stato
+// ---------------------------------------------------------------------------
+model StoricoStato {
+  id              Int           @id @default(autoincrement())
+  praticaId       Int
+  pratica         Pratica       @relation(fields: [praticaId], references: [id])
+  statoPrecedente StatoPratica?
+  statoNuovo      StatoPratica
+  createdAt       DateTime      @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// APPUNTAMENTO — collegabile a una pratica, sincronizzato con Google Calendar
+// ---------------------------------------------------------------------------
+model Appuntamento {
+  id            Int      @id @default(autoincrement())
+  praticaId     Int?
+  pratica       Pratica? @relation(fields: [praticaId], references: [id])
+  titolo        String
+  descrizione   String?
+  luogo         String?
+  dataOra       DateTime
+  googleEventId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// UTENTE — solo Marco (sistema single-user)
+// ---------------------------------------------------------------------------
+model Utente {
+  id           Int      @id @default(autoincrement())
+  nome         String
+  email        String   @unique
+  passwordHash String
+  attivo       Boolean  @default(true)
+  telegramChatId BigInt?
+  createdAt    DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// ENUMERAZIONI
+// ---------------------------------------------------------------------------
+
+enum TipoPratica {
+  SEGNALAZIONE
+  MIA_IDEA
+  PROGETTO
+}
+
+enum Delega {
+  VIABILITA
+  AMBIENTE
+  RIFIUTI
+  SISTEMA_IDRICO
+  ILLUMINAZIONE
+  ACCESSIBILITA
+  CIMITERI
+  POLITICHE_ABITATIVE
+  DIGITALIZZAZIONE
+  MANUTENZIONE_PATRIMONIO
+}
+
+enum StatoPratica {
+  APERTA
+  IN_CORSO
+  CHIUSA
+  SOSPESA
+  APPUNTO
+  IN_VALUTAZIONE
+  PROMOSSA
+  ARCHIVIATA
+}
+
+enum Priorita {
+  NORMALE
+  URGENTE
+}
