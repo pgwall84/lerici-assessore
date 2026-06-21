@@ -6,7 +6,7 @@ import {
   DELEGHE_LABEL, STATO_COLORE, STATO_LABEL, STATI_PER_TIPO,
   TIPO_COLORE, TIPO_LABEL
 } from "@/lib/constants";
-import type { Appuntamento, Foto, Nota, Pratica, StatoPratica, StoricoStato } from "@prisma/client";
+import type { Appuntamento, Delega, Foto, Nota, Pratica, StatoPratica, StoricoStato } from "@prisma/client";
 
 type PraticaFull = Pratica & {
   persona: { id: number; nome: string; cognome: string; ruolo: string | null; telefono: string | null; email: string | null } | null;
@@ -34,7 +34,7 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
   const [emailPopup, setEmailPopup] = useState(false);
   const [emailDest, setEmailDest] = useState("");
   const [modificaMode, setModificaMode] = useState(false);
-  const [formModifica, setFormModifica] = useState({ titolo: "", descrizione: "", luogo: "", priorita: "NORMALE" });
+  const [formModifica, setFormModifica] = useState({ titolo: "", descrizione: "", luogo: "", priorita: "NORMALE", delega: "" });
   const [promozionePopup, setPromozionePopup] = useState(false);
   const [formProgetto, setFormProgetto] = useState({ titolo: "", descrizione: "" });
   const [showAppForm, setShowAppForm] = useState(false);
@@ -76,6 +76,7 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
       descrizione: pratica.descrizione ?? "",
       luogo: pratica.luogo ?? "",
       priorita: pratica.priorita,
+      delega: pratica.delega,
     });
     setModificaMode(true);
   }
@@ -89,6 +90,7 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
         descrizione: formModifica.descrizione || null,
         luogo: formModifica.luogo || null,
         priorita: formModifica.priorita,
+        delega: formModifica.delega,
       }),
     });
     if (res.ok) {
@@ -507,6 +509,18 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
                 onChange={e => setFormModifica(f => ({ ...f, luogo: e.target.value }))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">Delega</label>
+              <select
+                value={formModifica.delega}
+                onChange={e => setFormModifica(f => ({ ...f, delega: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
+              >
+                {(Object.keys(DELEGHE_LABEL) as Delega[]).map(d => (
+                  <option key={d} value={d}>{DELEGHE_LABEL[d]}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="text-xs text-gray-500">Priorità</label>
