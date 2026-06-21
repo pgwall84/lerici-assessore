@@ -32,6 +32,16 @@ export default function DashboardPage() {
     if (!res.ok) alert("Errore invio Telegram");
   }
 
+  function esporta(formato: "xlsx" | "pdf") {
+    const params = new URLSearchParams();
+    if (filtroTipo) params.set("tipo", filtroTipo);
+    if (filtroDelega) params.set("delega", filtroDelega);
+    if (filtroStato) params.set("stato", filtroStato);
+    if (q) params.set("q", q);
+    params.set("formato", formato);
+    window.open(`/api/export?${params}`, "_blank");
+  }
+
   const fetchPratiche = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
@@ -48,7 +58,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-4">
-      {/* Filtri */}
+      {/* Filtri + Esporta */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
         <input
           type="search"
@@ -57,6 +67,14 @@ export default function DashboardPage() {
           onChange={e => setQ(e.target.value)}
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
+        <div className="flex gap-2 justify-end">
+          <button onClick={() => esporta("xlsx")} className="text-xs px-3 py-1.5 rounded-lg bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 transition-colors">
+            📊 Excel
+          </button>
+          <button onClick={() => esporta("pdf")} className="text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition-colors">
+            📄 PDF
+          </button>
+        </div>
         <div className="grid grid-cols-3 gap-2">
           <select
             value={filtroTipo}
