@@ -19,6 +19,17 @@ export default function DashboardPage() {
   const [filtroStato, setFiltroStato] = useState<string>("");
   const [q, setQ] = useState("");
   const [inviando, setInviando] = useState<number | null>(null);
+  const [vistaCompatta, setVistaCompatta] = useState(() => {
+    if (typeof window !== "undefined") return localStorage.getItem("vistaCompatta") === "1";
+    return false;
+  });
+
+  function toggleVista() {
+    setVistaCompatta(v => {
+      localStorage.setItem("vistaCompatta", v ? "0" : "1");
+      return !v;
+    });
+  }
 
   async function inviaTelegram(e: React.MouseEvent, id: number) {
     e.preventDefault();
@@ -68,6 +79,9 @@ export default function DashboardPage() {
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <div className="flex gap-2 justify-end">
+          <button onClick={toggleVista} className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${vistaCompatta ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"}`}>
+            {vistaCompatta ? "☰ Compatta" : "☰ Compatta"}
+          </button>
           <button onClick={() => esporta("xlsx")} className="text-xs px-3 py-1.5 rounded-lg bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 transition-colors">
             📊 Excel
           </button>
@@ -117,8 +131,26 @@ export default function DashboardPage() {
       ) : pratiche.length === 0 ? (
         <div className="text-center py-12 text-gray-400">Nessuna pratica trovata</div>
       ) : (
-        <div className="space-y-3">
-          {pratiche.map(p => (
+        <div className={vistaCompatta ? "divide-y divide-gray-100 bg-white rounded-xl border border-gray-200 overflow-hidden" : "space-y-3"}>
+          {pratiche.map(p => vistaCompatta ? (
+            <Link
+              key={p.id}
+              href={`/dashboard/pratica/${p.id}`}
+              className="flex items-center gap-2 px-3 py-2 hover:bg-blue-50 transition-colors"
+            >
+              <span className={`shrink-0 text-xs px-1.5 py-0.5 rounded font-medium ${TIPO_COLORE[p.tipo]}`}>
+                {TIPO_LABEL[p.tipo].slice(0, 3)}
+              </span>
+              {p.priorita === "URGENTE" && <span className="shrink-0 text-xs">🔴</span>}
+              <span className="font-medium text-gray-900 text-sm truncate flex-1">{p.titolo}</span>
+              {p.descrizione && (
+                <span className="text-xs text-gray-400 truncate hidden sm:block max-w-xs">{p.descrizione}</span>
+              )}
+              <span className={`shrink-0 text-xs px-2 py-0.5 rounded font-medium ${STATO_COLORE[p.stato]}`}>
+                {STATO_LABEL[p.stato]}
+              </span>
+            </Link>
+          ) : (
             <Link
               key={p.id}
               href={`/dashboard/pratica/${p.id}`}
