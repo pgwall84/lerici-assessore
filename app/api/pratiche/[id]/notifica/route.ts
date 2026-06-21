@@ -30,7 +30,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   if (canale === "telegram") {
-    await inviaTelegram(messaggio, pratica.foto.map(f => f.path));
+    await inviaTelegram(messaggio, pratica.foto.map((f: { path: string }) => f.path));
     return NextResponse.json({ ok: true });
   }
 
