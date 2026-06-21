@@ -33,14 +33,14 @@ export const STATO_LABEL: Record<StatoPratica, string> = {
 // Stati validi per tipo
 export const STATI_PER_TIPO: Record<TipoPratica, StatoPratica[]> = {
   SEGNALAZIONE: ["APERTA", "IN_CORSO", "CHIUSA", "SOSPESA"],
-  MIA_IDEA: ["APPUNTO", "IN_VALUTAZIONE", "PROMOSSA", "ARCHIVIATA"],
+  MIA_IDEA: ["IN_VALUTAZIONE", "PROMOSSA", "ARCHIVIATA"],
   PROGETTO: ["IN_VALUTAZIONE", "IN_CORSO", "CHIUSA", "SOSPESA"],
 };
 
 // Stato iniziale per tipo
 export const STATO_INIZIALE: Record<TipoPratica, StatoPratica> = {
   SEGNALAZIONE: "APERTA",
-  MIA_IDEA: "APPUNTO",
+  MIA_IDEA: "IN_VALUTAZIONE",
   PROGETTO: "IN_VALUTAZIONE",
 };
 
@@ -71,6 +71,8 @@ export const SOTTOCATEGORIE: Partial<Record<Delega, string[]>> = {
     "Problema cinghiali",
     "Inquinamento acque",
     "Segnalazione odori",
+    "Richiesta spazzamento",
+    "Cestino pieno",
   ],
   RIFIUTI: [
     "Mancato ritiro rifiuti",
@@ -88,6 +90,7 @@ export const SOTTOCATEGORIE: Partial<Record<Delega, string[]>> = {
     "Dosso / attraversamento pedonale",
     "Marciapiede dissestato",
     "Richiesta specchio stradale",
+    "Albero / detrito in carreggiata",
   ],
   ILLUMINAZIONE: [
     "Lampione spento",
@@ -124,6 +127,7 @@ export const SOTTOCATEGORIE: Partial<Record<Delega, string[]>> = {
     "Recinzione danneggiata",
     "Impianto sportivo da riparare",
     "Spogliatoio da riqualificare",
+    "Paletto mancante / rotto",
   ],
   POLITICHE_ABITATIVE: [
     "Richiesta alloggio ERP",

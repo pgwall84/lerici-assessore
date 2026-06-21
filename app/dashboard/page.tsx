@@ -19,6 +19,7 @@ export default function DashboardPage() {
   const [filtroStato, setFiltroStato] = useState<string>("");
   const [q, setQ] = useState("");
   const [inviando, setInviando] = useState<number | null>(null);
+  const [ordinamento, setOrdinamento] = useState("recente");
   const [vistaCompatta, setVistaCompatta] = useState(() => {
     if (typeof window !== "undefined") return localStorage.getItem("vistaCompatta") === "1";
     return false;
@@ -89,6 +90,19 @@ export default function DashboardPage() {
             📄 PDF
           </button>
         </div>
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <select
+            value={ordinamento}
+            onChange={e => setOrdinamento(e.target.value)}
+            className="border border-gray-300 rounded-lg px-2 py-2 text-xs focus:outline-none col-span-2"
+          >
+            <option value="recente">↓ Più recente prima</option>
+            <option value="vecchia">↑ Più vecchia prima</option>
+            <option value="priorita">🔴 Priorità (urgenti prima)</option>
+            <option value="stato">Stato (A→Z)</option>
+            <option value="titolo">Titolo (A→Z)</option>
+          </select>
+        </div>
         <div className="grid grid-cols-3 gap-2">
           <select
             value={filtroTipo}
@@ -132,7 +146,13 @@ export default function DashboardPage() {
         <div className="text-center py-12 text-gray-400">Nessuna pratica trovata</div>
       ) : (
         <div className={vistaCompatta ? "divide-y divide-gray-100 bg-white rounded-xl border border-gray-200 overflow-hidden" : "space-y-3"}>
-          {pratiche.map(p => vistaCompatta ? (
+          {[...pratiche].sort((a, b) => {
+            if (ordinamento === "vecchia") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+            if (ordinamento === "priorita") return (b.priorita === "URGENTE" ? 1 : 0) - (a.priorita === "URGENTE" ? 1 : 0);
+            if (ordinamento === "stato") return a.stato.localeCompare(b.stato);
+            if (ordinamento === "titolo") return a.titolo.localeCompare(b.titolo);
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(); // recente
+          }).map(p => vistaCompatta ? (
             <Link
               key={p.id}
               href={`/dashboard/pratica/${p.id}`}
