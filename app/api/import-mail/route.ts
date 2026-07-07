@@ -60,17 +60,6 @@ export async function POST(req: NextRequest) {
   };
 
   const create = importazioni.map(async (imp) => {
-    // Crea o trova il segnalante
-    let segnalante = null;
-    if (imp.nomeMittente) {
-      segnalante = await prisma.segnalante.create({
-        data: {
-          nome: imp.nomeMittente,
-          email: imp.emailMittente || null,
-        },
-      });
-    }
-
     const pratica = await prisma.pratica.create({
       data: {
         titolo: imp.titolo,
@@ -80,7 +69,14 @@ export async function POST(req: NextRequest) {
         stato: "APERTA",
         priorita: "NORMALE",
         delega: imp.delega as never,
-        segnalanteId: segnalante?.id ?? null,
+        ...(imp.nomeMittente ? {
+          segnalante: {
+            create: {
+              nome: imp.nomeMittente,
+              email: imp.emailMittente || null,
+            },
+          },
+        } : {}),
       },
     });
 
