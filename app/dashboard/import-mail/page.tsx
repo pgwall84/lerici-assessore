@@ -53,7 +53,7 @@ export default function ImportMailPage() {
           messageId: m.messageId,
           titolo: m.titolo,
           delega: m.delega,
-          descrizione: m.corpo.slice(0, 1000),
+          descrizione: m.descrizione.slice(0, 1000),
           luogo: m.luogo,
           nomeMittente: m.nomeMittente,
           emailMittente: m.emailMittente,
