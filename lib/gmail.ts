@@ -78,12 +78,17 @@ export async function getMailsSegnalazioni(): Promise<MailImport[]> {
       const parsed = await simpleParser(emlBuffer, { Iconv: iconv as never });
 
       // Decodifica QP + windows-1252 per estrarre campi strutturati con accentate corrette
-      // Il testo del postacert.eml è QP-encoded con charset Latin-1/Windows-1252
       const emlLatin = emlBuffer.toString("latin1");
       const emlQpDecoded = emlLatin
         .replace(/=\r?\n/g, "")
         .replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
-      const testoEml = iconv.decode(Buffer.from(emlQpDecoded, "latin1"), "windows-1252");
+      const emlDecoded = iconv.decode(Buffer.from(emlQpDecoded, "latin1"), "windows-1252");
+      // Usa parsed.text se disponibile (già decodificato correttamente da mailparser),
+      // altrimenti usa la versione QP+windows-1252 con HTML strippato
+      const testoEmlFallback = stripHtml(emlDecoded);
+      const testoEml = (parsed.text && !parsed.text.includes("�"))
+        ? parsed.text
+        : testoEmlFallback;
 
       // Mittente reale
       const matchNome = testoEml.match(/Mittente\s*:\s*(.+)/i);
