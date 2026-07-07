@@ -2,6 +2,7 @@ import { google } from "googleapis";
 import { simpleParser } from "mailparser";
 import { supabase } from "@/lib/supabase";
 import iconv from "iconv-lite";
+import he from "he";
 
 function getAuth() {
   const auth = new google.auth.OAuth2(
@@ -222,7 +223,7 @@ function decodePart(data: string, mimeType: string, headers: any[]): string {
   const buf = Buffer.from(data, "base64url");
   const ctHeader = headers?.find((h: any) => h.name?.toLowerCase() === "content-type")?.value ?? "";
   const charsetMatch = ctHeader.match(/charset=["']?([^"';\s]+)/i);
-  const charset = charsetMatch?.[1]?.toLowerCase() ?? "utf-8";
+  const charset = charsetMatch?.[1]?.toLowerCase() ?? "windows-1252";
   const text = iconv.encodingExists(charset)
     ? iconv.decode(buf, charset)
     : buf.toString("utf-8");
@@ -247,19 +248,15 @@ function estraiCorpoPrincipale(payload: any): string {
 }
 
 function stripHtml(html: string): string {
-  return html
+  const text = html
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n")
     .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+  return he.decode(text);
 }
 
 export type MailImport = {
