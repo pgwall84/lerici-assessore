@@ -116,7 +116,19 @@ export async function getMailsSegnalazioni(): Promise<MailImport[]> {
         a.contentType === "text/html"
       );
       if (htmlAllegato?.content) {
-        const html = htmlAllegato.content.toString("utf-8");
+        // Rileva charset dal content-type dell'allegato o dall'interno dell'HTML
+        const ctAllegato = htmlAllegato.contentType ?? "";
+        const csMatch = ctAllegato.match(/charset=["']?([^"';\s]+)/i);
+        let cs = csMatch?.[1] ?? "";
+        // Cerca anche nel meta charset dentro l'HTML se non trovato
+        if (!cs) {
+          const raw = htmlAllegato.content.toString("latin1");
+          const metaCs = raw.match(/charset=["']?([^"';\s>]+)/i);
+          cs = metaCs?.[1] ?? "windows-1252";
+        }
+        const html = iconv.encodingExists(cs)
+          ? iconv.decode(htmlAllegato.content as Buffer, cs)
+          : htmlAllegato.content.toString("utf-8");
         descrizione = stripHtml(html).slice(0, 1500);
       } else if (parsed.text) {
         descrizione = parsed.text.trim().slice(0, 1500);
