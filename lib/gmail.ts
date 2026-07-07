@@ -73,11 +73,20 @@ export async function getMailsSegnalazioni(): Promise<MailImport[]> {
       // Parsa l'EML annidato
       const parsed = await simpleParser(emlBuffer);
 
-      // Mittente reale dalla mail interna
-      const fromAddr = parsed.from?.value?.[0];
-      if (fromAddr) {
-        nomeMittente = fromAddr.name || fromAddr.address || nomeMittente;
-        emailMittente = fromAddr.address || emailMittente;
+      // Mittente reale: cerca nel corpo testuale "Mittente : XXX" e "Mail mittente : xxx"
+      const testoEml = parsed.text ?? stripHtml(parsed.html ?? "");
+      const matchNome = testoEml.match(/Mittente\s*:\s*(.+)/i);
+      const matchEmail = testoEml.match(/Mail\s+mittente\s*:\s*(.+)/i);
+      if (matchNome?.[1]) nomeMittente = matchNome[1].trim();
+      if (matchEmail?.[1]) emailMittente = matchEmail[1].trim();
+
+      // Fallback: from header dell'EML
+      if (!matchNome) {
+        const fromAddr = parsed.from?.value?.[0];
+        if (fromAddr) {
+          nomeMittente = fromAddr.name || fromAddr.address || nomeMittente;
+          emailMittente = fromAddr.address || emailMittente;
+        }
       }
 
       // Oggetto reale
