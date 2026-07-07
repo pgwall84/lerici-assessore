@@ -328,6 +328,11 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
 
       {/* Info base */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-2 text-sm">
+        {(pratica.protocollo || pratica.dataProtocollo) && (
+          <p className="text-xs font-medium text-blue-700 bg-blue-50 rounded px-2 py-1 inline-block">
+            Prot. {pratica.protocollo}{pratica.dataProtocollo ? ` del ${pratica.dataProtocollo}` : ""}
+          </p>
+        )}
         {pratica.descrizione && <p className="text-gray-700">{pratica.descrizione}</p>}
         {pratica.luogo && <p className="text-gray-500">📍 {pratica.luogo}</p>}
         <p className="text-gray-400 text-xs">

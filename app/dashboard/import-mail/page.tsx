@@ -18,6 +18,8 @@ type MailAnteprima = {
   luogo: string;
   nomeMittente: string;
   emailMittente: string;
+  protocollo: string;
+  dataProtocollo: string;
   selezionata: boolean;
 };
 
@@ -57,6 +59,8 @@ export default function ImportMailPage() {
           luogo: m.luogo,
           nomeMittente: m.nomeMittente,
           emailMittente: m.emailMittente,
+          protocollo: m.protocollo,
+          dataProtocollo: m.dataProtocollo,
         })),
       }),
     });
@@ -108,8 +112,11 @@ export default function ImportMailPage() {
                 />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 truncate">{m.titolo}</p>
-                  <p className="text-xs text-gray-500 truncate">{m.nomeMittente} — {m.oggettoOriginale}</p>
-                  {m.hasFoto && <p className="text-xs text-blue-500">📎 {m.nFoto} foto allegate</p>}
+                  <p className="text-xs text-gray-500 truncate">{m.nomeMittente}</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {m.protocollo && <p className="text-xs text-gray-400">Prot. {m.protocollo} del {m.dataProtocollo}</p>}
+                    {m.hasFoto && <p className="text-xs text-blue-500">📎 {m.nFoto} foto</p>}
+                  </div>
                 </div>
                 <button
                   onClick={() => setEspansa(espansa === m.messageId ? null : m.messageId)}

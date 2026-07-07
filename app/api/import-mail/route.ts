@@ -23,12 +23,13 @@ export async function GET(req: NextRequest) {
       descrizione: m.descrizione,
       hasFoto: m.fotoData.length > 0,
       nFoto: m.fotoData.length,
-      // Campi pre-compilati modificabili
       titolo: m.titolo,
       delega,
       luogo: "",
       nomeMittente: m.nomeMittente,
       emailMittente: m.emailMittente,
+      protocollo: m.protocollo,
+      dataProtocollo: m.dataProtocollo,
     };
   });
 
@@ -50,6 +51,8 @@ export async function POST(req: NextRequest) {
       luogo: string;
       nomeMittente: string;
       emailMittente: string;
+      protocollo: string;
+      dataProtocollo: string;
     }[];
   };
 
@@ -63,6 +66,8 @@ export async function POST(req: NextRequest) {
         titolo: imp.titolo,
         descrizione: imp.descrizione || null,
         luogo: imp.luogo || null,
+        protocollo: imp.protocollo || null,
+        dataProtocollo: imp.dataProtocollo || null,
         tipo: "SEGNALAZIONE",
         stato: "APERTA",
         priorita: "NORMALE",

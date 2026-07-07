@@ -59,6 +59,8 @@ export async function getMailsSegnalazioni(): Promise<MailImport[]> {
     let descrizione = "";
     let nomeMittente = estraiNomeMittente(mittenteOriginale);
     let emailMittente = estraiEmailMittente(mittenteOriginale);
+    let protocollo = "";
+    let dataProtocollo = "";
     let fotoData: { buffer: Buffer; filename: string; contentType: string }[] = [];
 
     if (postacertPart?.body?.attachmentId) {
@@ -73,25 +75,37 @@ export async function getMailsSegnalazioni(): Promise<MailImport[]> {
       // Parsa l'EML annidato
       const parsed = await simpleParser(emlBuffer);
 
-      // Mittente reale: cerca nel corpo testuale "Mittente : XXX" e "Mail mittente : xxx"
+      // Estrai dati strutturati dal corpo testuale del postacert.eml
       const testoEml = parsed.text ?? (parsed.html ? stripHtml(parsed.html) : "");
+
+      // Mittente reale
       const matchNome = testoEml.match(/Mittente\s*:\s*(.+)/i);
       const matchEmail = testoEml.match(/Mail\s+mittente\s*:\s*(.+)/i);
       if (matchNome?.[1]) nomeMittente = matchNome[1].trim();
       if (matchEmail?.[1]) emailMittente = matchEmail[1].trim();
 
-      // Fallback: from header dell'EML
+      // Protocollo e data: "Protocollo n. 24546 del 02-07-2026"
+      const matchProtocollo = testoEml.match(/Protocollo\s+n\.?\s*(\d+)\s+del\s+([\d\-\/]+)/i);
+      if (matchProtocollo) {
+        protocollo = matchProtocollo[1].trim();
+        dataProtocollo = matchProtocollo[2].trim();
+      }
+
+      // Oggetto reale dal campo "Oggetto : ..."
+      const matchOggetto = testoEml.match(/Oggetto\s*:\s*(.+)/i);
+      if (matchOggetto?.[1]) {
+        titolo = pulisciOggetto(matchOggetto[1]);
+      } else if (parsed.subject) {
+        titolo = pulisciOggetto(parsed.subject);
+      }
+
+      // Fallback mittente: from header dell'EML
       if (!matchNome) {
         const fromAddr = parsed.from?.value?.[0];
         if (fromAddr) {
           nomeMittente = fromAddr.name || fromAddr.address || nomeMittente;
           emailMittente = fromAddr.address || emailMittente;
         }
-      }
-
-      // Oggetto reale
-      if (parsed.subject) {
-        titolo = pulisciOggetto(parsed.subject);
       }
 
       // Testo: cerca allegato HTML "testo mail"
@@ -132,6 +146,8 @@ export async function getMailsSegnalazioni(): Promise<MailImport[]> {
       descrizione,
       nomeMittente,
       emailMittente,
+      protocollo,
+      dataProtocollo,
       fotoData,
     });
   }
@@ -244,5 +260,7 @@ export type MailImport = {
   descrizione: string;
   nomeMittente: string;
   emailMittente: string;
+  protocollo: string;
+  dataProtocollo: string;
   fotoData: { buffer: Buffer; filename: string; contentType: string }[];
 };

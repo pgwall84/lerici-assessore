@@ -18,6 +18,8 @@ model Pratica {
   luogo       String?
   stato       StatoPratica @default(APERTA)
   priorita    Priorita     @default(NORMALE)
+  protocollo  String?
+  dataProtocollo String?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   chiusaAt    DateTime?
