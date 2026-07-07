@@ -7,10 +7,12 @@ import type { Delega } from "@prisma/client";
 
 type MailAnteprima = {
   messageId: string;
-  oggetto: string;
+  oggettoOriginale: string;
   mittente: string;
   data: string;
-  corpo: string;
+  descrizione: string;
+  hasFoto: boolean;
+  nFoto: number;
   titolo: string;
   delega: string;
   luogo: string;
@@ -105,8 +107,9 @@ export default function ImportMailPage() {
                   className="w-4 h-4 accent-blue-600 shrink-0"
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{m.oggetto}</p>
-                  <p className="text-xs text-gray-500 truncate">{m.mittente}</p>
+                  <p className="text-sm font-medium text-gray-900 truncate">{m.titolo}</p>
+                  <p className="text-xs text-gray-500 truncate">{m.nomeMittente} — {m.oggettoOriginale}</p>
+                  {m.hasFoto && <p className="text-xs text-blue-500">📎 {m.nFoto} foto allegate</p>}
                 </div>
                 <button
                   onClick={() => setEspansa(espansa === m.messageId ? null : m.messageId)}
@@ -121,7 +124,7 @@ export default function ImportMailPage() {
                 <div className="border-t border-gray-100 p-3 space-y-3">
                   {/* Anteprima corpo */}
                   <div className="bg-gray-50 rounded-lg p-2 text-xs text-gray-600 max-h-32 overflow-y-auto whitespace-pre-wrap">
-                    {m.corpo || "(corpo vuoto)"}
+                    {m.descrizione || "(corpo vuoto)"}
                   </div>
 
                   <div className="grid grid-cols-1 gap-2">

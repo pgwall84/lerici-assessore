@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
-import { getMailsSegnalazioni, marcaImportata } from "@/lib/gmail";
-import { classificaDelega, estraiTitolo, estraiLuogo } from "@/lib/classificatore";
+import { getMailsSegnalazioni, marcaImportata, caricaFotoMail } from "@/lib/gmail";
+import { classificaDelega } from "@/lib/classificatore";
 import { prisma } from "@/lib/prisma";
 
 // GET — recupera mail da importare con classificazione automatica
@@ -12,29 +12,23 @@ export async function GET(req: NextRequest) {
   const mails = await getMailsSegnalazioni();
 
   const risultati = mails.map(m => {
-    const testo = `${m.oggetto} ${m.corpo}`;
+    const testo = `${m.titolo} ${m.descrizione}`;
     const delega = classificaDelega(testo);
-    const titolo = estraiTitolo(m.oggetto, m.corpo);
-    const luogo = estraiLuogo(testo);
-
-    // Estrai nome e email mittente: "Nome Cognome <email@example.com>"
-    const matchEmail = m.mittente.match(/<(.+?)>/);
-    const matchNome = m.mittente.match(/^([^<]+)</);
-    const emailMittente = matchEmail?.[1] ?? m.mittente;
-    const nomeMittente = matchNome?.[1]?.trim() ?? emailMittente;
 
     return {
       messageId: m.messageId,
-      oggetto: m.oggetto,
+      oggettoOriginale: m.oggettoOriginale,
       mittente: m.mittente,
       data: m.data,
-      corpo: m.corpo,
-      // Campi pre-compilati
-      titolo,
+      descrizione: m.descrizione,
+      hasFoto: m.fotoData.length > 0,
+      nFoto: m.fotoData.length,
+      // Campi pre-compilati modificabili
+      titolo: m.titolo,
       delega,
-      luogo,
-      nomeMittente,
-      emailMittente,
+      luogo: "",
+      nomeMittente: m.nomeMittente,
+      emailMittente: m.emailMittente,
     };
   });
 
@@ -59,7 +53,11 @@ export async function POST(req: NextRequest) {
     }[];
   };
 
-  const create = importazioni.map(async (imp) => {
+  // Ricarica le mail originali per avere le foto
+  const tutteleMails = await getMailsSegnalazioni();
+  const mailMap = new Map(tutteleMails.map(m => [m.messageId, m]));
+
+  const pratiche = await Promise.all(importazioni.map(async (imp) => {
     const pratica = await prisma.pratica.create({
       data: {
         titolo: imp.titolo,
@@ -80,10 +78,18 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // Carica le foto se presenti
+    const mailOriginale = mailMap.get(imp.messageId);
+    if (mailOriginale?.fotoData?.length) {
+      const urls = await caricaFotoMail(mailOriginale.fotoData, pratica.id);
+      await Promise.all(urls.map(url =>
+        prisma.foto.create({ data: { praticaId: pratica.id, path: url } })
+      ));
+    }
+
     await marcaImportata(imp.messageId);
     return pratica;
-  });
+  }));
 
-  const pratiche = await Promise.all(create);
   return NextResponse.json({ importate: pratiche.length });
 }
