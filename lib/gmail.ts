@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import { simpleParser } from "mailparser";
 import { supabase } from "@/lib/supabase";
+import iconv from "iconv-lite";
 
 function getAuth() {
   const auth = new google.auth.OAuth2(
@@ -217,15 +218,25 @@ function trovaParte(payload: any, filename: string): any {
   return null;
 }
 
+function decodePart(data: string, mimeType: string, headers: any[]): string {
+  const buf = Buffer.from(data, "base64url");
+  const ctHeader = headers?.find((h: any) => h.name?.toLowerCase() === "content-type")?.value ?? "";
+  const charsetMatch = ctHeader.match(/charset=["']?([^"';\s]+)/i);
+  const charset = charsetMatch?.[1]?.toLowerCase() ?? "utf-8";
+  const text = iconv.encodingExists(charset)
+    ? iconv.decode(buf, charset)
+    : buf.toString("utf-8");
+  return mimeType === "text/html" ? stripHtml(text) : text;
+}
+
 function estraiCorpoPrincipale(payload: any): string {
   if (!payload) return "";
   if (payload.body?.data) {
-    const text = Buffer.from(payload.body.data, "base64url").toString("utf-8");
-    return payload.mimeType === "text/html" ? stripHtml(text) : text;
+    return decodePart(payload.body.data, payload.mimeType ?? "", payload.headers ?? []);
   }
   for (const part of payload.parts ?? []) {
     if (part.mimeType === "text/plain" && part.body?.data) {
-      return Buffer.from(part.body.data, "base64url").toString("utf-8");
+      return decodePart(part.body.data, "text/plain", part.headers ?? []);
     }
   }
   for (const part of payload.parts ?? []) {
