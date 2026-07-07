@@ -77,8 +77,10 @@ export async function getMailsSegnalazioni(): Promise<MailImport[]> {
       // Parsa l'EML annidato con iconv-lite per charset non-UTF8
       const parsed = await simpleParser(emlBuffer, { Iconv: iconv as never });
 
-      // Estrai dati strutturati dal corpo testuale del postacert.eml
-      const testoEml = parsed.text ?? (parsed.html ? stripHtml(parsed.html) : "");
+      // Leggi il testo raw dell'EML con windows-1252 per gestire accentate
+      // (mailparser a volte non rileva correttamente il charset del testo)
+      const emlRaw1252 = iconv.decode(emlBuffer, "windows-1252");
+      const testoEml = emlRaw1252;
 
       // Mittente reale
       const matchNome = testoEml.match(/Mittente\s*:\s*(.+)/i);
