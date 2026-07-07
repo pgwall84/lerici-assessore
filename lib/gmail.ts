@@ -74,8 +74,8 @@ export async function getMailsSegnalazioni(): Promise<MailImport[]> {
       });
       const emlBuffer = Buffer.from(att.data.data!, "base64url");
 
-      // Parsa l'EML annidato
-      const parsed = await simpleParser(emlBuffer);
+      // Parsa l'EML annidato con iconv-lite per charset non-UTF8
+      const parsed = await simpleParser(emlBuffer, { Iconv: iconv as never });
 
       // Estrai dati strutturati dal corpo testuale del postacert.eml
       const testoEml = parsed.text ?? (parsed.html ? stripHtml(parsed.html) : "");
