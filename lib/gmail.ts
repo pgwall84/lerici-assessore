@@ -83,12 +83,7 @@ export async function getMailsSegnalazioni(): Promise<MailImport[]> {
         .replace(/=\r?\n/g, "")
         .replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
       const emlDecoded = iconv.decode(Buffer.from(emlQpDecoded, "latin1"), "windows-1252");
-      // Usa parsed.text se disponibile (già decodificato correttamente da mailparser),
-      // altrimenti usa la versione QP+windows-1252 con HTML strippato
-      const testoEmlFallback = stripHtml(emlDecoded);
-      const testoEml = (parsed.text && !parsed.text.includes("�"))
-        ? parsed.text
-        : testoEmlFallback;
+      const testoEml = stripHtml(emlDecoded);
 
       // Mittente reale
       const matchNome = testoEml.match(/Mittente\s*:\s*(.+)/i);
