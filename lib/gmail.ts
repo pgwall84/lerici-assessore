@@ -74,7 +74,7 @@ export async function getMailsSegnalazioni(): Promise<MailImport[]> {
       const parsed = await simpleParser(emlBuffer);
 
       // Mittente reale: cerca nel corpo testuale "Mittente : XXX" e "Mail mittente : xxx"
-      const testoEml = parsed.text ?? stripHtml(parsed.html ?? "");
+      const testoEml = parsed.text ?? (parsed.html ? stripHtml(parsed.html) : "");
       const matchNome = testoEml.match(/Mittente\s*:\s*(.+)/i);
       const matchEmail = testoEml.match(/Mail\s+mittente\s*:\s*(.+)/i);
       if (matchNome?.[1]) nomeMittente = matchNome[1].trim();
