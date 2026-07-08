@@ -30,10 +30,14 @@ export async function getMailsSegnalazioni(): Promise<MailImport[]> {
   if (!labelSegnalazioni?.id) return [];
   const labelImportata = labelsRes.data.labels?.find(l => l.name === "Importata");
 
+  // Esclude lato Gmail le mail gia importate, altrimenti occupano posti nella
+  // finestra di maxResults e le segnalazioni piu vecchie non ancora importate
+  // non vengono mai recuperate.
   const listRes = await gmail.users.messages.list({
     userId: "me",
     labelIds: [labelSegnalazioni.id],
-    maxResults: 20,
+    q: "-label:Importata",
+    maxResults: 50,
   });
 
   const messages = listRes.data.messages ?? [];
