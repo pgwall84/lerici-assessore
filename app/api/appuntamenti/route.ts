@@ -37,9 +37,13 @@ export async function POST(req: NextRequest) {
     data: { ...parsed.data, dataOra: new Date(parsed.data.dataOra) },
   });
 
-  // Sync Google Calendar (fire-and-forget)
   if (process.env.GOOGLE_REFRESH_TOKEN) {
-    syncGoogleCalendar(appuntamento).catch(console.error);
+    try {
+      const googleEventId = await syncGoogleCalendar(appuntamento);
+      appuntamento.googleEventId = googleEventId;
+    } catch (e) {
+      console.error("Errore sync Google Calendar:", e);
+    }
   }
 
   return NextResponse.json(appuntamento, { status: 201 });
@@ -72,4 +76,6 @@ async function syncGoogleCalendar(appuntamento: { id: number; titolo: string; de
     where: { id: appuntamento.id },
     data: { googleEventId: event.data.id ?? null },
   });
+
+  return event.data.id ?? null;
 }
