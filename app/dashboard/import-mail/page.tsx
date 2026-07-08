@@ -11,8 +11,8 @@ type MailAnteprima = {
   mittente: string;
   data: string;
   descrizione: string;
-  hasFoto: boolean;
-  nFoto: number;
+  hasAllegati: boolean;
+  nAllegati: number;
   titolo: string;
   delega: string;
   luogo: string;
@@ -130,7 +130,7 @@ export default function ImportMailPage() {
                   <p className="text-xs text-gray-500 truncate">{m.nomeMittente}</p>
                   <div className="flex gap-2 flex-wrap">
                     {m.protocollo && <p className="text-xs text-gray-400">Prot. {m.protocollo} del {m.dataProtocollo}</p>}
-                    {m.hasFoto && <p className="text-xs text-blue-500">📎 {m.nFoto} foto</p>}
+                    {m.hasAllegati && <p className="text-xs text-blue-500">📎 {m.nAllegati} allegati</p>}
                   </div>
                 </div>
                 <button

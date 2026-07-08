@@ -63,7 +63,7 @@ export async function getMailsSegnalazioni(): Promise<MailImport[]> {
     let emailMittente = estraiEmailMittente(mittenteOriginale);
     let protocollo = "";
     let dataProtocollo = "";
-    let fotoData: { buffer: Buffer; filename: string; contentType: string }[] = [];
+    let allegati: { buffer: Buffer; filename: string; contentType: string }[] = [];
 
     if (postacertPart?.body?.attachmentId) {
       // Scarica il postacert.eml
@@ -138,10 +138,10 @@ export async function getMailsSegnalazioni(): Promise<MailImport[]> {
         descrizione = stripHtml(parsed.html).slice(0, 1500);
       }
 
-      // Foto allegate
-      const imgTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-      fotoData = (parsed.attachments ?? [])
-        .filter(a => imgTypes.includes(a.contentType) && a.content)
+      // Foto e PDF allegati
+      const tipiAmmessi = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"];
+      allegati = (parsed.attachments ?? [])
+        .filter(a => tipiAmmessi.includes(a.contentType) && a.content)
         .slice(0, 5)
         .map(a => ({
           buffer: a.content as Buffer,
@@ -164,23 +164,26 @@ export async function getMailsSegnalazioni(): Promise<MailImport[]> {
       emailMittente,
       protocollo,
       dataProtocollo,
-      fotoData,
+      allegati,
     });
   }
 
   return risultati;
 }
 
-export async function caricaFotoMail(
-  fotoData: { buffer: Buffer; filename: string; contentType: string }[],
+export async function caricaAllegatiMail(
+  allegati: { buffer: Buffer; filename: string; contentType: string }[],
   praticaId: number,
 ): Promise<string[]> {
   const urls: string[] = [];
-  for (const foto of fotoData) {
-    const ext = foto.contentType.includes("png") ? "png" : foto.contentType.includes("gif") ? "gif" : "jpg";
+  for (const allegato of allegati) {
+    const ext = allegato.contentType.includes("pdf") ? "pdf"
+      : allegato.contentType.includes("png") ? "png"
+      : allegato.contentType.includes("gif") ? "gif"
+      : "jpg";
     const filename = `pratica-${praticaId}-mail-${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from("foto").upload(filename, foto.buffer, {
-      contentType: foto.contentType,
+    const { error } = await supabase.storage.from("foto").upload(filename, allegato.buffer, {
+      contentType: allegato.contentType,
       upsert: false,
     });
     if (!error) {
@@ -352,5 +355,5 @@ export type MailImport = {
   emailMittente: string;
   protocollo: string;
   dataProtocollo: string;
-  fotoData: { buffer: Buffer; filename: string; contentType: string }[];
+  allegati: { buffer: Buffer; filename: string; contentType: string }[];
 };

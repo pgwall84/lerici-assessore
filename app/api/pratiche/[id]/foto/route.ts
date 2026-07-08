@@ -16,7 +16,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const conteggioAttuale = await prisma.foto.count({ where: { praticaId } });
   if (conteggioAttuale >= MAX_FOTO) {
-    return NextResponse.json({ error: `Massimo ${MAX_FOTO} foto per pratica` }, { status: 400 });
+    return NextResponse.json({ error: `Massimo ${MAX_FOTO} foto/documenti per pratica` }, { status: 400 });
   }
 
   const formData = await req.formData();
@@ -27,7 +27,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const processed = buffer;
   const contentType = file.type || "image/jpeg";
-  const ext = contentType.includes("png") ? "png" : contentType.includes("gif") ? "gif" : "jpg";
+  const ext = contentType.includes("pdf") ? "pdf"
+    : contentType.includes("png") ? "png"
+    : contentType.includes("gif") ? "gif"
+    : "jpg";
   const filename = `pratica-${praticaId}-${Date.now()}.${ext}`;
 
   const { error } = await supabase.storage.from(BUCKET).upload(filename, processed, {

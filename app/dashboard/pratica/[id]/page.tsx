@@ -206,9 +206,13 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadingFoto(true);
-    const blob = await comprimi(file);
     const formData = new FormData();
-    formData.append("foto", blob, "foto.jpg");
+    if (file.type === "application/pdf") {
+      formData.append("foto", file, file.name);
+    } else {
+      const blob = await comprimi(file);
+      formData.append("foto", blob, "foto.jpg");
+    }
     const res = await fetch(`/api/pratiche/${id}/foto`, { method: "POST", body: formData });
     if (res.ok) {
       const foto = await res.json();
@@ -509,16 +513,16 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
         </div>
       </div>
 
-      {/* Foto */}
+      {/* Foto/Doc */}
       <div className="bg-white rounded-xl border border-gray-200 p-4">
         <div className="flex items-center justify-between mb-3">
-          <p className="font-medium text-gray-700 text-sm">Foto {pratica.foto.length > 0 && `(${pratica.foto.length}/5)`}</p>
+          <p className="font-medium text-gray-700 text-sm">Foto/Doc {pratica.foto.length > 0 && `(${pratica.foto.length}/5)`}</p>
           {pratica.foto.length < 5 && (
             <label className={`text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg cursor-pointer ${uploadingFoto ? "opacity-50" : "hover:bg-blue-700"}`}>
               {uploadingFoto ? "Caricamento…" : "📷 Aggiungi"}
               <input
                 type="file"
-                accept="image/*"
+                accept="image/*,application/pdf"
                 className="hidden"
                 onChange={caricaFoto}
                 disabled={uploadingFoto}
@@ -527,25 +531,40 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
           )}
         </div>
         {pratica.foto.length === 0 ? (
-          <p className="text-xs text-gray-400">Nessuna foto</p>
+          <p className="text-xs text-gray-400">Nessuna foto o documento</p>
         ) : (
           <div className="grid grid-cols-3 gap-2">
-            {pratica.foto.map(f => (
-              <div key={f.id} className="relative group aspect-square">
-                <img
-                  src={f.path}
-                  alt="Foto pratica"
-                  className="w-full h-full object-cover rounded-lg cursor-pointer"
-                  onClick={() => setFotoIngrandita(f.path)}
-                />
-                <button
-                  onClick={() => eliminaFoto(f.id)}
-                  className="absolute top-1 right-1 bg-black/50 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
+            {pratica.foto.map(f => {
+              const isPdf = f.path.toLowerCase().endsWith(".pdf");
+              return (
+                <div key={f.id} className="relative group aspect-square">
+                  {isPdf ? (
+                    <a
+                      href={f.path}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full h-full flex flex-col items-center justify-center gap-1 bg-gray-50 border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-100"
+                    >
+                      <span className="text-3xl">📄</span>
+                      <span className="text-[10px]">PDF</span>
+                    </a>
+                  ) : (
+                    <img
+                      src={f.path}
+                      alt="Foto pratica"
+                      className="w-full h-full object-cover rounded-lg cursor-pointer"
+                      onClick={() => setFotoIngrandita(f.path)}
+                    />
+                  )}
+                  <button
+                    onClick={() => eliminaFoto(f.id)}
+                    className="absolute top-1 right-1 bg-black/50 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

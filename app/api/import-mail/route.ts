@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
-import { getMailsSegnalazioni, marcaImportata, caricaFotoMail } from "@/lib/gmail";
+import { getMailsSegnalazioni, marcaImportata, caricaAllegatiMail } from "@/lib/gmail";
 import { classificaDelega } from "@/lib/classificatore";
 import { prisma } from "@/lib/prisma";
 
@@ -21,8 +21,8 @@ export async function GET(req: NextRequest) {
       mittente: m.mittente,
       data: m.data,
       descrizione: m.descrizione,
-      hasFoto: m.fotoData.length > 0,
-      nFoto: m.fotoData.length,
+      hasAllegati: m.allegati.length > 0,
+      nAllegati: m.allegati.length,
       titolo: m.titolo,
       delega,
       luogo: "",
@@ -84,10 +84,10 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Carica le foto se presenti
+    // Carica foto/documenti se presenti
     const mailOriginale = mailMap.get(imp.messageId);
-    if (mailOriginale?.fotoData?.length) {
-      const urls = await caricaFotoMail(mailOriginale.fotoData, pratica.id);
+    if (mailOriginale?.allegati?.length) {
+      const urls = await caricaAllegatiMail(mailOriginale.allegati, pratica.id);
       await Promise.all(urls.map(url =>
         prisma.foto.create({ data: { praticaId: pratica.id, path: url } })
       ));
