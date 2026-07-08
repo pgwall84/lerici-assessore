@@ -569,7 +569,7 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
                 value={formModifica.descrizione}
                 onChange={e => setFormModifica(f => ({ ...f, descrizione: e.target.value }))}
                 rows={3}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500 resize"
               />
             </div>
             <div>
@@ -737,7 +737,7 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
                   value={formRispondi.corpo}
                   onChange={e => setFormRispondi(f => ({ ...f, corpo: e.target.value }))}
                   autoFocus
-                  className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y ${rispondiExpanded ? "flex-1 min-h-0 h-full resize-none" : "min-h-[140px]"}`}
+                  className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500 resize ${rispondiExpanded ? "flex-1 min-h-0 h-full resize-none" : "min-h-[140px]"}`}
                 />
               </div>
             </div>
