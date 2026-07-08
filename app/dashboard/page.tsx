@@ -275,7 +275,13 @@ export default function DashboardPage() {
                       </span>
                     </div>
                     <p className="font-medium text-gray-900 truncate">{p.titolo}</p>
-                    {p.luogo && <p className="text-xs text-gray-500 mt-0.5">📍 {p.luogo}</p>}
+                    {(p.luogo || p.segnalante?.nome) && (
+                      <p className="text-xs text-gray-500 mt-0.5 truncate">
+                        {p.luogo && <span>📍 {p.luogo}</span>}
+                        {p.luogo && p.segnalante?.nome && <span className="mx-1">·</span>}
+                        {p.segnalante?.nome && <span>👤 {p.segnalante.nome}</span>}
+                      </p>
+                    )}
                     {p.note[0] && (
                       <p className="text-xs text-gray-400 mt-1 truncate italic">
                         💬 {p.note[0].testo}
