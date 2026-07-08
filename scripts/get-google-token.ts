@@ -5,22 +5,25 @@ import "dotenv/config";
 const oauth2 = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  "http://127.0.0.1:3002"
+  "http://localhost:3002"
 );
 
 const url = oauth2.generateAuthUrl({
   access_type: "offline",
   prompt: "consent",
-  scope: ["https://www.googleapis.com/auth/calendar"],
+  scope: [
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/gmail.modify",
+  ],
 });
 
-console.log("\n✓ Apri questo URL nel browser per autorizzare Google Calendar:\n");
+console.log("\n✓ Apri questo URL nel browser per autorizzare Google Calendar + Gmail:\n");
 console.log(url);
 console.log("\nDopo l'autorizzazione sarai reindirizzato — il token verrà stampato qui.\n");
 
 // Server temporaneo che cattura il codice di autorizzazione
 const server = createServer(async (req, res) => {
-  const code = new URL(req.url ?? "", "http://127.0.0.1:3002").searchParams.get("code");
+  const code = new URL(req.url ?? "", "http://localhost:3002").searchParams.get("code");
   if (!code) { res.end("Nessun codice ricevuto."); return; }
 
   try {
