@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
     "Delega": DELEGHE_LABEL[p.delega as keyof typeof DELEGHE_LABEL],
     "Titolo": p.titolo,
     "Stato": STATO_LABEL[p.stato as keyof typeof STATO_LABEL],
-    "Priorità": p.priorita === "URGENTE" ? "Urgente" : "Normale",
+    "Priorità": ({ ALTA: "Alta", MEDIA: "Media", BASSA: "Bassa" } as Record<string, string>)[p.priorita] ?? p.priorita,
     "Luogo": p.luogo ?? "",
     "Referente": p.persona ? `${p.persona.nome} ${p.persona.cognome}` : "",
     "Segnalante": p.segnalante?.nome ?? "",

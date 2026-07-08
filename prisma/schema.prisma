@@ -17,9 +17,10 @@ model Pratica {
   descrizione String?
   luogo       String?
   stato       StatoPratica @default(APERTA)
-  priorita    Priorita     @default(NORMALE)
-  protocollo  String?
+  priorita    Priorita     @default(MEDIA)
+  protocollo     String?
   dataProtocollo String?
+  messageId      String?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   chiusaAt    DateTime?
@@ -31,6 +32,7 @@ model Pratica {
   note         Nota[]
   appuntamenti Appuntamento[]
   storico      StoricoStato[]
+  mailInviate  MailInviata[]
 }
 
 // ---------------------------------------------------------------------------
@@ -110,6 +112,19 @@ model Appuntamento {
 }
 
 // ---------------------------------------------------------------------------
+// MAIL INVIATA — storico risposte inviate via Gmail dalla pratica
+// ---------------------------------------------------------------------------
+model MailInviata {
+  id        Int      @id @default(autoincrement())
+  praticaId Int
+  pratica   Pratica  @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  to        String
+  oggetto   String
+  corpo     String
+  sentAt    DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
 // UTENTE — solo Marco (sistema single-user)
 // ---------------------------------------------------------------------------
 model Utente {
@@ -157,6 +172,7 @@ enum StatoPratica {
 }
 
 enum Priorita {
-  NORMALE
-  URGENTE
+  BASSA
+  MEDIA
+  ALTA
 }

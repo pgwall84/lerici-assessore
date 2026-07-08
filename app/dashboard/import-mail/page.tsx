@@ -73,6 +73,11 @@ export default function ImportMailPage() {
   }
 
   const selezionate = mails.filter(m => m.selezionata).length;
+  const tutteSelezionate = mails.length > 0 && selezionate === mails.length;
+
+  function toggleTutte() {
+    setMails(ms => ms.map(m => ({ ...m, selezionata: !tutteSelezionate })));
+  }
 
   return (
     <div className="space-y-4 pb-32">
@@ -81,13 +86,23 @@ export default function ImportMailPage() {
           <h1 className="text-lg font-semibold text-gray-900">Importa da mail</h1>
           <p className="text-xs text-gray-500">Etichetta Gmail: Segnalazioni</p>
         </div>
-        <button
-          onClick={importa}
-          disabled={!selezionate || importando}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-40 hover:bg-blue-700"
-        >
-          {importando ? "Importo…" : `Importa ${selezionate > 0 ? `(${selezionate})` : ""}`}
-        </button>
+        <div className="flex gap-2 items-center">
+          {mails.length > 0 && (
+            <button
+              onClick={toggleTutte}
+              className="text-xs px-3 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50"
+            >
+              {tutteSelezionate ? "Deseleziona tutte" : "Seleziona tutte"}
+            </button>
+          )}
+          <button
+            onClick={importa}
+            disabled={!selezionate || importando}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-40 hover:bg-blue-700"
+          >
+            {importando ? "Importo…" : `Importa ${selezionate > 0 ? `(${selezionate})` : ""}`}
+          </button>
+        </div>
       </div>
 
       {loading ? (

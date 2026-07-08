@@ -5,10 +5,12 @@ import { z } from "zod";
 
 const updateSchema = z.object({
   stato: z.enum(["APERTA","IN_CORSO","CHIUSA","SOSPESA","APPUNTO","IN_VALUTAZIONE","PROMOSSA","ARCHIVIATA"]).optional(),
-  priorita: z.enum(["NORMALE","URGENTE"]).optional(),
+  priorita: z.enum(["BASSA","MEDIA","ALTA"]).optional(),
+  tipo: z.enum(["SEGNALAZIONE","MIA_IDEA","PROGETTO"]).optional(),
   titolo: z.string().min(1).max(200).optional(),
-  descrizione: z.string().optional(),
-  luogo: z.string().optional(),
+  descrizione: z.string().nullable().optional(),
+  luogo: z.string().nullable().optional(),
+  delega: z.enum(["VIABILITA","AMBIENTE","RIFIUTI","SISTEMA_IDRICO","ILLUMINAZIONE","ACCESSIBILITA","CIMITERI","POLITICHE_ABITATIVE","DIGITALIZZAZIONE","MANUTENZIONE_PATRIMONIO"]).optional(),
   personaId: z.number().int().nullable().optional(),
 });
 
@@ -26,6 +28,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       note: { orderBy: { createdAt: "asc" } },
       storico: { orderBy: { createdAt: "asc" } },
       appuntamenti: { orderBy: { dataOra: "asc" } },
+      mailInviate: { orderBy: { sentAt: "desc" } },
     },
   });
 
@@ -62,6 +65,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     include: { persona: true, segnalante: true },
   });
 
+  // Quando si chiude una pratica importata da mail, spostala in Segnalazioni/Chiusa
+  if (stato === "CHIUSA" && existing.stato !== "CHIUSA" && existing.messageId) {
+    try {
+      const { spostaInChiusa } = await import("@/lib/gmail");
+      await spostaInChiusa(existing.messageId);
+    } catch { /* ignora errori Gmail — la pratica è già chiusa */ }
+  }
+
   return NextResponse.json(pratica);
 }
 
@@ -70,6 +81,17 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!token) return NextResponse.json({ error: "Non autorizzato" }, { status: 401 });
 
   const { id } = await params;
+  const pratica = await prisma.pratica.findUnique({ where: { id: Number(id) }, select: { messageId: true } });
+
   await prisma.pratica.delete({ where: { id: Number(id) } });
+
+  // Rimuovi etichetta "Importata" da Gmail se la pratica viene da una mail
+  if (pratica?.messageId) {
+    try {
+      const { rimuoviImportata } = await import("@/lib/gmail");
+      await rimuoviImportata(pratica.messageId);
+    } catch { /* ignora errori Gmail */ }
+  }
+
   return new NextResponse(null, { status: 204 });
 }

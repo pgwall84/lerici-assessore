@@ -1,4 +1,4 @@
-import { Delega, StatoPratica, TipoPratica } from "@prisma/client";
+import { Delega, Priorita, StatoPratica, TipoPratica } from "@prisma/client";
 
 export const DELEGHE_LABEL: Record<Delega, string> = {
   VIABILITA: "Viabilità",
@@ -54,6 +54,21 @@ export const STATO_COLORE: Record<StatoPratica, string> = {
   PROMOSSA: "bg-teal-100 text-teal-800",
   ARCHIVIATA: "bg-gray-100 text-gray-500",
 };
+
+export const PRIORITA_LABEL: Record<Priorita, string> = {
+  ALTA: "Alta",
+  MEDIA: "Media",
+  BASSA: "Bassa",
+};
+
+export const PRIORITA_COLORE: Record<Priorita, string> = {
+  ALTA: "bg-red-100 text-red-700",
+  MEDIA: "bg-yellow-100 text-yellow-700",
+  BASSA: "bg-gray-100 text-gray-500",
+};
+
+export const STATI_OPERATIVA: StatoPratica[] = ["APERTA", "IN_CORSO", "IN_VALUTAZIONE", "PROMOSSA"];
+export const STATI_ARCHIVIO: StatoPratica[] = ["CHIUSA", "SOSPESA", "ARCHIVIATA"];
 
 export const TIPO_COLORE: Record<TipoPratica, string> = {
   SEGNALAZIONE: "bg-red-100 text-red-700",

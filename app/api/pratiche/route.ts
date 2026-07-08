@@ -13,7 +13,7 @@ const schema = z.object({
   titolo: z.string().min(1).max(200),
   descrizione: z.string().optional(),
   luogo: z.string().optional(),
-  priorita: z.enum(["NORMALE", "URGENTE"]).default("NORMALE"),
+  priorita: z.enum(["BASSA", "MEDIA", "ALTA"]).default("MEDIA"),
   personaId: z.number().int().optional(),
   segnalante: z.object({
     nome: z.string().optional(),
@@ -32,11 +32,18 @@ export async function GET(req: NextRequest) {
   const stato = searchParams.get("stato") as string | null;
   const q = searchParams.get("q");
 
+  const vista = searchParams.get("vista"); // "operativa" | "archivio"
+  const STATI_OPERATIVA = ["APERTA", "IN_CORSO", "IN_VALUTAZIONE", "PROMOSSA"];
+  const STATI_ARCHIVIO = ["CHIUSA", "SOSPESA", "ARCHIVIATA"];
+
   const pratiche = await prisma.pratica.findMany({
     where: {
       ...(tipo ? { tipo: tipo as never } : {}),
       ...(delega ? { delega: delega as never } : {}),
-      ...(stato ? { stato: stato as never } : { stato: { not: "ARCHIVIATA" as never } }),
+      ...(stato ? { stato: stato as never } :
+        vista === "operativa" ? { stato: { in: STATI_OPERATIVA as never[] } } :
+        vista === "archivio" ? { stato: { in: STATI_ARCHIVIO as never[] } } :
+        { stato: { not: "ARCHIVIATA" as never } }),
       ...(q ? { OR: [
         { titolo: { contains: q, mode: "insensitive" } },
         { descrizione: { contains: q, mode: "insensitive" } },

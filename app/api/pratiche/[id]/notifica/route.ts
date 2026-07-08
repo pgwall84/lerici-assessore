@@ -62,7 +62,7 @@ function formatMessaggio(pratica: {
     `📋 *${pratica.titolo}*`,
     ``,
     `🏷 ${TIPO_LABEL[pratica.tipo as keyof typeof TIPO_LABEL]} · ${DELEGHE_LABEL[pratica.delega as keyof typeof DELEGHE_LABEL]}`,
-    `📊 Stato: ${STATO_LABEL[pratica.stato as keyof typeof STATO_LABEL]}${pratica.priorita === "URGENTE" ? " 🔴" : ""}`,
+    `📊 Stato: ${STATO_LABEL[pratica.stato as keyof typeof STATO_LABEL]}${pratica.priorita === "ALTA" ? " 🔴" : ""}`,
   ];
 
   if (pratica.luogo) righe.push(`📍 ${pratica.luogo}`);

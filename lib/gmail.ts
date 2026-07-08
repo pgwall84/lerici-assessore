@@ -74,16 +74,12 @@ export async function getMailsSegnalazioni(): Promise<MailImport[]> {
       });
       const emlBuffer = Buffer.from(att.data.data!, "base64url");
 
-      // Parsa l'EML annidato con iconv-lite per charset non-UTF8
-      const parsed = await simpleParser(emlBuffer, { Iconv: iconv as never });
+      // Parsa per allegati e subject (mailparser gestisce base64/binary correttamente)
+      const parsed = await simpleParser(emlBuffer);
 
-      // Decodifica QP + windows-1252 per estrarre campi strutturati con accentate corrette
-      const emlLatin = emlBuffer.toString("latin1");
-      const emlQpDecoded = emlLatin
-        .replace(/=\r?\n/g, "")
-        .replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
-      const emlDecoded = iconv.decode(Buffer.from(emlQpDecoded, "latin1"), "windows-1252");
-      const testoEml = stripHtml(emlDecoded);
+      // Estrae manualmente il body HTML dal MIME del postacert.eml con decodifica QP + windows-1252
+      // (PEC dichiara charset=us-ascii ma scrive bytes windows-1252 — mailparser non sa gestirlo)
+      const testoEml = stripHtml(estraiHtmlDaMime(emlBuffer));
 
       // Mittente reale
       const matchNome = testoEml.match(/Mittente\s*:\s*(.+)/i);
@@ -98,12 +94,13 @@ export async function getMailsSegnalazioni(): Promise<MailImport[]> {
         dataProtocollo = matchProtocollo[2].trim();
       }
 
-      // Oggetto reale dal campo "Oggetto : ..."
-      const matchOggetto = testoEml.match(/Oggetto\s*:\s*(.+)/i);
-      if (matchOggetto?.[1]) {
-        titolo = pulisciOggetto(matchOggetto[1]);
-      } else if (parsed.subject) {
+      // Usa parsed.subject del postacert.eml (MIME encoded-word, decodificato correttamente da mailparser)
+      // Il body HTML è corrotto da Poste Italiane (&#65533; per le accentate)
+      if (parsed.subject) {
         titolo = pulisciOggetto(parsed.subject);
+      } else {
+        const matchOggetto = testoEml.match(/Oggetto\s*:\s*(.+)/i);
+        if (matchOggetto?.[1]) titolo = pulisciOggetto(matchOggetto[1]);
       }
 
       // Fallback mittente: from header dell'EML
@@ -204,14 +201,54 @@ export async function marcaImportata(messageId: string): Promise<void> {
   });
 }
 
+export async function spostaInChiusa(messageId: string): Promise<void> {
+  const gmail = google.gmail({ version: "v1", auth: getAuth() });
+  const labelsRes = await gmail.users.labels.list({ userId: "me" });
+  const labels = labelsRes.data.labels ?? [];
+
+  const labelChiusa = labels.find(l => l.name === "Segnalazioni/Chiusa");
+  const labelSegnalazioni = labels.find(l => l.name === "Segnalazioni");
+  const labelImportata = labels.find(l => l.name === "Importata");
+
+  const addLabelIds: string[] = [];
+  const removeLabelIds: string[] = [];
+
+  if (labelChiusa?.id) addLabelIds.push(labelChiusa.id);
+  if (labelSegnalazioni?.id) removeLabelIds.push(labelSegnalazioni.id);
+  if (labelImportata?.id) removeLabelIds.push(labelImportata.id);
+
+  if (!addLabelIds.length && !removeLabelIds.length) return;
+
+  await gmail.users.messages.modify({
+    userId: "me",
+    id: messageId,
+    requestBody: { addLabelIds, removeLabelIds },
+  });
+}
+
+export async function rimuoviImportata(messageId: string): Promise<void> {
+  const gmail = google.gmail({ version: "v1", auth: getAuth() });
+  const labelsRes = await gmail.users.labels.list({ userId: "me" });
+  const labelImportata = labelsRes.data.labels?.find(l => l.name === "Importata");
+  if (!labelImportata?.id) return;
+  await gmail.users.messages.modify({
+    userId: "me",
+    id: messageId,
+    requestBody: { removeLabelIds: [labelImportata.id] },
+  });
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function pulisciOggetto(soggetto: string): string {
-  let s = soggetto.trim();
-  // Rimuovi prefissi PEC
-  s = s.replace(/^(POSTA CERTIFICATA|ANOMALIA MESSAGGIO)\s*:\s*/i, "");
-  // Rimuovi FWD/Re residui
-  s = s.replace(/^(fwd?|re)\s*:\s*/i, "");
+  let s = he.decode(soggetto.trim());
+  // Formato "Mitt:... - POSTA CERTIFICATA: testo" oppure solo "POSTA CERTIFICATA: testo"
+  const pecMatch = s.match(/(?:POSTA CERTIFICATA|ANOMALIA MESSAGGIO)\s*:\s*(.+)/i);
+  if (pecMatch) {
+    s = pecMatch[1].trim();
+  }
+  // Rimuovi prefissi vari prima del contenuto reale
+  s = s.replace(/^(mitt\s*:[^-]+-\s*)?(sollecito\s*:?\s*)?(fwd?\s*:?\s*)*(re\s*:\s*)*/i, "").trim();
   return s.trim().slice(0, 120);
 }
 
@@ -260,6 +297,34 @@ function estraiCorpoPrincipale(payload: any): string {
   for (const part of payload.parts ?? []) {
     const sub = estraiCorpoPrincipale(part);
     if (sub) return sub;
+  }
+  return "";
+}
+
+function estraiHtmlDaMime(emlBuffer: Buffer): string {
+  const raw = emlBuffer.toString("binary");
+
+  // Trova boundary multipart
+  const bMatch = raw.match(/boundary="([^"]+)"/i);
+  if (!bMatch) return "";
+  const boundary = bMatch[1];
+
+  const parts = raw.split("--" + boundary);
+  for (const part of parts) {
+    if (!/Content-Type:\s*text\/html/i.test(part)) continue;
+    const isQP = /Content-Transfer-Encoding:\s*quoted-printable/i.test(part);
+
+    // Corpo dopo riga vuota
+    const sep = part.match(/\r?\n\r?\n/);
+    if (!sep || sep.index === undefined) continue;
+    let body = part.slice(sep.index + sep[0].length).replace(/--\s*$/, "").trimEnd();
+
+    if (isQP) {
+      body = body
+        .replace(/=\r?\n/g, "")
+        .replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+    }
+    return iconv.decode(Buffer.from(body, "binary"), "windows-1252");
   }
   return "";
 }

@@ -49,7 +49,7 @@ export default function NuovaPraticaPage() {
     titolo: "",
     descrizione: "",
     luogo: "",
-    priorita: "NORMALE" as "NORMALE" | "URGENTE",
+    priorita: "MEDIA" as "BASSA" | "MEDIA" | "ALTA",
     personaId: "" as string,
     segnalantNome: "",
     segnalantTel: "",
@@ -266,18 +266,16 @@ export default function NuovaPraticaPage() {
 
         {/* Priorità */}
         <div className="flex gap-3">
-          {(["NORMALE", "URGENTE"] as const).map(p => (
+          {([["BASSA","⚪ Bassa","border-gray-400 bg-gray-50 text-gray-700"],["MEDIA","🟡 Media","border-yellow-400 bg-yellow-50 text-yellow-700"],["ALTA","🔴 Alta","border-red-500 bg-red-50 text-red-700"]] as const).map(([val, label, activeClass]) => (
             <button
-              key={p}
+              key={val}
               type="button"
-              onClick={() => field("priorita", p)}
+              onClick={() => field("priorita", val)}
               className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition-colors ${
-                form.priorita === p
-                  ? p === "URGENTE" ? "border-red-500 bg-red-50 text-red-700" : "border-blue-500 bg-blue-50 text-blue-700"
-                  : "border-gray-200 text-gray-600"
+                form.priorita === val ? activeClass : "border-gray-200 text-gray-600"
               }`}
             >
-              {p === "URGENTE" ? "🔴 Urgente" : "⚪ Normale"}
+              {label}
             </button>
           ))}
         </div>

@@ -70,7 +70,8 @@ export async function POST(req: NextRequest) {
         dataProtocollo: imp.dataProtocollo || null,
         tipo: "SEGNALAZIONE",
         stato: "APERTA",
-        priorita: "NORMALE",
+        priorita: "MEDIA",
+        messageId: imp.messageId,
         delega: imp.delega as never,
         ...(imp.nomeMittente ? {
           segnalante: {
