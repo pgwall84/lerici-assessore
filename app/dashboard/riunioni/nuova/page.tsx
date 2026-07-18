@@ -43,6 +43,12 @@ function NuovaRiunioneContent() {
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const fermatoManualmente = useRef(true);
+  // Testo finale già "committato" da sessioni di riconoscimento precedenti (prima di ogni pausa/riavvio).
+  const finaleAccumulatoRef = useRef("");
+  // Testo finale della sessione di riconoscimento corrente, ricalcolato da zero ad ogni evento
+  // (mai accumulato in modo incrementale: alcuni browser rifirmano come "final" lo stesso risultato
+  // più volte in modalità continuous, e un append incrementale duplicherebbe le parole).
+  const sessioneFinaleRef = useRef("");
 
   useEffect(() => {
     if (personaId) {
@@ -77,24 +83,36 @@ function NuovaRiunioneContent() {
     recognition.interimResults = true;
 
     recognition.onresult = (e: unknown) => {
-      const event = e as { resultIndex: number; results: { length: number; [i: number]: { 0: { transcript: string }; isFinal: boolean } } };
-      let finaleNuovo = "";
-      let interimNuovo = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
+      const event = e as { results: { length: number; [i: number]: { 0: { transcript: string }; isFinal: boolean } } };
+      // Ricostruisce il testo finale della sessione corrente da zero, scorrendo TUTTI i risultati
+      // (0..length) invece di accumulare solo il delta da resultIndex: evita duplicazioni quando
+      // il browser rifirma come "final" un risultato già visto.
+      let sessioneFinale = "";
+      let sessioneInterim = "";
+      for (let i = 0; i < event.results.length; i++) {
         const risultato = event.results[i];
-        if (risultato.isFinal) finaleNuovo += risultato[0].transcript;
-        else interimNuovo += risultato[0].transcript;
+        if (risultato.isFinal) sessioneFinale += (sessioneFinale ? " " : "") + risultato[0].transcript.trim();
+        else sessioneInterim += (sessioneInterim ? " " : "") + risultato[0].transcript.trim();
       }
-      if (finaleNuovo) setFinale(f => (f ? f + " " : "") + finaleNuovo.trim());
-      setInterim(interimNuovo);
+      sessioneFinaleRef.current = sessioneFinale;
+      const finaleCorrente = [finaleAccumulatoRef.current, sessioneFinale].filter(Boolean).join(" ");
+      setFinale(finaleCorrente);
+      setInterim(sessioneInterim);
     };
 
     recognition.onerror = () => { /* ignorato — onend gestisce il riavvio */ };
 
     recognition.onend = () => {
+      // Ogni sessione (anche i riavvii automatici) riparte con un array `results` vuoto:
+      // prima di ripartire, il testo finale prodotto finora va "committato" nell'accumulo totale.
+      finaleAccumulatoRef.current = [finaleAccumulatoRef.current, sessioneFinaleRef.current].filter(Boolean).join(" ");
+      sessioneFinaleRef.current = "";
+      setFinale(finaleAccumulatoRef.current);
+
       if (!fermatoManualmente.current) {
         try { recognition.start(); } catch { /* già in ascolto */ }
       } else {
+        setInterim("");
         setStato("idle");
       }
     };
