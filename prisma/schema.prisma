@@ -208,6 +208,45 @@ enum StatoRiunione {
 }
 
 // ---------------------------------------------------------------------------
+// CONTESTAZIONE — mail del Comune verso i gestori per mancato ritiro/servizio
+// ---------------------------------------------------------------------------
+model Contestazione {
+  id          String                   @id @default(cuid())
+  gestore     Gestore
+  oggetto     String
+  descrizione String?
+  dataInvio   DateTime?
+  esito       EsitoContestazione       @default(IN_ATTESA)
+  noteEsito   String?
+  documenti   DocumentoContestazione[]
+  messageId   String?
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+}
+
+enum Gestore {
+  ACAM_AMBIENTE
+  ACAM_ACQUE
+  ATC
+}
+
+enum EsitoContestazione {
+  IN_ATTESA
+  RISOLTO
+  RESPINTO
+  SENZA_RISPOSTA
+}
+
+model DocumentoContestazione {
+  id              String        @id @default(cuid())
+  contestazioneId String
+  contestazione   Contestazione @relation(fields: [contestazioneId], references: [id], onDelete: Cascade)
+  nomeFile        String
+  storageUrl      String
+  createdAt       DateTime      @default(now())
+}
+
+// ---------------------------------------------------------------------------
 // BANDO — monitoraggio bandi pubblici rilevanti per le deleghe
 // ---------------------------------------------------------------------------
 model Bando {

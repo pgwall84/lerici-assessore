@@ -15,12 +15,13 @@ const links = [
   { href: "/dashboard/riunioni", label: "Riunioni", icon: "🎙️" },
 ];
 
-// Voci secondarie — dentro il menu "Altro". Contestazioni e Giustifiche si
-// aggiungeranno qui quando quelle sezioni esisteranno (fasi successive).
+// Voci secondarie — dentro il menu "Altro". Giustifiche si aggiungerà qui
+// quando quella sezione esisterà (fase successiva).
 const altroLinks = [
   { href: "/dashboard/appuntamenti", label: "Agenda", icon: "📅" },
   { href: "/dashboard/rubrica", label: "Rubrica", icon: "👥" },
   { href: "/dashboard/bandi", label: "Bandi", icon: "📢" },
+  { href: "/dashboard/contestazioni", label: "Contestazioni", icon: "⚠️" },
 ];
 
 export default function Navbar() {
