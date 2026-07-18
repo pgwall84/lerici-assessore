@@ -5,7 +5,7 @@ import { STATO_INIZIALE } from "@/lib/constants";
 import { z } from "zod";
 
 const schema = z.object({
-  tipo: z.enum(["SEGNALAZIONE", "MIA_IDEA", "PROGETTO"]),
+  tipo: z.enum(["SEGNALAZIONE", "MIA_IDEA"]),
   delega: z.enum([
     "VIABILITA","AMBIENTE","RIFIUTI","SISTEMA_IDRICO","ILLUMINAZIONE",
     "ACCESSIBILITA","CIMITERI","POLITICHE_ABITATIVE","DIGITALIZZAZIONE","MANUTENZIONE_PATRIMONIO",
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
 
   const pratiche = await prisma.pratica.findMany({
     where: {
-      ...(tipo ? { tipo: tipo as never } : {}),
+      ...(tipo ? { tipo: tipo as never } : { tipo: { not: "PROGETTO" as never } }),
       ...(delega ? { delega: delega as never } : {}),
       ...(stato ? { stato: stato as never } :
         vista === "operativa" ? { stato: { in: STATI_OPERATIVA as never[] } } :

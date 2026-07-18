@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
 
   const pratiche = await prisma.pratica.findMany({
     where: {
-      ...(tipo ? { tipo: tipo as never } : {}),
+      ...(tipo ? { tipo: tipo as never } : { tipo: { not: "PROGETTO" as never } }),
       ...(delega ? { delega: delega as never } : {}),
       ...(stato ? { stato: stato as never } : { stato: { not: "ARCHIVIATA" as never } }),
       ...(q ? { OR: [

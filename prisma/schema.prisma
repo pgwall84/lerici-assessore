@@ -59,6 +59,8 @@ model Persona {
   email     String?
   createdAt DateTime  @default(now())
   pratiche  Pratica[]
+  progetti  Progetto[]
+  riunioni  Riunione[]
 }
 
 // ---------------------------------------------------------------------------
@@ -122,6 +124,117 @@ model MailInviata {
   oggetto   String
   corpo     String
   sentAt    DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// PROGETTO — amministrativo, separato dalle Segnalazioni (ex TipoPratica.PROGETTO)
+// ---------------------------------------------------------------------------
+model Progetto {
+  id                 String              @id @default(cuid())
+  titolo             String
+  delega             Delega
+  stato              StatoProgetto       @default(IN_CORSO)
+  responsabileId     Int?
+  responsabile       Persona?            @relation(fields: [responsabileId], references: [id])
+  fonteFinanziamento String?
+  bandoId            String?
+  descrizione        String?
+  note               NotaProgetto[]
+  documenti          DocumentoProgetto[]
+  riunioni           Riunione[]
+  messageId          String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+}
+
+enum StatoProgetto {
+  IN_CORSO
+  SOSPESO
+  CONCLUSO
+  ARCHIVIATO
+}
+
+model NotaProgetto {
+  id         String   @id @default(cuid())
+  progettoId String
+  progetto   Progetto @relation(fields: [progettoId], references: [id], onDelete: Cascade)
+  testo      String
+  createdAt  DateTime @default(now())
+}
+
+model DocumentoProgetto {
+  id         String   @id @default(cuid())
+  progettoId String
+  progetto   Progetto @relation(fields: [progettoId], references: [id], onDelete: Cascade)
+  nomeFile   String
+  storageUrl String
+  createdAt  DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// RIUNIONE — checklist vocale per preparare e seguire incontri
+// ---------------------------------------------------------------------------
+model Riunione {
+  id                 String              @id @default(cuid())
+  titolo             String
+  personaId          Int?
+  persona            Persona?            @relation(fields: [personaId], references: [id])
+  progettoId         String?
+  progetto           Progetto?           @relation(fields: [progettoId], references: [id])
+  dataOra            DateTime?
+  stato              StatoRiunione       @default(IN_PREPARAZIONE)
+  trascrizioneGrezza String?             @db.Text
+  argomenti          ArgomentoRiunione[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+}
+
+model ArgomentoRiunione {
+  id         String    @id @default(cuid())
+  riunioneId String
+  riunione   Riunione  @relation(fields: [riunioneId], references: [id], onDelete: Cascade)
+  testo      String
+  ordine     Int
+  spuntato   Boolean   @default(false)
+  spuntatoAt DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+enum StatoRiunione {
+  IN_PREPARAZIONE
+  PRONTA
+  IN_CORSO
+  CONCLUSA
+}
+
+// ---------------------------------------------------------------------------
+// BANDO — monitoraggio bandi pubblici rilevanti per le deleghe
+// ---------------------------------------------------------------------------
+model Bando {
+  id              String     @id @default(cuid())
+  titolo          String
+  ente            String
+  fonteUrl        String
+  bandoUrl        String?
+  descrizione     String?
+  dotazione       String?
+  beneficiari     String?
+  dataApertura    DateTime?
+  dataChiusura    DateTime?
+  delega          Delega?
+  hashContenuto   String     @unique
+  stato           StatoBando @default(NUOVO)
+  notificato      Boolean    @default(false)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+}
+
+enum StatoBando {
+  NUOVO
+  VALUTATO
+  INTERESSANTE
+  SCARTATO
+  SCADUTO
 }
 
 // ---------------------------------------------------------------------------

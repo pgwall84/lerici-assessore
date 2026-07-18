@@ -12,12 +12,12 @@ export async function GET(req: NextRequest) {
   const [operativa, archivio] = await Promise.all([
     prisma.pratica.groupBy({
       by: ["delega"],
-      where: { stato: { in: STATI_OPERATIVA as never[] } },
+      where: { stato: { in: STATI_OPERATIVA as never[] }, tipo: { not: "PROGETTO" as never } },
       _count: { id: true },
     }),
     prisma.pratica.groupBy({
       by: ["delega"],
-      where: { stato: { in: STATI_ARCHIVIO as never[] } },
+      where: { stato: { in: STATI_ARCHIVIO as never[] }, tipo: { not: "PROGETTO" as never } },
       _count: { id: true },
     }),
   ]);

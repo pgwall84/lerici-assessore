@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 type Persona = {
   id: number;
@@ -127,6 +128,7 @@ export default function RubricaPage() {
                   {p.email && <p className="text-xs text-gray-400">{p.email}</p>}
                 </div>
                 <div className="flex gap-1.5 items-center">
+                  <Link href={`/dashboard/riunioni/nuova?personaId=${p.id}`} className="text-sm bg-gray-100 rounded-lg px-2.5 py-1.5 hover:bg-gray-200">🎙️</Link>
                   {p.telefono && (
                     <a href={`tel:${p.telefono}`} className="text-sm bg-gray-100 rounded-lg px-2.5 py-1.5 hover:bg-gray-200">📞</a>
                   )}

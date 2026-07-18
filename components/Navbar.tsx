@@ -3,17 +3,50 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
+import { useEffect, useRef, useState } from "react";
 
+// Voci principali — sempre visibili. La voce per Attività Politico-Amministrativa
+// si aggiungerà qui quando quella sezione esisterà (fase successiva).
 const links = [
   { href: "/dashboard", label: "Dashboard", icon: "📋" },
   { href: "/dashboard/nuova", label: "Nuova", icon: "➕" },
   { href: "/dashboard/import-mail", label: "Mail", icon: "📨" },
+  { href: "/dashboard/progetti", label: "Progetti", icon: "📁" },
+  { href: "/dashboard/riunioni", label: "Riunioni", icon: "🎙️" },
+];
+
+// Voci secondarie — dentro il menu "Altro". Contestazioni e Giustifiche si
+// aggiungeranno qui quando quelle sezioni esisteranno (fasi successive).
+const altroLinks = [
   { href: "/dashboard/appuntamenti", label: "Agenda", icon: "📅" },
   { href: "/dashboard/rubrica", label: "Rubrica", icon: "👥" },
+  { href: "/dashboard/bandi", label: "Bandi", icon: "📢" },
 ];
 
 export default function Navbar() {
   const pathname = usePathname();
+  const [bandiBadge, setBandiBadge] = useState(0);
+  const [altroOpen, setAltroOpen] = useState(false);
+  const altroRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch("/api/bandi?stato=NUOVO")
+      .then(r => r.ok ? r.json() : [])
+      .then((data: unknown[]) => setBandiBadge(data.length))
+      .catch(() => {});
+  }, [pathname]);
+
+  useEffect(() => { setAltroOpen(false); }, [pathname]);
+
+  useEffect(() => {
+    function onClickFuori(e: MouseEvent) {
+      if (altroRef.current && !altroRef.current.contains(e.target as Node)) setAltroOpen(false);
+    }
+    document.addEventListener("mousedown", onClickFuori);
+    return () => document.removeEventListener("mousedown", onClickFuori);
+  }, []);
+
+  const altroAttivo = altroLinks.some(l => l.href === pathname);
 
   return (
     <>
@@ -30,7 +63,7 @@ export default function Navbar() {
             <Link
               key={l.href}
               href={l.href}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                 pathname === l.href
                   ? "bg-blue-50 text-blue-700"
                   : "text-gray-600 hover:bg-gray-100"
@@ -40,6 +73,45 @@ export default function Navbar() {
               {l.label}
             </Link>
           ))}
+
+          {/* Menu Altro */}
+          <div className="relative" ref={altroRef}>
+            <button
+              onClick={() => setAltroOpen(o => !o)}
+              className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                altroAttivo ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:bg-gray-100"
+              }`}
+            >
+              <span>⋯</span>
+              Altro
+              {bandiBadge > 0 && (
+                <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                  {bandiBadge > 9 ? "9+" : bandiBadge}
+                </span>
+              )}
+            </button>
+            {altroOpen && (
+              <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[160px] z-50">
+                {altroLinks.map(l => (
+                  <Link
+                    key={l.href}
+                    href={l.href}
+                    className={`relative flex items-center gap-2 px-3 py-2 text-sm ${
+                      pathname === l.href ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    <span>{l.icon}</span>
+                    {l.label}
+                    {l.href === "/dashboard/bandi" && bandiBadge > 0 && (
+                      <span className="ml-auto bg-blue-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                        {bandiBadge > 9 ? "9+" : bandiBadge}
+                      </span>
+                    )}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
         </nav>
 
         <button
@@ -56,7 +128,7 @@ export default function Navbar() {
           <Link
             key={l.href}
             href={l.href}
-            className={`flex-1 flex flex-col items-center py-2 text-xs gap-1 ${
+            className={`relative flex-1 flex flex-col items-center py-2 text-xs gap-1 ${
               pathname === l.href ? "text-blue-600" : "text-gray-500"
             }`}
           >
@@ -64,7 +136,50 @@ export default function Navbar() {
             {l.label}
           </Link>
         ))}
+        <button
+          onClick={() => setAltroOpen(o => !o)}
+          className={`relative flex-1 flex flex-col items-center py-2 text-xs gap-1 ${
+            altroAttivo || altroOpen ? "text-blue-600" : "text-gray-500"
+          }`}
+        >
+          <span className="text-lg">⋯</span>
+          Altro
+          {bandiBadge > 0 && (
+            <span className="absolute top-1 right-1/4 bg-blue-600 text-white text-[9px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
+              {bandiBadge > 9 ? "9+" : bandiBadge}
+            </span>
+          )}
+        </button>
       </nav>
+
+      {/* Sheet "Altro" mobile */}
+      {altroOpen && (
+        <div className="fixed inset-0 z-40 md:hidden" onClick={() => setAltroOpen(false)}>
+          <div className="absolute inset-0 bg-black/30" />
+          <div
+            className="absolute bottom-16 left-0 right-0 bg-white rounded-t-xl border-t border-gray-200 shadow-xl py-2"
+            onClick={e => e.stopPropagation()}
+          >
+            {altroLinks.map(l => (
+              <Link
+                key={l.href}
+                href={l.href}
+                className={`relative flex items-center gap-3 px-5 py-3 text-sm ${
+                  pathname === l.href ? "bg-blue-50 text-blue-700" : "text-gray-700"
+                }`}
+              >
+                <span className="text-lg">{l.icon}</span>
+                {l.label}
+                {l.href === "/dashboard/bandi" && bandiBadge > 0 && (
+                  <span className="ml-auto bg-blue-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                    {bandiBadge > 9 ? "9+" : bandiBadge}
+                  </span>
+                )}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Spacer for mobile bottom nav */}
       <div className="h-16 md:hidden" />

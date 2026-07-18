@@ -11,6 +11,16 @@ const schema = z.object({
   email: z.string().email().optional().or(z.literal("")),
 });
 
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const token = await getToken({ req });
+  if (!token) return NextResponse.json({ error: "Non autorizzato" }, { status: 401 });
+
+  const { id } = await params;
+  const persona = await prisma.persona.findUnique({ where: { id: Number(id) } });
+  if (!persona) return NextResponse.json({ error: "Non trovata" }, { status: 404 });
+  return NextResponse.json(persona);
+}
+
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const token = await getToken({ req });
   if (!token) return NextResponse.json({ error: "Non autorizzato" }, { status: 401 });

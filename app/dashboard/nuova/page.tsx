@@ -10,7 +10,6 @@ type Persona = { id: number; nome: string; cognome: string; ruolo: string | null
 const TIPI: { value: TipoPratica; label: string; desc: string; emoji: string }[] = [
   { value: "SEGNALAZIONE", label: "Segnalazione cittadino", desc: "Il cittadino mi ha segnalato un problema", emoji: "📢" },
   { value: "MIA_IDEA", label: "Mia idea", desc: "Un'idea o proposta che voglio sviluppare", emoji: "💡" },
-  { value: "PROGETTO", label: "Progetto comunale", desc: "Un progetto già avviato da seguire", emoji: "🏗️" },
 ];
 
 async function comprimi(file: File): Promise<Blob> {
