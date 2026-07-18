@@ -45,10 +45,11 @@ function NuovaRiunioneContent() {
   const fermatoManualmente = useRef(true);
   // Testo finale già "committato" da sessioni di riconoscimento precedenti (prima di ogni pausa/riavvio).
   const finaleAccumulatoRef = useRef("");
-  // Testo finale della sessione di riconoscimento corrente, ricalcolato da zero ad ogni evento
-  // (mai accumulato in modo incrementale: alcuni browser rifirmano come "final" lo stesso risultato
-  // più volte in modalità continuous, e un append incrementale duplicherebbe le parole).
+  // Testo finale della sessione di riconoscimento corrente, ricalcolato da zero ad ogni evento.
   const sessioneFinaleRef = useRef("");
+  // Ultimo segmento effettivamente committato: su Android Chrome, in modalità continuous, lo stesso
+  // risultato viene talvolta rifirmato identico in sessioni consecutive — questo evita di ripeterlo.
+  const ultimoSegmentoCommitatoRef = useRef("");
 
   useEffect(() => {
     if (personaId) {
@@ -79,7 +80,11 @@ function NuovaRiunioneContent() {
     const RecognitionCtor = SpeechRecognition as new () => SpeechRecognitionLike;
     const recognition = new RecognitionCtor();
     recognition.lang = "it-IT";
-    recognition.continuous = true;
+    // `continuous: true` è inaffidabile su Chrome Android: il motore vocale tende a rifirmare come
+    // "final" lo stesso risultato più volte, producendo la parola ripetuta in loop. Con `continuous:
+    // false` ogni sessione cattura una singola frase e si conclude da sola; il riavvio immediato in
+    // onend simula il comportamento continuo senza incorrere nel bug.
+    recognition.continuous = false;
     recognition.interimResults = true;
 
     recognition.onresult = (e: unknown) => {
@@ -105,7 +110,13 @@ function NuovaRiunioneContent() {
     recognition.onend = () => {
       // Ogni sessione (anche i riavvii automatici) riparte con un array `results` vuoto:
       // prima di ripartire, il testo finale prodotto finora va "committato" nell'accumulo totale.
-      finaleAccumulatoRef.current = [finaleAccumulatoRef.current, sessioneFinaleRef.current].filter(Boolean).join(" ");
+      // Scarta il segmento se identico all'ultimo committato: capita che Chrome Android rifirmi
+      // la stessa frase in due sessioni consecutive senza nuovo parlato in mezzo.
+      const segmento = sessioneFinaleRef.current.trim();
+      if (segmento && segmento.toLowerCase() !== ultimoSegmentoCommitatoRef.current.toLowerCase()) {
+        finaleAccumulatoRef.current = [finaleAccumulatoRef.current, segmento].filter(Boolean).join(" ");
+        ultimoSegmentoCommitatoRef.current = segmento;
+      }
       sessioneFinaleRef.current = "";
       setFinale(finaleAccumulatoRef.current);
 
