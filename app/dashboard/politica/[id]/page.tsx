@@ -150,15 +150,12 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
     formData.append("ruolo", ruoloUpload);
     const res = await fetch(`/api/atti/${id}/documenti`, { method: "POST", body: formData });
     if (res.ok) {
-      const { documento, odgAvviso } = await res.json();
-      setAtto(a => a ? { ...a, documenti: [...a.documenti, documento] } : a);
-      if (odgAvviso) {
-        alert(odgAvviso);
-      } else if (ruoloUpload === "ORDINE_GIORNO") {
-        // ricarica per prendere l'odgTestoEstratto aggiornato dall'estrazione automatica
-        const r = await fetch(`/api/atti/${id}`);
-        if (r.ok) { const fresh = await r.json(); setAtto(fresh); setOdgTesto(fresh.odgTestoEstratto ?? ""); }
-      }
+      const { odgAvviso } = await res.json();
+      // Ricarica sempre l'atto intero: copre sia il caso singolo file sia lo zip (più documenti)
+      // e prende l'odgTestoEstratto aggiornato se l'estrazione automatica è partita.
+      const r = await fetch(`/api/atti/${id}`);
+      if (r.ok) { const fresh = await r.json(); setAtto(fresh); setOdgTesto(fresh.odgTestoEstratto ?? ""); }
+      if (odgAvviso) alert(odgAvviso);
     } else {
       const err = await res.json();
       alert(err.error ?? "Errore upload");
@@ -187,7 +184,7 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
     setRiEstraendoId(null);
     if (res.ok) {
       const aggiornato = await res.json();
-      setAtto(a => a ? { ...a, odgTestoEstratto: aggiornato.odgTestoEstratto } : a);
+      setAtto(aggiornato);
       setOdgTesto(aggiornato.odgTestoEstratto ?? "");
     } else {
       const err = await res.json().catch(() => ({}));
@@ -289,7 +286,7 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
             </select>
             <label className={`text-xs bg-blue-600 text-white px-2.5 py-1.5 rounded-lg cursor-pointer ${uploading ? "opacity-50" : "hover:bg-blue-700"}`}>
               {uploading ? "Caricamento…" : "📎 Aggiungi"}
-              <input type="file" accept=".pdf,.docx,.rtf,image/*" className="hidden" onChange={caricaDocumento} disabled={uploading} />
+              <input type="file" accept=".pdf,.docx,.rtf,.zip,image/*" className="hidden" onChange={caricaDocumento} disabled={uploading} />
             </label>
           </div>
         </div>
@@ -303,15 +300,13 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
                   📄 {d.nomeFile}
                 </a>
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 shrink-0">{RUOLO_LABEL[d.ruolo]}</span>
-                {d.ruolo === "ORDINE_GIORNO" && (
-                  <button
-                    onClick={() => riEstraiOdg(d.id)}
-                    disabled={riEstraendoId === d.id}
-                    className="text-xs text-blue-600 hover:underline shrink-0 disabled:opacity-50"
-                  >
-                    {riEstraendoId === d.id ? "…" : "🔄 Estrai"}
-                  </button>
-                )}
+                <button
+                  onClick={() => riEstraiOdg(d.id)}
+                  disabled={riEstraendoId === d.id}
+                  className="text-xs text-blue-600 hover:underline shrink-0 disabled:opacity-50"
+                >
+                  {riEstraendoId === d.id ? "…" : d.ruolo === "ORDINE_GIORNO" ? "🔄 Estrai" : "Estrai come ODG"}
+                </button>
                 <button onClick={() => eliminaDocumento(d.id)} className="text-xs text-red-500 hover:underline shrink-0">
                   Elimina
                 </button>
