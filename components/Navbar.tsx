@@ -15,25 +15,31 @@ const links = [
   { href: "/dashboard/riunioni", label: "Riunioni", icon: "🎙️" },
 ];
 
-// Voci secondarie — dentro il menu "Altro". Giustifiche si aggiungerà qui
-// quando quella sezione esisterà (fase successiva).
+// Voci secondarie — dentro il menu "Altro".
 const altroLinks = [
   { href: "/dashboard/appuntamenti", label: "Agenda", icon: "📅" },
   { href: "/dashboard/rubrica", label: "Rubrica", icon: "👥" },
   { href: "/dashboard/bandi", label: "Bandi", icon: "📢" },
   { href: "/dashboard/contestazioni", label: "Contestazioni", icon: "⚠️" },
+  { href: "/dashboard/giustifiche", label: "Giustifiche", icon: "📝" },
 ];
 
 export default function Navbar() {
   const pathname = usePathname();
   const [bandiBadge, setBandiBadge] = useState(0);
+  const [giustificheBadge, setGiustificheBadge] = useState(0);
   const [altroOpen, setAltroOpen] = useState(false);
   const altroRef = useRef<HTMLDivElement>(null);
+  const badgeTotale = bandiBadge + giustificheBadge;
 
   useEffect(() => {
     fetch("/api/bandi?stato=NUOVO")
       .then(r => r.ok ? r.json() : [])
       .then((data: unknown[]) => setBandiBadge(data.length))
+      .catch(() => {});
+    fetch("/api/giustifiche?visualizzata=false")
+      .then(r => r.ok ? r.json() : [])
+      .then((data: unknown[]) => setGiustificheBadge(data.length))
       .catch(() => {});
   }, [pathname]);
 
@@ -85,9 +91,9 @@ export default function Navbar() {
             >
               <span>⋯</span>
               Altro
-              {bandiBadge > 0 && (
-                <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                  {bandiBadge > 9 ? "9+" : bandiBadge}
+              {badgeTotale > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                  {badgeTotale > 9 ? "9+" : badgeTotale}
                 </span>
               )}
             </button>
@@ -106,6 +112,11 @@ export default function Navbar() {
                     {l.href === "/dashboard/bandi" && bandiBadge > 0 && (
                       <span className="ml-auto bg-blue-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
                         {bandiBadge > 9 ? "9+" : bandiBadge}
+                      </span>
+                    )}
+                    {l.href === "/dashboard/giustifiche" && giustificheBadge > 0 && (
+                      <span className="ml-auto bg-red-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                        {giustificheBadge > 9 ? "9+" : giustificheBadge}
                       </span>
                     )}
                   </Link>
@@ -145,9 +156,9 @@ export default function Navbar() {
         >
           <span className="text-lg">⋯</span>
           Altro
-          {bandiBadge > 0 && (
-            <span className="absolute top-1 right-1/4 bg-blue-600 text-white text-[9px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
-              {bandiBadge > 9 ? "9+" : bandiBadge}
+          {badgeTotale > 0 && (
+            <span className="absolute top-1 right-1/4 bg-red-600 text-white text-[9px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
+              {badgeTotale > 9 ? "9+" : badgeTotale}
             </span>
           )}
         </button>
@@ -174,6 +185,11 @@ export default function Navbar() {
                 {l.href === "/dashboard/bandi" && bandiBadge > 0 && (
                   <span className="ml-auto bg-blue-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
                     {bandiBadge > 9 ? "9+" : bandiBadge}
+                  </span>
+                )}
+                {l.href === "/dashboard/giustifiche" && giustificheBadge > 0 && (
+                  <span className="ml-auto bg-red-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                    {giustificheBadge > 9 ? "9+" : giustificheBadge}
                   </span>
                 )}
               </Link>

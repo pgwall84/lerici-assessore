@@ -247,6 +247,32 @@ model DocumentoContestazione {
 }
 
 // ---------------------------------------------------------------------------
+// GIUSTIFICA — checklist inoltro giustifiche al datore di lavoro
+// ---------------------------------------------------------------------------
+model Giustifica {
+  id              String                @id @default(cuid())
+  ufficioMittente String?
+  oggetto         String
+  dataRicezione   DateTime              @default(now())
+  inoltrata       Boolean               @default(false)
+  inoltrataAt     DateTime?
+  visualizzata    Boolean               @default(false)
+  visualizzataAt  DateTime?
+  documenti       DocumentoGiustifica[]
+  messageId       String?
+  createdAt       DateTime              @default(now())
+}
+
+model DocumentoGiustifica {
+  id           String     @id @default(cuid())
+  giustificaId String
+  giustifica   Giustifica @relation(fields: [giustificaId], references: [id], onDelete: Cascade)
+  nomeFile     String
+  storageUrl   String
+  createdAt    DateTime   @default(now())
+}
+
+// ---------------------------------------------------------------------------
 // BANDO — monitoraggio bandi pubblici rilevanti per le deleghe
 // ---------------------------------------------------------------------------
 model Bando {
