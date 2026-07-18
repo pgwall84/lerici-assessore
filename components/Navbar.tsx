@@ -5,13 +5,13 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useEffect, useRef, useState } from "react";
 
-// Voci principali — sempre visibili. La voce per Attività Politico-Amministrativa
-// si aggiungerà qui quando quella sezione esisterà (fase successiva).
+// Voci principali — sempre visibili.
 const links = [
   { href: "/dashboard", label: "Dashboard", icon: "📋" },
   { href: "/dashboard/nuova", label: "Nuova", icon: "➕" },
   { href: "/dashboard/import-mail", label: "Mail", icon: "📨" },
   { href: "/dashboard/progetti", label: "Progetti", icon: "📁" },
+  { href: "/dashboard/politica", label: "Politica", icon: "🏛️" },
   { href: "/dashboard/riunioni", label: "Riunioni", icon: "🎙️" },
 ];
 
@@ -28,6 +28,7 @@ export default function Navbar() {
   const pathname = usePathname();
   const [bandiBadge, setBandiBadge] = useState(0);
   const [giustificheBadge, setGiustificheBadge] = useState(0);
+  const [politicaBadge, setPoliticaBadge] = useState(0);
   const [altroOpen, setAltroOpen] = useState(false);
   const altroRef = useRef<HTMLDivElement>(null);
   const badgeTotale = bandiBadge + giustificheBadge;
@@ -40,6 +41,10 @@ export default function Navbar() {
     fetch("/api/giustifiche?visualizzata=false")
       .then(r => r.ok ? r.json() : [])
       .then((data: unknown[]) => setGiustificheBadge(data.length))
+      .catch(() => {});
+    fetch("/api/atti?visualizzato=false")
+      .then(r => r.ok ? r.json() : [])
+      .then((data: unknown[]) => setPoliticaBadge(data.length))
       .catch(() => {});
   }, [pathname]);
 
@@ -78,6 +83,11 @@ export default function Navbar() {
             >
               <span>{l.icon}</span>
               {l.label}
+              {l.href === "/dashboard/politica" && politicaBadge > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                  {politicaBadge > 9 ? "9+" : politicaBadge}
+                </span>
+              )}
             </Link>
           ))}
 
@@ -146,6 +156,11 @@ export default function Navbar() {
           >
             <span className="text-lg">{l.icon}</span>
             {l.label}
+            {l.href === "/dashboard/politica" && politicaBadge > 0 && (
+              <span className="absolute top-1 right-1/4 bg-red-600 text-white text-[9px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
+                {politicaBadge > 9 ? "9+" : politicaBadge}
+              </span>
+            )}
           </Link>
         ))}
         <button

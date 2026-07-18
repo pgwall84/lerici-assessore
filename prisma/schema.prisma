@@ -10,20 +10,20 @@ datasource db {
 // PRATICA — entità centrale del sistema
 // ---------------------------------------------------------------------------
 model Pratica {
-  id          Int          @id @default(autoincrement())
-  tipo        TipoPratica
-  delega      Delega
-  titolo      String
-  descrizione String?
-  luogo       String?
-  stato       StatoPratica @default(APERTA)
-  priorita    Priorita     @default(MEDIA)
+  id             Int          @id @default(autoincrement())
+  tipo           TipoPratica
+  delega         Delega
+  titolo         String
+  descrizione    String?
+  luogo          String?
+  stato          StatoPratica @default(APERTA)
+  priorita       Priorita     @default(MEDIA)
   protocollo     String?
   dataProtocollo String?
   messageId      String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  chiusaAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  chiusaAt       DateTime?
 
   segnalante   Segnalante?
   personaId    Int?
@@ -51,13 +51,13 @@ model Segnalante {
 // PERSONA — rubrica referenti (capisettore, esterni, cittadini ricorrenti)
 // ---------------------------------------------------------------------------
 model Persona {
-  id        Int       @id @default(autoincrement())
+  id        Int        @id @default(autoincrement())
   nome      String
   cognome   String
   ruolo     String?
   telefono  String?
   email     String?
-  createdAt DateTime  @default(now())
+  createdAt DateTime   @default(now())
   pratiche  Pratica[]
   progetti  Progetto[]
   riunioni  Riunione[]
@@ -273,25 +273,77 @@ model DocumentoGiustifica {
 }
 
 // ---------------------------------------------------------------------------
+// ATTO POLITICO-AMMINISTRATIVO — Giunta, Consiglio, Commissioni, Mozioni, Interrogazioni
+// ---------------------------------------------------------------------------
+model AttoPoliticoAmministrativo {
+  id                   String                       @id @default(cuid())
+  tipo                 TipoAtto
+  dataSeduta           DateTime?
+  oggetto              String
+  odgTestoEstratto     String?                      @db.Text
+  scadenzaRisposta     DateTime?
+  consiglioCollegatoId String?
+  consiglioCollegato   AttoPoliticoAmministrativo?  @relation("RispostaInConsiglio", fields: [consiglioCollegatoId], references: [id])
+  risposteCollegate    AttoPoliticoAmministrativo[] @relation("RispostaInConsiglio")
+  stato                StatoAtto                    @default(DA_ESAMINARE)
+  visualizzato         Boolean                      @default(false)
+  visualizzatoAt       DateTime?
+  documenti            DocumentoAtto[]
+  messageId            String?
+  createdAt            DateTime                     @default(now())
+  updatedAt            DateTime                     @updatedAt
+}
+
+enum TipoAtto {
+  CONVOCAZIONE_GIUNTA
+  CONVOCAZIONE_CONSIGLIO
+  CONVOCAZIONE_COMMISSIONE
+  MOZIONE
+  INTERROGAZIONE
+}
+
+enum StatoAtto {
+  DA_ESAMINARE
+  ESAMINATO
+  RISPOSTO
+  ARCHIVIATO
+}
+
+model DocumentoAtto {
+  id         String                     @id @default(cuid())
+  attoId     String
+  atto       AttoPoliticoAmministrativo @relation(fields: [attoId], references: [id], onDelete: Cascade)
+  nomeFile   String
+  storageUrl String
+  ruolo      RuoloDocumento             @default(PRATICA_ALLEGATA)
+  createdAt  DateTime                   @default(now())
+}
+
+enum RuoloDocumento {
+  ORDINE_GIORNO
+  PRATICA_ALLEGATA
+}
+
+// ---------------------------------------------------------------------------
 // BANDO — monitoraggio bandi pubblici rilevanti per le deleghe
 // ---------------------------------------------------------------------------
 model Bando {
-  id              String     @id @default(cuid())
-  titolo          String
-  ente            String
-  fonteUrl        String
-  bandoUrl        String?
-  descrizione     String?
-  dotazione       String?
-  beneficiari     String?
-  dataApertura    DateTime?
-  dataChiusura    DateTime?
-  delega          Delega?
-  hashContenuto   String     @unique
-  stato           StatoBando @default(NUOVO)
-  notificato      Boolean    @default(false)
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  id            String     @id @default(cuid())
+  titolo        String
+  ente          String
+  fonteUrl      String
+  bandoUrl      String?
+  descrizione   String?
+  dotazione     String?
+  beneficiari   String?
+  dataApertura  DateTime?
+  dataChiusura  DateTime?
+  delega        Delega?
+  hashContenuto String     @unique
+  stato         StatoBando @default(NUOVO)
+  notificato    Boolean    @default(false)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
 }
 
 enum StatoBando {
@@ -306,13 +358,13 @@ enum StatoBando {
 // UTENTE — solo Marco (sistema single-user)
 // ---------------------------------------------------------------------------
 model Utente {
-  id           Int      @id @default(autoincrement())
-  nome         String
-  email        String   @unique
-  passwordHash String
-  attivo       Boolean  @default(true)
+  id             Int      @id @default(autoincrement())
+  nome           String
+  email          String   @unique
+  passwordHash   String
+  attivo         Boolean  @default(true)
   telegramChatId BigInt?
-  createdAt    DateTime @default(now())
+  createdAt      DateTime @default(now())
 }
 
 // ---------------------------------------------------------------------------

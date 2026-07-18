@@ -41,3 +41,35 @@ export async function generaChecklist(trascrizioneGrezza: string): Promise<strin
     return [];
   }
 }
+
+const PROMPT_ODG = (testo: string) => `Sei un assistente che riformatta il testo grezzo di un ordine del giorno (estratto da un PDF o DOCX di convocazione) in un elenco puntato pulito.
+Dividi il testo in punti separati, uno per argomento all'ordine del giorno. Non riassumere, non generalizzare: mantieni intatti numeri di delibera, riferimenti normativi, nomi e importi esattamente come scritti.
+Ignora intestazioni, piè di pagina, numeri di pagina e altri elementi che non sono punti dell'ordine del giorno.
+Rispondi SOLO con un array JSON di stringhe, nessun altro testo.
+
+Testo: "${testo}"`;
+
+export async function riformattaOdg(testoGrezzo: string): Promise<string[]> {
+  const testo = testoGrezzo.trim().slice(0, 20000);
+  if (!testo) return [];
+
+  const msg = await getClient().messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 2048,
+    messages: [{ role: "user", content: PROMPT_ODG(testo) }],
+  });
+
+  const blocco = msg.content.find(b => b.type === "text");
+  if (!blocco || blocco.type !== "text") return [];
+
+  const match = blocco.text.match(/\[[\s\S]*\]/);
+  if (!match) return [];
+
+  try {
+    const parsed = JSON.parse(match[0]);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+  } catch {
+    return [];
+  }
+}
