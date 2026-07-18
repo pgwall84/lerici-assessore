@@ -43,12 +43,26 @@ export async function POST(req: NextRequest) {
 
   const { dataSeduta, scadenzaRisposta, ...rest } = parsed.data;
 
+  // Tentativo di collegamento automatico al prossimo Consiglio già importato con data nota.
+  // Se non se ne trova uno, il collegamento resta da fare a mano dalla scheda.
+  let consiglioCollegatoId = rest.consiglioCollegatoId;
+  if (!consiglioCollegatoId && (rest.tipo === "MOZIONE" || rest.tipo === "INTERROGAZIONE")) {
+    const daData = dataSeduta ? new Date(dataSeduta) : new Date();
+    const prossimoConsiglio = await prisma.attoPoliticoAmministrativo.findFirst({
+      where: { tipo: "CONVOCAZIONE_CONSIGLIO", dataSeduta: { gte: daData } },
+      orderBy: { dataSeduta: "asc" },
+    });
+    consiglioCollegatoId = prossimoConsiglio?.id;
+  }
+
   const atto = await prisma.attoPoliticoAmministrativo.create({
     data: {
       ...rest,
+      consiglioCollegatoId,
       ...(dataSeduta ? { dataSeduta: new Date(dataSeduta) } : {}),
       ...(scadenzaRisposta ? { scadenzaRisposta: new Date(scadenzaRisposta) } : {}),
     },
+    include: { consiglioCollegato: true },
   });
 
   return NextResponse.json(atto, { status: 201 });
