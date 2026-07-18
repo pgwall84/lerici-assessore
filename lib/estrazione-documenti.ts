@@ -1,4 +1,20 @@
 import mammoth from "mammoth";
+import AdmZip from "adm-zip";
+
+const REGEX_ODG = /ordine.?del.?giorno|^odg|o\.d\.g/i;
+
+export function estraiVociZip(buffer: Buffer): { nomeFile: string; buffer: Buffer }[] {
+  const zip = new AdmZip(buffer);
+  return zip.getEntries()
+    .filter(e => !e.isDirectory)
+    .map(e => ({ nomeFile: e.entryName.split("/").pop() ?? e.entryName, buffer: e.getData() }));
+}
+
+/** Individua l'unico file dello zip il cui nome corrisponde all'euristica ODG, se univoco. */
+export function trovaOdgInZip(voci: { nomeFile: string }[]): number | null {
+  const candidati = voci.map((v, i) => ({ i, match: REGEX_ODG.test(v.nomeFile) })).filter(v => v.match);
+  return candidati.length === 1 ? candidati[0].i : null;
+}
 
 export async function estraiTestoDaFile(buffer: Buffer, nomeFile: string): Promise<string> {
   const ext = nomeFile.toLowerCase().split(".").pop() ?? "";

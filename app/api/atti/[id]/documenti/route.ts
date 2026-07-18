@@ -2,10 +2,38 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { supabase } from "@/lib/supabase";
-import { estraiTestoDaFile } from "@/lib/estrazione-documenti";
+import { estraiTestoDaFile, estraiVociZip, trovaOdgInZip } from "@/lib/estrazione-documenti";
 import { riformattaOdg } from "@/lib/claude";
+import type { RuoloDocumento } from "@prisma/client";
 
 const BUCKET = "foto";
+
+async function caricaESalva(attoId: string, buffer: Buffer, nomeFile: string, ruolo: RuoloDocumento) {
+  const ext = nomeFile.includes(".") ? nomeFile.split(".").pop() : "bin";
+  const filename = `atto-${attoId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error } = await supabase.storage.from(BUCKET).upload(filename, buffer, { upsert: false });
+  if (error) throw new Error(error.message);
+  const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(filename);
+  return prisma.documentoAtto.create({ data: { attoId, nomeFile, storageUrl: publicUrl, ruolo } });
+}
+
+// Estrae il testo dal buffer e aggiorna odgTestoEstratto sull'atto; ritorna un avviso se qualcosa non va,
+// senza mai bloccare il caricamento del documento.
+async function provaEstraiOdg(attoId: string, buffer: Buffer, nomeFile: string): Promise<string | undefined> {
+  try {
+    const testoGrezzo = await estraiTestoDaFile(buffer, nomeFile);
+    if (!testoGrezzo) return "Formato file non supportato per l'estrazione automatica (solo PDF e DOCX) — il documento resta comunque caricato.";
+    const punti = await riformattaOdg(testoGrezzo);
+    if (punti.length === 0) return "Testo estratto dal file ma la riformattazione non ha prodotto punti — riprova dalla scheda.";
+    await prisma.attoPoliticoAmministrativo.update({
+      where: { id: attoId },
+      data: { odgTestoEstratto: punti.map(p => `- ${p}`).join("\n") },
+    });
+    return undefined;
+  } catch (e) {
+    return e instanceof Error ? e.message : "Errore nell'estrazione automatica dell'ODG.";
+  }
+}
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const token = await getToken({ req });
@@ -15,50 +43,43 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
-  const ruolo = (formData.get("ruolo") as string) || "PRATICA_ALLEGATA";
+  const ruolo = ((formData.get("ruolo") as string) || "PRATICA_ALLEGATA") as RuoloDocumento;
   if (!file) return NextResponse.json({ error: "Nessun file" }, { status: 400 });
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const contentType = file.type || "application/octet-stream";
-  const ext = file.name.includes(".") ? file.name.split(".").pop() : "bin";
-  const filename = `atto-${id}-${Date.now()}.${ext}`;
 
-  const { error } = await supabase.storage.from(BUCKET).upload(filename, buffer, {
-    contentType,
-    upsert: false,
-  });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  // Convocazione di Consiglio: lo zip contiene ODG + pratiche allegate. Si scompatta,
+  // si individua l'ODG per euristica sul nome file (se univoca) e si carica tutto il resto
+  // come pratica allegata, senza estrazione testo.
+  if (file.name.toLowerCase().endsWith(".zip")) {
+    let voci;
+    try {
+      voci = estraiVociZip(buffer);
+    } catch {
+      return NextResponse.json({ error: "Zip non valido o corrotto" }, { status: 400 });
+    }
+    if (voci.length === 0) return NextResponse.json({ error: "Zip vuoto" }, { status: 400 });
 
-  const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(filename);
+    const indiceOdg = trovaOdgInZip(voci);
+    const documenti = await Promise.all(
+      voci.map((v, i) => caricaESalva(id, v.buffer, v.nomeFile, i === indiceOdg ? "ORDINE_GIORNO" : "PRATICA_ALLEGATA"))
+    );
 
-  const documento = await prisma.documentoAtto.create({
-    data: { attoId: id, nomeFile: file.name, storageUrl: publicUrl, ruolo: ruolo as never },
-  });
+    let odgAvviso: string | undefined;
+    if (indiceOdg !== null) {
+      odgAvviso = await provaEstraiOdg(id, voci[indiceOdg].buffer, voci[indiceOdg].nomeFile);
+    } else {
+      odgAvviso = `Nessun file dello zip corrisponde in modo univoco al pattern "ordine del giorno" — scegli tu quale file è l'ODG usando "Estrai come ODG" sul documento giusto qui sotto.`;
+    }
+
+    return NextResponse.json({ documenti, odgAvviso }, { status: 201 });
+  }
+
+  const documento = await caricaESalva(id, buffer, file.name, ruolo);
 
   let odgAvviso: string | undefined;
-
-  // Se è l'ordine del giorno, prova subito l'estrazione automatica del testo.
-  // Errori (formato non supportato, chiave Claude mancante, ecc.) non bloccano l'upload:
-  // il documento resta comunque caricato e scaricabile, l'estrazione si può riprovare a mano.
   if (ruolo === "ORDINE_GIORNO") {
-    try {
-      const testoGrezzo = await estraiTestoDaFile(buffer, file.name);
-      if (testoGrezzo) {
-        const punti = await riformattaOdg(testoGrezzo);
-        if (punti.length > 0) {
-          await prisma.attoPoliticoAmministrativo.update({
-            where: { id },
-            data: { odgTestoEstratto: punti.map(p => `- ${p}`).join("\n") },
-          });
-        } else {
-          odgAvviso = "Testo estratto dal file ma la riformattazione non ha prodotto punti — riprova dalla scheda.";
-        }
-      } else {
-        odgAvviso = "Formato file non supportato per l'estrazione automatica (solo PDF e DOCX) — il documento resta comunque caricato.";
-      }
-    } catch (e) {
-      odgAvviso = e instanceof Error ? e.message : "Errore nell'estrazione automatica dell'ODG.";
-    }
+    odgAvviso = await provaEstraiOdg(id, buffer, file.name);
   }
 
   return NextResponse.json({ documento, odgAvviso }, { status: 201 });

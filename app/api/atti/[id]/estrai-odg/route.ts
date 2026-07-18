@@ -34,6 +34,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Nessun punto estratto dal testo" }, { status: 422 });
   }
 
+  // Chiamare "estrai" su un documento lo designa come l'ODG, anche se caricato come pratica allegata
+  // (es. scelta manuale dopo uno zip ambiguo).
+  await prisma.documentoAtto.update({ where: { id: documentoId }, data: { ruolo: "ORDINE_GIORNO" } });
+
   const atto = await prisma.attoPoliticoAmministrativo.update({
     where: { id },
     data: { odgTestoEstratto: punti.map(p => `- ${p}`).join("\n") },
