@@ -1,0 +1,122 @@
+---
+name: note-tecniche
+description: "Scoperte tecniche e gotcha emersi durante sviluppo/debug — da consultare prima di rifare cose simili"
+metadata:
+  node_type: note
+  project: lerici-assessore
+  aggiornato: 2026-07-19
+---
+
+# Note tecniche — scoperte importanti
+
+Raccolta di problemi reali incontrati e come sono stati risolti, per non riscoprirli da capo.
+
+---
+
+## 1. Vercel: le Environment Variables della dashboard vincono sempre sui file `.env.production` locali
+
+Se una variabile (es. `GOOGLE_REFRESH_TOKEN`) è già registrata nelle Environment Variables del progetto su Vercel (dashboard o `vercel env add`), quel valore ha **sempre priorità** su quanto scritto nel file `.env.production` locale, anche quando si fa `vercel --prod` dalla cartella del progetto. Il file locale viene caricato da Next.js solo per le variabili che Vercel *non* ha già impostato lui stesso a livello di piattaforma.
+
+**Conseguenza pratica**: aggiornare `.env.production` in locale e rideployare **non basta** per una variabile già presente su Vercel — bisogna aggiornarla lì:
+
+```bash
+npx vercel env rm NOME_VARIABILE production --yes
+printf '%s' "$VALORE" | npx vercel env add NOME_VARIABILE production
+npx vercel --prod
+```
+
+**Come verificare cosa è già registrato**: `npx vercel env ls production` — controlla la colonna "created" per capire se un valore è vecchio/stantio.
+
+Questo ha causato un bug reale: il refresh token Google era stato rigenerato e corretto nei file locali, ma l'app in produzione continuava a fallire con `invalid_grant` perché Vercel aveva un valore di 11 giorni prima.
+
+---
+
+## 2. `dotenv/config` di default carica solo `.env`, mai `.env.local`
+
+`import "dotenv/config"` (o `require("dotenv/config")`) carica **esclusivamente** il file `.env`. Next.js ha invece una sua logica di caricamento a cascata (`.env.local` > `.env.production`/`.env.development` > `.env`) che **non si applica automaticamente** agli script lanciati con `tsx`/`ts-node`.
+
+Per script one-off che devono usare le stesse credenziali di sviluppo (`.env.local`):
+
+```ts
+import { config } from "dotenv";
+config({ path: ".env.local", override: true });
+```
+
+`override: true` è necessario perché dotenv di default non sovrascrive variabili già presenti in `process.env`.
+
+---
+
+## 3. Supabase Storage: senza `contentType` esplicito, tutto diventa `text/plain`
+
+`.upload(filename, buffer, { upsert: false })` **senza** l'opzione `contentType` salva l'oggetto con Content-Type `text/plain;charset=UTF-8` di default — anche se il contenuto è un PDF o un'immagine perfettamente validi. I byte restano intatti (niente corruzione), ma il browser non li apre correttamente (schermo nero nel viewer PDF).
+
+**Fix**: passare sempre `contentType` esplicito. Helper condiviso in `lib/estrazione-documenti.ts`:
+
+```ts
+export function contentTypeDaNomeFile(nomeFile: string): string { ... }
+```
+
+usato in tutti i punti che caricano file su Storage (`app/api/atti/[id]/documenti`, `app/api/import-mail`, `lib/import-automatico.ts`, ecc.).
+
+---
+
+## 4. La CDN Cloudflare davanti a Supabase Storage mantiene cache per 1h anche dopo un update
+
+Gli URL pubblici di Supabase Storage passano da Cloudflare (`cache-control: public, max-age=3600`, header `cf-cache-status: HIT`). Se si corregge un file **sullo stesso path** (via `.update()` o `.upload(..., {upsert:true})`), i client continuano a ricevere la versione vecchia dalla cache CDN per un'ora, anche subito dopo la scrittura lato origin.
+
+**Fix affidabile**: per correggere un file già pubblicato, caricarlo su un **path nuovo** (nome file diverso) e aggiornare l'URL salvato nel DB, invece di sovrascrivere lo stesso path. Il vecchio oggetto può poi essere rimosso.
+
+---
+
+## 5. `pdf-parse` v2 rompe su Vercel con `DOMMatrix is not defined`
+
+`pdf-parse` v2.x dipende da `@napi-rs/canvas` (binario nativo compilato) per alcune funzionalità di `pdfjs-dist`. In ambiente serverless Vercel questo binario nativo non si carica sempre in modo affidabile, e `pdfjs-dist` cade in un percorso di codice che richiede `DOMMatrix` — un'API del browser, inesistente in Node.js puro.
+
+**Fix**: sceso a `pdf-parse` v1.1.4 (`npm install pdf-parse@1.1.4 -D @types/pdf-parse`) — libreria pura JS, nessuna dipendenza canvas/DOM, sufficiente perché serve solo estrazione testo (non rendering pagina). API diversa da v2:
+
+```ts
+// v1 (attuale)
+const pdf = (await import("pdf-parse")).default;
+const result = await pdf(buffer);
+result.text
+
+// v2 (abbandonata per questo motivo)
+const { PDFParse } = await import("pdf-parse");
+const parser = new PDFParse({ data: buffer });
+const result = await parser.getText();
+await parser.destroy();
+```
+
+---
+
+## 6. Euristica ODG: allegati sciolti nella stessa mail vanno trattati come lo zip, non come "il documento è sempre l'ODG"
+
+Le convocazioni di Consiglio non arrivano sempre come un unico zip: a volte la PEC ha più PDF separati come allegati diretti (es. convocazione + verbale + più mozioni nella stessa mail). Il primo codice trattava *ogni* allegato non-zip come automaticamente l'ordine del giorno — con 5 allegati, finivano tutti marcati ORDINE_GIORNO.
+
+**Fix**: unire zip-espansi e allegati sciolti in un'unica lista di candidati, applicare la stessa euristica per nome file (`trovaOdgInZip`, funziona su qualunque lista di `{nomeFile}`) una sola volta su tutto l'insieme. Se il match non è univoco, **non indovinare**: tutto resta `PRATICA_ALLEGATA`, scelta manuale con "Estrai come ODG".
+
+---
+
+## 7. Etichetta "Importata" va applicata solo dopo la scrittura DB confermata
+
+Nel binario automatico (`lib/import-automatico.ts`), `marcaImportata(messageId)` deve stare **sempre dopo** la creazione/aggiornamento DB andata a buon fine, dentro lo stesso `try`. Se un passaggio intermedio (es. estrazione ODG via Claude) può fallire, va **catturato internamente** (try/catch che non rilancia) — altrimenti l'eccezione risale, salta la `marcaImportata`, ma nel frattempo può aver già creato righe DB parziali → record orfani o mail bloccate in un limbo (né importate né riprovabili puliti).
+
+Verifica pratica per controllare se il binario automatico ha lasciato scarti: confrontare i `messageId` con etichetta "Importata" su Gmail contro quelli effettivamente presenti nel DB.
+
+---
+
+## 8. Gmail: le etichette annidate sono indipendenti dal genitore
+
+Una mail etichettata solo `Giunta/Verbali` **non** viene trovata da una query `label:Giunta` — le sotto-etichette Gmail (naming con "/") non implicano automaticamente anche l'etichetta padre. Utile saperlo quando si migrano flussi da un'etichetta flat a sotto-etichette dedicate: il codice deve puntare esplicitamente alla sotto-etichetta.
+
+---
+
+## 9. Match verbale → convocazione: mai "il più recente", sempre per numero di seduta
+
+Il primo tentativo agganciava un verbale di Giunta alla convocazione "non archiviata più recente" — rischiando di archiviare la seduta sbagliata se l'ordine di elaborazione non coincideva con l'ordine cronologico reale. Fix: estrarre il numero di seduta dall'oggetto (regex `n\.?\s*(\d+)`) e cercare la convocazione con lo stesso numero; se non si trova, creare una scheda minimale separata invece di indovinare.
+
+---
+
+## 10. Bash tool su Windows: la working directory non è sempre quella attesa
+
+Alcuni comandi eseguiti senza `cd` esplicito sono partiti dalla cartella padre (`C:\Users\pgwal\Cloude`) invece che dal progetto (`...\Cloude\lerici-assessore`) — ha causato un `npm install` finito nel posto sbagliato (pacchetto installato ma mai aggiunto al `package.json` del progetto) e uno script scritto in una cartella inesistente. **Prassi adottata**: prefissare sempre i comandi rilevanti con `cd /c/Users/pgwal/Cloude/lerici-assessore &&` invece di fare affidamento sulla cwd persistita tra le chiamate.
