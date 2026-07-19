@@ -51,16 +51,18 @@ model Segnalante {
 // PERSONA — rubrica referenti (capisettore, esterni, cittadini ricorrenti)
 // ---------------------------------------------------------------------------
 model Persona {
-  id        Int        @id @default(autoincrement())
-  nome      String
-  cognome   String
-  ruolo     String?
-  telefono  String?
-  email     String?
-  createdAt DateTime   @default(now())
-  pratiche  Pratica[]
-  progetti  Progetto[]
-  riunioni  Riunione[]
+  id              Int        @id @default(autoincrement())
+  nome            String
+  cognome         String
+  ruolo           String?
+  telefono        String?
+  email           String?
+  emailSecondaria String?
+  azienda         String?
+  createdAt       DateTime   @default(now())
+  pratiche        Pratica[]
+  progetti        Progetto[]
+  riunioni        Riunione[]
 }
 
 // ---------------------------------------------------------------------------
@@ -183,6 +185,7 @@ model Riunione {
   progetto           Progetto?           @relation(fields: [progettoId], references: [id])
   dataOra            DateTime?
   stato              StatoRiunione       @default(IN_PREPARAZIONE)
+  priorita           Priorita?
   trascrizioneGrezza String?             @db.Text
   argomenti          ArgomentoRiunione[]
   createdAt          DateTime            @default(now())
@@ -286,6 +289,7 @@ model AttoPoliticoAmministrativo {
   consiglioCollegato   AttoPoliticoAmministrativo?  @relation("RispostaInConsiglio", fields: [consiglioCollegatoId], references: [id])
   risposteCollegate    AttoPoliticoAmministrativo[] @relation("RispostaInConsiglio")
   stato                StatoAtto                    @default(DA_ESAMINARE)
+  priorita             Priorita?
   visualizzato         Boolean                      @default(false)
   visualizzatoAt       DateTime?
   documenti            DocumentoAtto[]

@@ -2,29 +2,13 @@
 
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
-import type { AttoPoliticoAmministrativo, DocumentoAtto, RuoloDocumento, StatoAtto, TipoAtto } from "@prisma/client";
+import { TIPO_ATTO_LABEL, STATO_ATTO_LABEL, STATO_ATTO_COLORE, PRIORITA_LABEL } from "@/lib/constants";
+import { PrioritaBadge } from "@/components/PrioritaBadge";
+import type { AttoPoliticoAmministrativo, DocumentoAtto, Priorita, RuoloDocumento, StatoAtto } from "@prisma/client";
 
-const TIPO_LABEL: Record<TipoAtto, string> = {
-  CONVOCAZIONE_GIUNTA: "Convocazione Giunta",
-  CONVOCAZIONE_CONSIGLIO: "Convocazione Consiglio",
-  CONVOCAZIONE_COMMISSIONE: "Convocazione Commissione",
-  MOZIONE: "Mozione",
-  INTERROGAZIONE: "Interrogazione",
-};
-
-const STATO_LABEL: Record<StatoAtto, string> = {
-  DA_ESAMINARE: "Da esaminare",
-  ESAMINATO: "Esaminato",
-  RISPOSTO: "Risposto",
-  ARCHIVIATO: "Archiviato",
-};
-
-const STATO_COLORE: Record<StatoAtto, string> = {
-  DA_ESAMINARE: "bg-yellow-100 text-yellow-800",
-  ESAMINATO: "bg-blue-100 text-blue-700",
-  RISPOSTO: "bg-green-100 text-green-800",
-  ARCHIVIATO: "bg-gray-100 text-gray-500",
-};
+const TIPO_LABEL = TIPO_ATTO_LABEL;
+const STATO_LABEL = STATO_ATTO_LABEL;
+const STATO_COLORE = STATO_ATTO_COLORE;
 
 const STATI: StatoAtto[] = ["DA_ESAMINARE", "ESAMINATO", "RISPOSTO", "ARCHIVIATO"];
 
@@ -50,7 +34,7 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
   const [riEstraendoId, setRiEstraendoId] = useState<string | null>(null);
   const [consigli, setConsigli] = useState<{ id: string; oggetto: string }[]>([]);
   const [modificaMode, setModificaMode] = useState(false);
-  const [formModifica, setFormModifica] = useState({ oggetto: "", dataSeduta: "", scadenzaRisposta: "" });
+  const [formModifica, setFormModifica] = useState({ oggetto: "", dataSeduta: "", scadenzaRisposta: "", priorita: "" as Priorita | "" });
 
   useEffect(() => {
     fetch(`/api/atti/${id}`)
@@ -113,6 +97,7 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
       oggetto: atto.oggetto,
       dataSeduta: atto.dataSeduta ? new Date(atto.dataSeduta).toISOString().slice(0, 10) : "",
       scadenzaRisposta: atto.scadenzaRisposta ? new Date(atto.scadenzaRisposta).toISOString().slice(0, 10) : "",
+      priorita: atto.priorita ?? "",
     });
     setModificaMode(true);
   }
@@ -125,6 +110,7 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
         oggetto: formModifica.oggetto,
         dataSeduta: formModifica.dataSeduta ? new Date(formModifica.dataSeduta).toISOString() : null,
         scadenzaRisposta: formModifica.scadenzaRisposta ? new Date(formModifica.scadenzaRisposta).toISOString() : null,
+        priorita: formModifica.priorita || null,
       }),
     });
     if (res.ok) {
@@ -227,6 +213,7 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
         <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">
           {TIPO_LABEL[atto.tipo]}
         </span>
+        <PrioritaBadge priorita={atto.priorita} />
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-2 text-sm">
@@ -368,6 +355,19 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
                 />
               </div>
             )}
+            <div>
+              <label className="text-xs text-gray-500">Priorità</label>
+              <select
+                value={formModifica.priorita}
+                onChange={e => setFormModifica(f => ({ ...f, priorita: e.target.value as Priorita | "" }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Non specificata</option>
+                {(Object.keys(PRIORITA_LABEL) as Priorita[]).map(p => (
+                  <option key={p} value={p}>{PRIORITA_LABEL[p]}</option>
+                ))}
+              </select>
+            </div>
             <div className="flex gap-2 pt-2">
               <button onClick={() => setModificaMode(false)} className="flex-1 border border-gray-300 rounded-lg py-2 text-sm text-gray-600">
                 Annulla

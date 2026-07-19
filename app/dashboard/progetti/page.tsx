@@ -2,25 +2,16 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { DELEGHE_LABEL } from "@/lib/constants";
+import {
+  DELEGHE_LABEL, STATO_PROGETTO_LABEL, STATO_PROGETTO_COLORE,
+  STATI_PROGETTO_OPERATIVA, STATI_PROGETTO_ARCHIVIO,
+} from "@/lib/constants";
 import type { Delega, DocumentoProgetto, NotaProgetto, Progetto, StatoProgetto } from "@prisma/client";
 
-const STATO_LABEL: Record<StatoProgetto, string> = {
-  IN_CORSO: "In corso",
-  SOSPESO: "Sospeso",
-  CONCLUSO: "Concluso",
-  ARCHIVIATO: "Archiviato",
-};
-
-const STATO_COLORE: Record<StatoProgetto, string> = {
-  IN_CORSO: "bg-yellow-100 text-yellow-800",
-  SOSPESO: "bg-gray-100 text-gray-600",
-  CONCLUSO: "bg-green-100 text-green-800",
-  ARCHIVIATO: "bg-gray-100 text-gray-500",
-};
-
-const STATI_OPERATIVA: StatoProgetto[] = ["IN_CORSO", "SOSPESO"];
-const STATI_ARCHIVIO: StatoProgetto[] = ["CONCLUSO", "ARCHIVIATO"];
+const STATO_LABEL = STATO_PROGETTO_LABEL;
+const STATO_COLORE = STATO_PROGETTO_COLORE;
+const STATI_OPERATIVA = STATI_PROGETTO_OPERATIVA;
+const STATI_ARCHIVIO = STATI_PROGETTO_ARCHIVIO;
 
 type ProgettoCard = Progetto & {
   responsabile: { nome: string; cognome: string } | null;
@@ -33,6 +24,15 @@ export default function ProgettiPage() {
   const [loading, setLoading] = useState(true);
   const [vista, setVista] = useState<"operativa" | "archivio">("operativa");
   const [filtroDelega, setFiltroDelega] = useState<Delega | "">("");
+  const [filtroStato, setFiltroStato] = useState<StatoProgetto | "">("");
+  const [vistaCompatta, setVistaCompatta] = useState(() => {
+    if (typeof window !== "undefined") return localStorage.getItem("vistaCompattaProgetti") === "1";
+    return false;
+  });
+
+  function toggleVista() {
+    setVistaCompatta(v => { localStorage.setItem("vistaCompattaProgetti", v ? "0" : "1"); return !v; });
+  }
 
   useEffect(() => {
     fetch("/api/progetti")
@@ -58,9 +58,17 @@ export default function ProgettiPage() {
   const totaleOperativa = progetti.filter(p => STATI_OPERATIVA.includes(p.stato)).length;
   const totaleArchivio = progetti.filter(p => STATI_ARCHIVIO.includes(p.stato)).length;
 
-  const progettiFiltrati = filtroDelega
-    ? progettiVista.filter(p => p.delega === filtroDelega)
-    : progettiVista;
+  const progettiFiltrati = progettiVista.filter(p =>
+    (!filtroDelega || p.delega === filtroDelega) &&
+    (!filtroStato || p.stato === filtroStato)
+  );
+
+  function esporta(formato: "xlsx" | "pdf") {
+    const params = new URLSearchParams({ vista, formato });
+    if (filtroDelega) params.set("delega", filtroDelega);
+    if (filtroStato) params.set("stato", filtroStato);
+    window.open(`/api/progetti/export?${params}`, "_blank");
+  }
 
   return (
     <div className="flex gap-0 md:gap-5 pb-32">
@@ -111,7 +119,7 @@ export default function ProgettiPage() {
         {/* Tab Operativa / Archivio */}
         <div className="flex gap-2">
           <button
-            onClick={() => { setVista("operativa"); }}
+            onClick={() => { setVista("operativa"); setFiltroStato(""); }}
             className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors
               ${vista === "operativa" ? "bg-blue-600 text-white shadow-sm" : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"}`}
           >
@@ -121,7 +129,7 @@ export default function ProgettiPage() {
             </span>
           </button>
           <button
-            onClick={() => { setVista("archivio"); }}
+            onClick={() => { setVista("archivio"); setFiltroStato(""); }}
             className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors
               ${vista === "archivio" ? "bg-gray-700 text-white shadow-sm" : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"}`}
           >
@@ -157,6 +165,33 @@ export default function ProgettiPage() {
           })}
         </div>
 
+        {/* Filtri */}
+        <div className="bg-white rounded-xl border border-gray-200 p-3">
+          <div className="flex gap-2 flex-wrap items-center">
+            <select
+              value={filtroStato}
+              onChange={e => setFiltroStato(e.target.value as StatoProgetto | "")}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+            >
+              <option value="">Tutti gli stati</option>
+              {statiDelVista.map(s => (
+                <option key={s} value={s}>{STATO_LABEL[s]}</option>
+              ))}
+            </select>
+            <div className="ml-auto flex gap-1.5">
+              <button onClick={toggleVista} className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${vistaCompatta ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"}`}>
+                ☰
+              </button>
+              <button onClick={() => esporta("xlsx")} className="text-xs px-2.5 py-1.5 rounded-lg bg-green-50 text-green-700 border border-green-200 hover:bg-green-100">
+                📊
+              </button>
+              <button onClick={() => esporta("pdf")} className="text-xs px-2.5 py-1.5 rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100">
+                📄
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Lista */}
         {loading ? (
           <div className="text-center py-16 text-gray-400">Caricamento…</div>
@@ -164,6 +199,24 @@ export default function ProgettiPage() {
           <div className="text-center py-16 text-gray-400">
             <p className="text-4xl mb-3">📁</p>
             <p>Nessun progetto trovato</p>
+          </div>
+        ) : vistaCompatta ? (
+          <div className="divide-y divide-gray-100 bg-white rounded-xl border border-gray-200 overflow-hidden">
+            {progettiFiltrati.map(p => (
+              <Link
+                key={p.id}
+                href={`/dashboard/progetti/${p.id}`}
+                className="flex items-center gap-2 px-3 py-2 hover:bg-blue-50 transition-colors"
+              >
+                <span className="font-medium text-gray-900 text-sm truncate flex-1">{p.titolo}</span>
+                <span className="text-xs text-gray-400 truncate hidden sm:block max-w-xs shrink-0">
+                  {DELEGHE_LABEL[p.delega]}
+                </span>
+                <span className={`shrink-0 text-xs px-2 py-0.5 rounded font-medium ${STATO_COLORE[p.stato]}`}>
+                  {STATO_LABEL[p.stato]}
+                </span>
+              </Link>
+            ))}
           </div>
         ) : (
           <div className="space-y-3">

@@ -9,6 +9,8 @@ const schema = z.object({
   ruolo: z.string().optional(),
   telefono: z.string().optional(),
   email: z.string().email().optional().or(z.literal("")),
+  emailSecondaria: z.string().email().optional().or(z.literal("")),
+  azienda: z.string().optional(),
 });
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

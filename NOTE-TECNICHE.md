@@ -120,3 +120,25 @@ Il primo tentativo agganciava un verbale di Giunta alla convocazione "non archiv
 ## 10. Bash tool su Windows: la working directory non è sempre quella attesa
 
 Alcuni comandi eseguiti senza `cd` esplicito sono partiti dalla cartella padre (`C:\Users\pgwal\Cloude`) invece che dal progetto (`...\Cloude\lerici-assessore`) — ha causato un `npm install` finito nel posto sbagliato (pacchetto installato ma mai aggiunto al `package.json` del progetto) e uno script scritto in una cartella inesistente. **Prassi adottata**: prefissare sempre i comandi rilevanti con `cd /c/Users/pgwal/Cloude/lerici-assessore &&` invece di fare affidamento sulla cwd persistita tra le chiamate.
+
+---
+
+## 11. Zod: `.email().optional()` rifiuta la stringa vuota — serve `.or(z.literal(""))`
+
+Un campo opzionale nel form ("" quando non compilato) fatto validare con `z.string().email().optional()` **fallisce** se il valore è `""`: `.optional()` accetta solo `undefined`, non stringa vuota, e `""` non è un'email valida. Causava un 400 silenzioso su `POST /api/persone` ogni volta che si creava un contatto senza email (comune, dato che è un campo facoltativo).
+
+**Fix**: `.email().optional().or(z.literal(""))`, poi normalizzare `""` → `null` prima di scrivere su Prisma (pattern già usato in `PATCH /api/persone/[id]`, esteso anche al `POST`). Da applicare a qualunque campo email/url opzionale nuovo.
+
+---
+
+## 12. Connessione diretta Supabase (porta 5432 su `db.xxx.supabase.co`) spesso irraggiungibile — usare il session pooler per le migration
+
+La connessione diretta (`db.xxx.supabase.co:5432`, quella in `.env`/`.env.production`) risulta irraggiungibile sia dalla sandbox agente sia, risulta, da altre reti (probabile restrizione IPv6-only lato Supabase senza l'add-on IPv4) — dà `P1001` o timeout totale. Anche il **transaction pooler** di `.env.local` (`aws-1-eu-central-1.pooler.supabase.com:6543`, `pgbouncer=true`) non va bene per le migration: pgbouncer in transaction mode non supporta i lock/prepared statement che `prisma migrate` usa.
+
+**Fix che funziona**: usare il **session pooler**, stesso host del transaction pooler ma **porta 5432** e **senza** `?pgbouncer=true`:
+```
+postgresql://postgres.xuemeeudiomtvjdqbkwg:PASSWORD@aws-1-eu-central-1.pooler.supabase.com:5432/postgres
+```
+Con questa stringa (via `$env:DATABASE_URL`/`export DATABASE_URL=...` prima del comando, dato che `prisma.config.ts` carica solo `.env`) sia `prisma migrate deploy` che `prisma migrate status` funzionano regolarmente. `npx prisma generate` invece non richiede mai rete (legge solo lo schema).
+
+**Nota collaterale trovata il 2026-07-19**: la migration `20260707000000_add_protocollo` risultava nel repo ma mai applicata a questo DB (drift — probabilmente la colonna era stata aggiunta a mano o con `db push` senza passare da `migrate`). Sintomo: `P3018` con `column "protocollo" ... already exists`. Risolto con `prisma migrate resolve --applied <nome_migrazione>` (operazione solo sui metadati di Prisma, non tocca lo schema reale) prima di ripetere `migrate deploy` per le migration successive.

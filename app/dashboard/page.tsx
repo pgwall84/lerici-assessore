@@ -6,6 +6,7 @@ import {
   DELEGHE_LABEL, STATO_COLORE, STATO_LABEL, TIPO_COLORE, TIPO_LABEL,
   PRIORITA_LABEL, PRIORITA_COLORE, STATI_OPERATIVA, STATI_ARCHIVIO,
 } from "@/lib/constants";
+import { ordinaPerPriorita } from "@/lib/ordinamento";
 import type { Delega, Pratica, Priorita, StatoPratica, TipoPratica } from "@prisma/client";
 
 type PraticaCard = Pratica & {
@@ -69,19 +70,14 @@ export default function DashboardPage() {
   const statVista = stats[vista];
   const totaleVista = Object.values(statVista).reduce((a, b) => a + b, 0);
 
-  const PRIORITA_ORDINE: Record<Priorita, number> = { ALTA: 0, MEDIA: 1, BASSA: 2 };
-
-  const praticheOrdinate = [...pratiche].sort((a, b) => {
-    if (ordinamento === "priorita") {
-      const diff = PRIORITA_ORDINE[a.priorita] - PRIORITA_ORDINE[b.priorita];
-      if (diff !== 0) return diff;
-      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-    }
-    if (ordinamento === "vecchia") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-    if (ordinamento === "stato") return a.stato.localeCompare(b.stato);
-    if (ordinamento === "titolo") return a.titolo.localeCompare(b.titolo);
-    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-  });
+  const praticheOrdinate = ordinamento === "priorita"
+    ? ordinaPerPriorita(pratiche, p => p.priorita, p => p.createdAt)
+    : [...pratiche].sort((a, b) => {
+        if (ordinamento === "vecchia") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        if (ordinamento === "stato") return a.stato.localeCompare(b.stato);
+        if (ordinamento === "titolo") return a.titolo.localeCompare(b.titolo);
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      });
 
   const statiDelVista = vista === "operativa" ? STATI_OPERATIVA : STATI_ARCHIVIO;
 

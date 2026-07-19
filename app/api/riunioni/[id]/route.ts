@@ -8,6 +8,9 @@ const updateSchema = z.object({
   stato: z.enum(["IN_PREPARAZIONE", "PRONTA", "IN_CORSO", "CONCLUSA"]).optional(),
   dataOra: z.string().datetime().nullable().optional(),
   trascrizioneGrezza: z.string().optional(),
+  priorita: z.enum(["BASSA", "MEDIA", "ALTA"]).nullable().optional(),
+  personaId: z.number().int().nullable().optional(),
+  progettoId: z.string().nullable().optional(),
 });
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

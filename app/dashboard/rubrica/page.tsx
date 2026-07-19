@@ -8,20 +8,37 @@ type Persona = {
   nome: string;
   cognome: string;
   ruolo: string | null;
+  azienda: string | null;
   telefono: string | null;
   email: string | null;
+  emailSecondaria: string | null;
 };
 
-const CAMPI = ["nome", "cognome", "ruolo", "telefono", "email"] as const;
+type CampoForm = "nome" | "cognome" | "ruolo" | "azienda" | "telefono" | "email" | "emailSecondaria";
+
+const CAMPI_CREAZIONE: CampoForm[] = ["nome", "cognome", "ruolo", "azienda", "telefono", "email"];
+const CAMPI_MODIFICA: CampoForm[] = ["nome", "cognome", "ruolo", "azienda", "telefono", "email", "emailSecondaria"];
+
+const CAMPO_LABEL: Record<CampoForm, string> = {
+  nome: "Nome",
+  cognome: "Cognome",
+  ruolo: "Ruolo",
+  azienda: "Azienda",
+  telefono: "Telefono",
+  email: "Email",
+  emailSecondaria: "Email secondaria",
+};
+
+const FORM_VUOTO = { nome: "", cognome: "", ruolo: "", azienda: "", telefono: "", email: "", emailSecondaria: "" };
 
 export default function RubricaPage() {
   const [persone, setPersone] = useState<Persona[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ nome: "", cognome: "", ruolo: "", telefono: "", email: "" });
+  const [form, setForm] = useState(FORM_VUOTO);
   const [saving, setSaving] = useState(false);
   const [modificando, setModificando] = useState<Persona | null>(null);
-  const [formMod, setFormMod] = useState({ nome: "", cognome: "", ruolo: "", telefono: "", email: "" });
+  const [formMod, setFormMod] = useState(FORM_VUOTO);
 
   useEffect(() => {
     fetch("/api/persone")
@@ -41,7 +58,7 @@ export default function RubricaPage() {
     if (res.ok) {
       const p = await res.json();
       setPersone(prev => [...prev, p].sort((a, b) => a.cognome.localeCompare(b.cognome)));
-      setForm({ nome: "", cognome: "", ruolo: "", telefono: "", email: "" });
+      setForm(FORM_VUOTO);
       setShowForm(false);
     }
     setSaving(false);
@@ -53,8 +70,10 @@ export default function RubricaPage() {
       nome: p.nome,
       cognome: p.cognome,
       ruolo: p.ruolo ?? "",
+      azienda: p.azienda ?? "",
       telefono: p.telefono ?? "",
       email: p.email ?? "",
+      emailSecondaria: p.emailSecondaria ?? "",
     });
   }
 
@@ -90,11 +109,11 @@ export default function RubricaPage() {
       {showForm && (
         <form onSubmit={salvaPersona} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
           <p className="font-medium text-gray-800">Nuova persona</p>
-          {CAMPI.map(k => (
+          {CAMPI_CREAZIONE.map(k => (
             <input
               key={k}
               type={k === "email" ? "email" : "text"}
-              placeholder={k.charAt(0).toUpperCase() + k.slice(1) + (["nome","cognome"].includes(k) ? " *" : "")}
+              placeholder={CAMPO_LABEL[k] + (["nome","cognome"].includes(k) ? " *" : "")}
               required={["nome","cognome"].includes(k)}
               value={form[k]}
               onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
@@ -123,7 +142,11 @@ export default function RubricaPage() {
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-gray-900">{p.nome} {p.cognome}</p>
-                  {p.ruolo && <p className="text-xs text-gray-500">{p.ruolo}</p>}
+                  {(p.ruolo || p.azienda) && (
+                    <p className="text-xs text-gray-500">
+                      {p.ruolo}{p.ruolo && p.azienda && " — "}{p.azienda}
+                    </p>
+                  )}
                   {p.telefono && <p className="text-xs text-gray-400 mt-0.5">{p.telefono}</p>}
                   {p.email && <p className="text-xs text-gray-400">{p.email}</p>}
                 </div>
@@ -151,11 +174,11 @@ export default function RubricaPage() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
           <form onSubmit={salvaModifica} className="bg-white rounded-xl p-5 w-full max-w-sm space-y-3 shadow-xl">
             <p className="font-medium text-gray-800">✏️ Modifica contatto</p>
-            {CAMPI.map(k => (
+            {CAMPI_MODIFICA.map(k => (
               <input
                 key={k}
-                type={k === "email" ? "email" : "text"}
-                placeholder={k.charAt(0).toUpperCase() + k.slice(1) + (["nome","cognome"].includes(k) ? " *" : "")}
+                type={k === "email" || k === "emailSecondaria" ? "email" : "text"}
+                placeholder={CAMPO_LABEL[k] + (["nome","cognome"].includes(k) ? " *" : "")}
                 required={["nome","cognome"].includes(k)}
                 value={formMod[k]}
                 onChange={e => setFormMod(f => ({ ...f, [k]: e.target.value }))}

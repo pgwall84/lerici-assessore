@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 const schema = z.object({
@@ -8,7 +9,9 @@ const schema = z.object({
   cognome: z.string().min(1),
   ruolo: z.string().optional(),
   telefono: z.string().optional(),
-  email: z.string().email().optional(),
+  email: z.string().email().optional().or(z.literal("")),
+  emailSecondaria: z.string().email().optional().or(z.literal("")),
+  azienda: z.string().optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -27,6 +30,10 @@ export async function POST(req: NextRequest) {
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
-  const persona = await prisma.persona.create({ data: parsed.data });
+  const data = Object.fromEntries(
+    Object.entries(parsed.data).map(([k, v]) => [k, v === "" ? null : v])
+  ) as unknown as Prisma.PersonaCreateInput;
+
+  const persona = await prisma.persona.create({ data });
   return NextResponse.json(persona, { status: 201 });
 }

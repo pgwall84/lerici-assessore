@@ -9,6 +9,7 @@ const schema = z.object({
   dataSeduta: z.string().datetime().optional(),
   scadenzaRisposta: z.string().datetime().optional(),
   consiglioCollegatoId: z.string().optional(),
+  priorita: z.enum(["BASSA", "MEDIA", "ALTA"]).optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -18,12 +19,14 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const tipo = searchParams.get("tipo");
   const stato = searchParams.get("stato");
+  const priorita = searchParams.get("priorita");
   const visualizzato = searchParams.get("visualizzato");
 
   const atti = await prisma.attoPoliticoAmministrativo.findMany({
     where: {
       ...(tipo ? { tipo: tipo as never } : {}),
       ...(stato ? { stato: stato as never } : {}),
+      ...(priorita ? { priorita: priorita as never } : {}),
       ...(visualizzato !== null ? { visualizzato: visualizzato === "true" } : {}),
     },
     include: { documenti: true, consiglioCollegato: true },

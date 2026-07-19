@@ -1,4 +1,4 @@
-import { Delega, Priorita, StatoPratica, TipoPratica } from "@prisma/client";
+import { Delega, Priorita, StatoAtto, StatoPratica, StatoProgetto, StatoRiunione, TipoAtto, TipoPratica } from "@prisma/client";
 
 export const DELEGHE_LABEL: Record<Delega, string> = {
   VIABILITA: "Viabilità",
@@ -173,3 +173,85 @@ export const SOTTOCATEGORIE: Partial<Record<Delega, string[]>> = {
     "Proposta nuovo servizio online",
   ],
 };
+
+// --- Attività Politico-Amministrativa (Atti) ---
+
+export const TIPO_ATTO_LABEL: Record<TipoAtto, string> = {
+  CONVOCAZIONE_GIUNTA: "Convocazione Giunta",
+  CONVOCAZIONE_CONSIGLIO: "Convocazione Consiglio",
+  CONVOCAZIONE_COMMISSIONE: "Convocazione Commissione",
+  MOZIONE: "Mozione",
+  INTERROGAZIONE: "Interrogazione",
+};
+
+// Etichette brevi per la sidebar delle sotto-categorie (stile Deleghe di Progetti).
+export const TIPO_ATTO_LABEL_BREVE: Record<TipoAtto, string> = {
+  CONVOCAZIONE_CONSIGLIO: "Consiglio Comunale",
+  CONVOCAZIONE_COMMISSIONE: "Commissioni",
+  MOZIONE: "Mozioni",
+  INTERROGAZIONE: "Interrogazioni",
+  CONVOCAZIONE_GIUNTA: "Giunta",
+};
+
+export const TIPO_ATTO_ICONA: Record<TipoAtto, string> = {
+  CONVOCAZIONE_GIUNTA: "🏛️",
+  CONVOCAZIONE_CONSIGLIO: "🏛️",
+  CONVOCAZIONE_COMMISSIONE: "🗂️",
+  MOZIONE: "📄",
+  INTERROGAZIONE: "❓",
+};
+
+export const STATO_ATTO_LABEL: Record<StatoAtto, string> = {
+  DA_ESAMINARE: "Da esaminare",
+  ESAMINATO: "Esaminato",
+  RISPOSTO: "Risposto",
+  ARCHIVIATO: "Archiviato",
+};
+
+export const STATO_ATTO_COLORE: Record<StatoAtto, string> = {
+  DA_ESAMINARE: "bg-yellow-100 text-yellow-800",
+  ESAMINATO: "bg-blue-100 text-blue-700",
+  RISPOSTO: "bg-green-100 text-green-800",
+  ARCHIVIATO: "bg-gray-100 text-gray-500",
+};
+
+export const STATI_ATTO_OPERATIVA: StatoAtto[] = ["DA_ESAMINARE", "ESAMINATO"];
+export const STATI_ATTO_ARCHIVIO: StatoAtto[] = ["ARCHIVIATO", "RISPOSTO"];
+
+// --- Riunioni ---
+
+export const STATO_RIUNIONE_LABEL: Record<StatoRiunione, string> = {
+  IN_PREPARAZIONE: "In preparazione",
+  PRONTA: "Pronta",
+  IN_CORSO: "In corso",
+  CONCLUSA: "Conclusa",
+};
+
+export const STATO_RIUNIONE_COLORE: Record<StatoRiunione, string> = {
+  IN_PREPARAZIONE: "bg-gray-100 text-gray-600",
+  PRONTA: "bg-blue-100 text-blue-700",
+  IN_CORSO: "bg-yellow-100 text-yellow-800",
+  CONCLUSA: "bg-green-100 text-green-800",
+};
+
+export const STATI_RIUNIONE_OPERATIVA: StatoRiunione[] = ["IN_PREPARAZIONE", "PRONTA", "IN_CORSO"];
+export const STATI_RIUNIONE_ARCHIVIO: StatoRiunione[] = ["CONCLUSA"];
+
+// --- Progetti ---
+
+export const STATO_PROGETTO_LABEL: Record<StatoProgetto, string> = {
+  IN_CORSO: "In corso",
+  SOSPESO: "Sospeso",
+  CONCLUSO: "Concluso",
+  ARCHIVIATO: "Archiviato",
+};
+
+export const STATO_PROGETTO_COLORE: Record<StatoProgetto, string> = {
+  IN_CORSO: "bg-yellow-100 text-yellow-800",
+  SOSPESO: "bg-gray-100 text-gray-600",
+  CONCLUSO: "bg-green-100 text-green-800",
+  ARCHIVIATO: "bg-gray-100 text-gray-500",
+};
+
+export const STATI_PROGETTO_OPERATIVA: StatoProgetto[] = ["IN_CORSO", "SOSPESO"];
+export const STATI_PROGETTO_ARCHIVIO: StatoProgetto[] = ["CONCLUSO", "ARCHIVIATO"];

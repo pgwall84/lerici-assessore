@@ -3,38 +3,13 @@
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { DELEGHE_LABEL } from "@/lib/constants";
-import type { ArgomentoRiunione, Delega, DocumentoProgetto, NotaProgetto, Progetto, Riunione, StatoProgetto, StatoRiunione } from "@prisma/client";
-
-const STATO_RIUNIONE_LABEL: Record<StatoRiunione, string> = {
-  IN_PREPARAZIONE: "In preparazione",
-  PRONTA: "Pronta",
-  IN_CORSO: "In corso",
-  CONCLUSA: "Conclusa",
-};
-
-const STATO_RIUNIONE_COLORE: Record<StatoRiunione, string> = {
-  IN_PREPARAZIONE: "bg-gray-100 text-gray-600",
-  PRONTA: "bg-blue-100 text-blue-700",
-  IN_CORSO: "bg-yellow-100 text-yellow-800",
-  CONCLUSA: "bg-green-100 text-green-800",
-};
+import { DELEGHE_LABEL, STATO_RIUNIONE_LABEL, STATO_RIUNIONE_COLORE, STATO_PROGETTO_LABEL, STATO_PROGETTO_COLORE } from "@/lib/constants";
+import type { ArgomentoRiunione, Delega, DocumentoProgetto, NotaProgetto, Progetto, Riunione, StatoProgetto } from "@prisma/client";
 
 type RiunioneCard = Riunione & { argomenti: ArgomentoRiunione[] };
 
-const STATO_LABEL: Record<StatoProgetto, string> = {
-  IN_CORSO: "In corso",
-  SOSPESO: "Sospeso",
-  CONCLUSO: "Concluso",
-  ARCHIVIATO: "Archiviato",
-};
-
-const STATO_COLORE: Record<StatoProgetto, string> = {
-  IN_CORSO: "bg-yellow-100 text-yellow-800",
-  SOSPESO: "bg-gray-100 text-gray-600",
-  CONCLUSO: "bg-green-100 text-green-800",
-  ARCHIVIATO: "bg-gray-100 text-gray-500",
-};
+const STATO_LABEL = STATO_PROGETTO_LABEL;
+const STATO_COLORE = STATO_PROGETTO_COLORE;
 
 const STATI: StatoProgetto[] = ["IN_CORSO", "SOSPESO", "CONCLUSO", "ARCHIVIATO"];
 

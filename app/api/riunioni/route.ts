@@ -9,6 +9,7 @@ const schema = z.object({
   progettoId: z.string().optional(),
   trascrizioneGrezza: z.string().optional(),
   dataOra: z.string().datetime().optional(),
+  priorita: z.enum(["BASSA", "MEDIA", "ALTA"]).optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -19,12 +20,14 @@ export async function GET(req: NextRequest) {
   const personaId = searchParams.get("personaId");
   const progettoId = searchParams.get("progettoId");
   const stato = searchParams.get("stato");
+  const priorita = searchParams.get("priorita");
 
   const riunioni = await prisma.riunione.findMany({
     where: {
       ...(personaId ? { personaId: Number(personaId) } : {}),
       ...(progettoId ? { progettoId } : {}),
       ...(stato ? { stato: stato as never } : {}),
+      ...(priorita ? { priorita: priorita as never } : {}),
     },
     include: {
       persona: true,

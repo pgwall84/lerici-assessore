@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { TipoAtto } from "@prisma/client";
+import { PRIORITA_LABEL } from "@/lib/constants";
+import type { Priorita, TipoAtto } from "@prisma/client";
 
 const TIPO_LABEL: Record<TipoAtto, string> = {
   CONVOCAZIONE_GIUNTA: "Convocazione Giunta",
@@ -22,6 +23,7 @@ export default function NuovoAttoPage() {
     oggetto: "",
     dataSeduta: "",
     scadenzaRisposta: "",
+    priorita: "" as Priorita | "",
   });
 
   const mostraScadenza = form.tipo === "MOZIONE" || form.tipo === "INTERROGAZIONE";
@@ -38,6 +40,7 @@ export default function NuovoAttoPage() {
         oggetto: form.oggetto.trim(),
         dataSeduta: form.dataSeduta ? new Date(form.dataSeduta).toISOString() : undefined,
         scadenzaRisposta: form.scadenzaRisposta ? new Date(form.scadenzaRisposta).toISOString() : undefined,
+        priorita: form.priorita || undefined,
       }),
     });
     setSaving(false);
@@ -105,6 +108,20 @@ export default function NuovoAttoPage() {
             />
           </div>
         )}
+
+        <div>
+          <label className="text-xs text-gray-500">Priorità (facoltativa)</label>
+          <select
+            value={form.priorita}
+            onChange={e => setForm(f => ({ ...f, priorita: e.target.value as Priorita | "" }))}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Non specificata</option>
+            {(Object.keys(PRIORITA_LABEL) as Priorita[]).map(p => (
+              <option key={p} value={p}>{PRIORITA_LABEL[p]}</option>
+            ))}
+          </select>
+        </div>
 
         <button
           type="submit"

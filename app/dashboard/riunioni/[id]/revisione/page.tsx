@@ -2,7 +2,8 @@
 
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
-import type { ArgomentoRiunione, Riunione } from "@prisma/client";
+import { PRIORITA_LABEL } from "@/lib/constants";
+import type { ArgomentoRiunione, Priorita, Riunione } from "@prisma/client";
 
 type RiunioneFull = Riunione & {
   persona: { nome: string; cognome: string } | null;
@@ -82,6 +83,15 @@ export default function RevisioneRiunionePage({ params }: { params: Promise<{ id
     else alert("Errore nella rigenerazione");
   }
 
+  async function cambiaPriorita(priorita: Priorita | "") {
+    setRiunione(r => r ? { ...r, priorita: priorita || null } : r);
+    await fetch(`/api/riunioni/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ priorita: priorita || null }),
+    });
+  }
+
   async function confermaESalva() {
     setSalvando(true);
     const res = await fetch(`/api/riunioni/${id}`, {
@@ -143,6 +153,20 @@ export default function RevisioneRiunionePage({ params }: { params: Promise<{ id
             +
           </button>
         </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <label className="text-xs text-gray-500">Priorità (facoltativa)</label>
+        <select
+          value={riunione.priorita ?? ""}
+          onChange={e => cambiaPriorita(e.target.value as Priorita | "")}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">Non specificata</option>
+          {(Object.keys(PRIORITA_LABEL) as Priorita[]).map(p => (
+            <option key={p} value={p}>{PRIORITA_LABEL[p]}</option>
+          ))}
+        </select>
       </div>
 
       <button
