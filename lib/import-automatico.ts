@@ -52,7 +52,14 @@ async function trovaProssimoConsiglio(daData: Date) {
   });
 }
 
-/** Convocazioni Giunta/Consiglio/Commissioni: crea l'atto, carica gli allegati, prova l'estrazione ODG. */
+/**
+ * Convocazioni Giunta/Consiglio/Commissioni: crea l'atto, carica gli allegati, prova l'estrazione ODG.
+ * Gli allegati possono arrivare come un unico zip (Consiglio) o come piu' PDF separati nella stessa
+ * mail (visto in pratica anche per il Consiglio, non solo Giunta/Commissioni con un solo file): in
+ * entrambi i casi vanno trattati come UN unico insieme di candidati per l'euristica ODG, altrimenti
+ * ogni PDF separato finirebbe marcato ORDINE_GIORNO a prescindere. Se il nome non e' univoco, non si
+ * indovina: tutto resta PRATICA_ALLEGATA e Marco sceglie a mano con "Estrai come ODG".
+ */
 async function importaConvocazione(nomeEtichetta: string, tipo: TipoAtto): Promise<RisultatoImport> {
   const mails = await getMailsPerEtichetta(nomeEtichetta);
   const risultato: RisultatoImport = { creati: 0, ambigui: 0, errori: [] };
@@ -63,25 +70,20 @@ async function importaConvocazione(nomeEtichetta: string, tipo: TipoAtto): Promi
         data: { tipo, oggetto: m.titolo, messageId: m.messageId },
       });
 
-      for (const a of m.allegati) {
-        if (a.filename.toLowerCase().endsWith(".zip")) {
-          const voci = estraiVociZip(a.buffer);
-          const indiceOdg = trovaOdgInZip(voci);
-          for (let i = 0; i < voci.length; i++) {
-            const url = await caricaFile(`atto-${atto.id}`, voci[i].buffer, voci[i].nomeFile);
-            await prisma.documentoAtto.create({
-              data: { attoId: atto.id, nomeFile: voci[i].nomeFile, storageUrl: url, ruolo: i === indiceOdg ? "ORDINE_GIORNO" : "PRATICA_ALLEGATA" },
-            });
-          }
-          if (indiceOdg !== null) await provaEstraiOdg(atto.id, voci[indiceOdg].buffer, voci[indiceOdg].nomeFile);
-          else risultato.ambigui++;
-        } else {
-          const url = await caricaFile(`atto-${atto.id}`, a.buffer, a.filename);
+      const voci = m.allegati.flatMap(a =>
+        a.filename.toLowerCase().endsWith(".zip") ? estraiVociZip(a.buffer) : [{ nomeFile: a.filename, buffer: a.buffer }]
+      );
+
+      if (voci.length > 0) {
+        const indiceOdg = trovaOdgInZip(voci);
+        for (let i = 0; i < voci.length; i++) {
+          const url = await caricaFile(`atto-${atto.id}`, voci[i].buffer, voci[i].nomeFile);
           await prisma.documentoAtto.create({
-            data: { attoId: atto.id, nomeFile: a.filename, storageUrl: url, ruolo: "ORDINE_GIORNO" },
+            data: { attoId: atto.id, nomeFile: voci[i].nomeFile, storageUrl: url, ruolo: i === indiceOdg ? "ORDINE_GIORNO" : "PRATICA_ALLEGATA" },
           });
-          await provaEstraiOdg(atto.id, a.buffer, a.filename);
         }
+        if (indiceOdg !== null) await provaEstraiOdg(atto.id, voci[indiceOdg].buffer, voci[indiceOdg].nomeFile);
+        else risultato.ambigui++;
       }
 
       await marcaImportata(m.messageId);

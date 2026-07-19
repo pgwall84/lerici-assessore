@@ -18,7 +18,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!res.ok) return NextResponse.json({ error: "Impossibile scaricare il file da Storage" }, { status: 500 });
   const buffer = Buffer.from(await res.arrayBuffer());
 
-  const testoGrezzo = await estraiTestoDaFile(buffer, documento.nomeFile);
+  let testoGrezzo: string;
+  try {
+    testoGrezzo = await estraiTestoDaFile(buffer, documento.nomeFile);
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Errore nella lettura del file" }, { status: 500 });
+  }
   if (!testoGrezzo) {
     return NextResponse.json({ error: "Formato file non supportato per l'estrazione (solo PDF e DOCX)" }, { status: 400 });
   }
