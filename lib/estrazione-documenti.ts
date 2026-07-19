@@ -39,14 +39,12 @@ export async function estraiTestoDaFile(buffer: Buffer, nomeFile: string): Promi
   const ext = nomeFile.toLowerCase().split(".").pop() ?? "";
 
   if (ext === "pdf") {
-    const { PDFParse } = await import("pdf-parse");
-    const parser = new PDFParse({ data: buffer });
-    try {
-      const result = await parser.getText();
-      return result.text.trim();
-    } finally {
-      await parser.destroy();
-    }
+    // pdf-parse v1: puro JS, nessuna dipendenza canvas/DOM — v2 dipende da @napi-rs/canvas
+    // (binario nativo) che in ambiente serverless Vercel non si carica sempre correttamente,
+    // facendo cadere pdfjs-dist in un percorso che richiede DOMMatrix (API browser, non Node).
+    const pdf = (await import("pdf-parse")).default;
+    const result = await pdf(buffer);
+    return result.text.trim();
   }
 
   if (ext === "docx") {
