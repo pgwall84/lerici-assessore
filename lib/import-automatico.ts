@@ -117,53 +117,37 @@ async function importaMozioneOInterrogazione(nomeEtichetta: string, tipo: TipoAt
 }
 
 /**
- * Giunta non ha sotto-etichette Convocazioni/Verbali su Gmail: si distingue dall'oggetto.
- * Un verbale si aggancia alla convocazione Giunta più recente non ancora archiviata (match
- * best-effort per assenza di sotto-etichette dedicate); se non la trova, crea comunque una
- * scheda minimale con solo il verbale, già archiviata.
+ * Verbali Giunta (etichetta "Giunta/Verbali"): si agganciano alla convocazione Giunta più
+ * recente non ancora archiviata, marcandola ARCHIVIATO. Se non se ne trova una, crea comunque
+ * una scheda minimale con solo il verbale, già archiviata.
  */
-async function importaGiunta(): Promise<RisultatoImport> {
-  const mails = await getMailsPerEtichetta("Giunta");
+async function importaVerbaliGiunta(): Promise<RisultatoImport> {
+  const mails = await getMailsPerEtichetta("Giunta/Verbali");
   const risultato: RisultatoImport = { creati: 0, ambigui: 0, errori: [] };
 
   for (const m of mails) {
     try {
-      const eVerbale = /verbale/i.test(m.oggettoOriginale);
+      const convocazione = await prisma.attoPoliticoAmministrativo.findFirst({
+        where: { tipo: "CONVOCAZIONE_GIUNTA", stato: { not: "ARCHIVIATO" } },
+        orderBy: [{ dataSeduta: "desc" }, { createdAt: "desc" }],
+      });
+      const atto = convocazione ?? await prisma.attoPoliticoAmministrativo.create({
+        data: { tipo: "CONVOCAZIONE_GIUNTA", oggetto: m.titolo, stato: "ARCHIVIATO", messageId: m.messageId },
+      });
+      if (convocazione) await prisma.attoPoliticoAmministrativo.update({ where: { id: atto.id }, data: { stato: "ARCHIVIATO" } });
 
-      if (eVerbale) {
-        const convocazione = await prisma.attoPoliticoAmministrativo.findFirst({
-          where: { tipo: "CONVOCAZIONE_GIUNTA", stato: { not: "ARCHIVIATO" } },
-          orderBy: [{ dataSeduta: "desc" }, { createdAt: "desc" }],
+      for (const a of m.allegati) {
+        const url = await caricaFile(`atto-${atto.id}`, a.buffer, a.filename);
+        await prisma.documentoAtto.create({
+          data: { attoId: atto.id, nomeFile: a.filename, storageUrl: url, ruolo: "PRATICA_ALLEGATA" },
         });
-        const atto = convocazione ?? await prisma.attoPoliticoAmministrativo.create({
-          data: { tipo: "CONVOCAZIONE_GIUNTA", oggetto: m.titolo, stato: "ARCHIVIATO", messageId: m.messageId },
-        });
-        if (convocazione) await prisma.attoPoliticoAmministrativo.update({ where: { id: atto.id }, data: { stato: "ARCHIVIATO" } });
-
-        for (const a of m.allegati) {
-          const url = await caricaFile(`atto-${atto.id}`, a.buffer, a.filename);
-          await prisma.documentoAtto.create({
-            data: { attoId: atto.id, nomeFile: a.filename, storageUrl: url, ruolo: "PRATICA_ALLEGATA" },
-          });
-        }
-        if (!convocazione) risultato.ambigui++;
-      } else {
-        const atto = await prisma.attoPoliticoAmministrativo.create({
-          data: { tipo: "CONVOCAZIONE_GIUNTA", oggetto: m.titolo, messageId: m.messageId },
-        });
-        for (const a of m.allegati) {
-          const url = await caricaFile(`atto-${atto.id}`, a.buffer, a.filename);
-          await prisma.documentoAtto.create({
-            data: { attoId: atto.id, nomeFile: a.filename, storageUrl: url, ruolo: "ORDINE_GIORNO" },
-          });
-          await provaEstraiOdg(atto.id, a.buffer, a.filename);
-        }
       }
+      if (!convocazione) risultato.ambigui++;
 
       await marcaImportata(m.messageId);
       risultato.creati++;
     } catch (e) {
-      risultato.errori.push(`Giunta — ${m.oggettoOriginale}: ${e instanceof Error ? e.message : e}`);
+      risultato.errori.push(`Giunta/Verbali — ${m.oggettoOriginale}: ${e instanceof Error ? e.message : e}`);
     }
   }
   return risultato;
@@ -194,17 +178,18 @@ async function importaGiustifiche(): Promise<RisultatoImport> {
 }
 
 export async function eseguiImportazioneAutomatica() {
-  const [consiglio, commissioni, interrogazioni, mozioni, giunta, giustifiche] = await Promise.all([
+  const [consiglio, commissioni, interrogazioni, mozioni, convocazioniGiunta, verbaliGiunta, giustifiche] = await Promise.all([
     importaConvocazione("Consiglio Comunale", "CONVOCAZIONE_CONSIGLIO"),
     importaConvocazione("Consiglio Comunale/Commissioni", "CONVOCAZIONE_COMMISSIONE"),
     importaMozioneOInterrogazione("Consiglio Comunale/Interrogazioni", "INTERROGAZIONE"),
     importaMozioneOInterrogazione("Consiglio Comunale/Mozioni", "MOZIONE"),
-    importaGiunta(),
+    importaConvocazione("Giunta/Convocazioni", "CONVOCAZIONE_GIUNTA"),
+    importaVerbaliGiunta(),
     importaGiustifiche(),
   ]);
 
   return {
-    totale: sommaRisultati([consiglio, commissioni, interrogazioni, mozioni, giunta, giustifiche]),
-    dettaglio: { consiglio, commissioni, interrogazioni, mozioni, giunta, giustifiche },
+    totale: sommaRisultati([consiglio, commissioni, interrogazioni, mozioni, convocazioniGiunta, verbaliGiunta, giustifiche]),
+    dettaglio: { consiglio, commissioni, interrogazioni, mozioni, convocazioniGiunta, verbaliGiunta, giustifiche },
   };
 }
