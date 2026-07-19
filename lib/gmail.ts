@@ -282,9 +282,10 @@ export async function caricaAllegatiMail(
   return urls;
 }
 
-export async function marcaImportata(messageId: string): Promise<void> {
+/** Applica un'etichetta qualunque (get-or-create), creandola se non esiste ancora. */
+export async function applicaEtichetta(messageId: string, nomeEtichetta: string): Promise<void> {
   const gmail = google.gmail({ version: "v1", auth: getAuth() });
-  const labelId = await getOrCreateLabel("Importata");
+  const labelId = await getOrCreateLabel(nomeEtichetta);
   await gmail.users.messages.modify({
     userId: "me",
     id: messageId,
@@ -292,17 +293,15 @@ export async function marcaImportata(messageId: string): Promise<void> {
   });
 }
 
+export async function marcaImportata(messageId: string): Promise<void> {
+  return applicaEtichetta(messageId, "Importata");
+}
+
 /** Etichetta puramente informativa sullo stato di classificazione — a differenza di "Importata"
  * (che segue sempre un'entità creata), questa si applica appena il motore determina binario: INCERTO,
  * non essendoci nessuna entità la cui creazione debba prima andare a buon fine. */
 export async function marcaIncerto(messageId: string): Promise<void> {
-  const gmail = google.gmail({ version: "v1", auth: getAuth() });
-  const labelId = await getOrCreateLabel(ETICHETTA_INCERTO);
-  await gmail.users.messages.modify({
-    userId: "me",
-    id: messageId,
-    requestBody: { addLabelIds: [labelId] },
-  });
+  return applicaEtichetta(messageId, ETICHETTA_INCERTO);
 }
 
 export async function spostaInChiusa(messageId: string): Promise<void> {

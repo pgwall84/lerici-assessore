@@ -268,8 +268,8 @@ export const STATI_PROGETTO_ARCHIVIO: StatoProgetto[] = ["CONCLUSO", "ARCHIVIATO
 export type VoceTassonomiaMail =
   | { fuoriScope: true }
   | { binario: "AUTOMATICO"; categoria: "atto"; tipo: TipoAtto }
-  | { binario: "AUTOMATICO"; categoria: "verbaleGiunta" }
-  | { binario: "AUTOMATICO"; categoria: "giustifica" }
+  | { binario: "AUTOMATICO"; categoria: "VERBALE_GIUNTA" }
+  | { binario: "AUTOMATICO"; categoria: "GIUSTIFICA" }
   | { binario: "MANUALE"; categoria: "segnalazione" }
   | { binario: "MANUALE"; categoria: "progetto"; delega: Delega }
   | { binario: "MANUALE"; categoria: "contestazione" };
@@ -280,10 +280,10 @@ export const TASSONOMIA_MAIL: Record<string, VoceTassonomiaMail> = {
   "Consiglio Comunale/Interrogazioni": { binario: "AUTOMATICO", categoria: "atto", tipo: "INTERROGAZIONE" },
   "Consiglio Comunale/Mozioni": { binario: "AUTOMATICO", categoria: "atto", tipo: "MOZIONE" },
   "Giunta/Convocazioni": { binario: "AUTOMATICO", categoria: "atto", tipo: "CONVOCAZIONE_GIUNTA" },
-  "Giunta/Verbali": { binario: "AUTOMATICO", categoria: "verbaleGiunta" },
+  "Giunta/Verbali": { binario: "AUTOMATICO", categoria: "VERBALE_GIUNTA" },
   "Giunta/Delibere": { fuoriScope: true },
   "Giunta/Determine": { fuoriScope: true },
-  "Giustifica": { binario: "AUTOMATICO", categoria: "giustifica" },
+  "Giustifica": { binario: "AUTOMATICO", categoria: "GIUSTIFICA" },
   "Segnalazioni": { binario: "MANUALE", categoria: "segnalazione" },
   "Segnalazioni/Chiusa": { fuoriScope: true },
   "Segnalazioni/In corso": { fuoriScope: true },
@@ -301,6 +301,26 @@ export const TASSONOMIA_MAIL: Record<string, VoceTassonomiaMail> = {
 // gestore invocare (Consiglio? Giunta? Mozione?) senza ri-derivarlo dalle etichette.
 export function categoriaProposta(voce: Exclude<VoceTassonomiaMail, { fuoriScope: true }>): string {
   return "tipo" in voce ? voce.tipo : voce.categoria;
+}
+
+// Inverso di categoriaProposta(): dalla categoria confermata (+ delega per "progetto") risale
+// al nome dell'etichetta Gmail da scrivere — serve sia quando l'etichetta era già presente
+// all'origine (per riscriverla comunque, idempotente) sia quando la categoria è stata dedotta
+// da zero (AI o scelta manuale su Incerto) e l'etichetta non esiste ancora su Gmail.
+export function etichettaPerCategoria(categoria: string, delega?: Delega): string | null {
+  if (categoria === "segnalazione") return "Segnalazioni";
+  if (categoria === "contestazione") return "Contestazioni";
+  if (categoria === "giustifica") return "Giustifica"; // scelta manuale da Incerto — minuscolo, diverso da "GIUSTIFICA" (Automatico)
+  if (categoria === "progetto") {
+    if (!delega) return null;
+    const nomeEtichetta = Object.entries(ETICHETTA_DELEGA).find(([, d]) => d === delega)?.[0];
+    return nomeEtichetta ? `Deleghe/${nomeEtichetta}` : null;
+  }
+  for (const [etichetta, voce] of Object.entries(TASSONOMIA_MAIL)) {
+    if ("fuoriScope" in voce) continue;
+    if (categoriaProposta(voce) === categoria) return etichetta;
+  }
+  return null;
 }
 
 export const ETICHETTA_INCERTO = "Incerto/Da classificare";

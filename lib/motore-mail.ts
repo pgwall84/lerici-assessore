@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import { getMailsPaginato, getMappaEtichette, getMailPerId, marcaImportata, marcaIncerto, type MailImport } from "@/lib/gmail";
+import { getMailsPaginato, getMappaEtichette, getMailPerId, marcaImportata, marcaIncerto, applicaEtichetta, type MailImport } from "@/lib/gmail";
 import { classificaMail } from "@/lib/claude";
-import { TASSONOMIA_MAIL, categoriaProposta } from "@/lib/constants";
+import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria } from "@/lib/constants";
 import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, type EsitoEsecuzione } from "@/lib/import-automatico";
 
 const SOGLIA_CONFIDENZA = 0.6;
@@ -196,7 +196,7 @@ export async function eseguiMotoreMail(maxPagineScan = 20, maxEsecuzioni = 15): 
       const esito = await gestore(mail);
 
       if (esito.esito === "COMPLETATO") {
-        // Regola non negoziabile: il DB prima, l'etichetta Gmail solo dopo.
+        // Regola non negoziabile: il DB prima, le etichette Gmail solo dopo.
         await prisma.mailProcessata.update({
           where: { id: riga.id },
           data: { esito: "COMPLETATO", entitaCreataId: esito.entitaId },
@@ -206,6 +206,10 @@ export async function eseguiMotoreMail(maxPagineScan = 20, maxEsecuzioni = 15): 
         } catch {
           // L'entità è comunque creata e COMPLETATO è già scritto — l'etichetta è solo di comodo,
           // un suo fallimento non deve far sembrare fallita l'importazione.
+        }
+        const nomeEtichetta = riga.categoriaProposta ? etichettaPerCategoria(riga.categoriaProposta) : null;
+        if (nomeEtichetta) {
+          try { await applicaEtichetta(riga.messageId, nomeEtichetta); } catch { /* idem sopra */ }
         }
         completati++;
       } else if (esito.esito === "AMBIGUO") {

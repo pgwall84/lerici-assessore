@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
-import { getMailPerId, marcaImportata, caricaAllegatiMail } from "@/lib/gmail";
+import { getMailPerId, marcaImportata, applicaEtichetta, caricaAllegatiMail } from "@/lib/gmail";
 import { contentTypeDaNomeFile } from "@/lib/estrazione-documenti";
+import { etichettaPerCategoria } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
 import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, type EsitoEsecuzione } from "@/lib/import-automatico";
 import type { MailImport } from "@/lib/gmail";
+import type { Delega } from "@prisma/client";
 import { z } from "zod";
 
 const DELEGHE = [
@@ -52,6 +54,18 @@ async function caricaFile(cartella: string, buffer: Buffer, nomeFile: string): P
   return publicUrl;
 }
 
+// Etichette di comodo — scritte sempre dopo COMPLETATO, sia quando l'etichetta di categoria
+// era già presente su Gmail all'origine (la riscrive, idempotente) sia quando è stata dedotta
+// da zero (AI o scelta manuale su Incerto) e su Gmail non esiste ancora. Un fallimento qui non
+// deve mai retrocedere l'esito: l'entità è comunque creata.
+async function applicaEtichetteFinali(messageId: string, categoria: string, delega?: Delega) {
+  try { await marcaImportata(messageId); } catch { /* etichetta di comodo, non blocca l'esito */ }
+  const nomeEtichetta = etichettaPerCategoria(categoria, delega);
+  if (nomeEtichetta) {
+    try { await applicaEtichetta(messageId, nomeEtichetta); } catch { /* etichetta di comodo, non blocca l'esito */ }
+  }
+}
+
 // Conferma unica per qualunque riga MailProcessata IN_ATTESA (sezione 6, Sessione C):
 // - AUTOMATICO: esegue il gestore già usato dal cron (Sessione B); se torna AMBIGUO, ritorna
 //   l'elenco file per la scelta manuale, senza scrivere nulla — si richiama lo stesso endpoint
@@ -90,7 +104,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: esito.entitaId } });
-    try { await marcaImportata(riga.messageId); } catch { /* etichetta di comodo, non blocca l'esito */ }
+    await applicaEtichetteFinali(riga.messageId, riga.categoriaProposta ?? "");
     return NextResponse.json({ completato: true, entitaId: esito.entitaId });
   }
 
@@ -163,6 +177,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: entitaId } });
-  try { await marcaImportata(riga.messageId); } catch { /* etichetta di comodo, non blocca l'esito */ }
+  await applicaEtichetteFinali(riga.messageId, d.categoria, d.delega as Delega | undefined);
   return NextResponse.json({ completato: true, entitaId });
 }
