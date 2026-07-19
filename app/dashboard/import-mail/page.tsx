@@ -45,10 +45,14 @@ type MailAnteprima = {
   selezionata: boolean;
 };
 
+type Cursor = { fonte: number; pageToken?: string } | null;
+
 export default function ImportMailPage() {
   const router = useRouter();
   const [mails, setMails] = useState<MailAnteprima[]>([]);
   const [loading, setLoading] = useState(true);
+  const [caricandoAltre, setCaricandoAltre] = useState(false);
+  const [cursor, setCursor] = useState<Cursor>({ fonte: 0 });
   const [importando, setImportando] = useState(false);
   const [espansa, setEspansa] = useState<string | null>(null);
 
@@ -56,10 +60,23 @@ export default function ImportMailPage() {
     fetch("/api/import-mail")
       .then(r => r.json())
       .then(data => {
-        setMails(data.map((m: Omit<MailAnteprima, "selezionata">) => ({ ...m, selezionata: true })));
+        setMails(data.mails.map((m: Omit<MailAnteprima, "selezionata">) => ({ ...m, selezionata: true })));
+        setCursor(data.nextCursor);
         setLoading(false);
       });
   }, []);
+
+  async function caricaAltre() {
+    if (!cursor) return;
+    setCaricandoAltre(true);
+    const params = new URLSearchParams({ fonte: String(cursor.fonte) });
+    if (cursor.pageToken) params.set("pageToken", cursor.pageToken);
+    const res = await fetch(`/api/import-mail?${params}`);
+    const data = await res.json();
+    setMails(ms => [...ms, ...data.mails.map((m: Omit<MailAnteprima, "selezionata">) => ({ ...m, selezionata: true }))]);
+    setCursor(data.nextCursor);
+    setCaricandoAltre(false);
+  }
 
   function aggiorna(messageId: string, campo: string, valore: string | boolean) {
     setMails(ms => ms.map(m => m.messageId === messageId ? { ...m, [campo]: valore } : m));
@@ -249,6 +266,16 @@ export default function ImportMailPage() {
               )}
             </div>
           ))}
+
+          {cursor && (
+            <button
+              onClick={caricaAltre}
+              disabled={caricandoAltre}
+              className="w-full text-sm text-blue-600 border border-blue-200 rounded-xl py-2.5 hover:bg-blue-50 disabled:opacity-50"
+            >
+              {caricandoAltre ? "Carico…" : "Carica altre 10"}
+            </button>
+          )}
         </div>
       )}
     </div>

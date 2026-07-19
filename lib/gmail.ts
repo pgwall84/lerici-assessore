@@ -26,6 +26,174 @@ export async function getMailsSegnalazioni(): Promise<MailImport[]> {
   return getMailsPerEtichetta("Segnalazioni");
 }
 
+// Fetch + parsing di un singolo messaggio (headers, eventuale postacert.eml, allegati).
+// Isolata perché riusata sia dal listing completo sia da quello paginato sia dal recupero
+// per id singolo (POST), senza dover mai rielencare un'intera etichetta.
+async function parseMessaggioPerId(
+  gmail: ReturnType<typeof google.gmail>,
+  messageId: string,
+  labelImportataId?: string,
+): Promise<MailImport | null> {
+  const full = await gmail.users.messages.get({ userId: "me", id: messageId, format: "full" });
+  const data = full.data;
+
+  if (labelImportataId && data.labelIds?.includes(labelImportataId)) return null;
+
+  const headers = data.payload?.headers ?? [];
+  const oggettoOriginale = headers.find(h => h.name === "Subject")?.value ?? "";
+  const mittenteOriginale = headers.find(h => h.name === "From")?.value ?? "";
+  const dataMail = headers.find(h => h.name === "Date")?.value ?? "";
+
+  // Cerca allegato postacert.eml
+  const postacertPart = trovaParte(data.payload, "postacert.eml");
+
+  let titolo = pulisciOggetto(oggettoOriginale);
+  let descrizione = "";
+  let nomeMittente = estraiNomeMittente(mittenteOriginale);
+  let emailMittente = estraiEmailMittente(mittenteOriginale);
+  let protocollo = "";
+  let dataProtocollo = "";
+  let allegati: { buffer: Buffer; filename: string; contentType: string }[] = [];
+
+  if (postacertPart?.body?.attachmentId) {
+    // Scarica il postacert.eml
+    const att = await gmail.users.messages.attachments.get({
+      userId: "me",
+      messageId,
+      id: postacertPart.body.attachmentId,
+    });
+    const emlBuffer = Buffer.from(att.data.data!, "base64url");
+
+    // Parsa per allegati e subject (mailparser gestisce base64/binary correttamente)
+    const parsed = await simpleParser(emlBuffer);
+
+    // Estrae manualmente il body HTML dal MIME del postacert.eml con decodifica QP + windows-1252
+    // (PEC dichiara charset=us-ascii ma scrive bytes windows-1252 — mailparser non sa gestirlo)
+    const testoEml = stripHtml(estraiHtmlDaMime(emlBuffer));
+
+    // Mittente reale
+    const matchNome = testoEml.match(/Mittente\s*:\s*(.+)/i);
+    const matchEmail = testoEml.match(/Mail\s+mittente\s*:\s*(.+)/i);
+    if (matchNome?.[1]) nomeMittente = matchNome[1].trim();
+    if (matchEmail?.[1]) emailMittente = matchEmail[1].trim();
+
+    // Protocollo e data: "Protocollo n. 24546 del 02-07-2026"
+    const matchProtocollo = testoEml.match(/Protocollo\s+n\.?\s*(\d+)\s+del\s+([\d\-\/]+)/i);
+    if (matchProtocollo) {
+      protocollo = matchProtocollo[1].trim();
+      dataProtocollo = matchProtocollo[2].trim();
+    }
+
+    // Usa parsed.subject del postacert.eml (MIME encoded-word, decodificato correttamente da mailparser)
+    // Il body HTML è corrotto da Poste Italiane (&#65533; per le accentate)
+    if (parsed.subject) {
+      titolo = pulisciOggetto(parsed.subject);
+    } else {
+      const matchOggetto = testoEml.match(/Oggetto\s*:\s*(.+)/i);
+      if (matchOggetto?.[1]) titolo = pulisciOggetto(matchOggetto[1]);
+    }
+
+    // Fallback mittente: from header dell'EML
+    if (!matchNome) {
+      const fromAddr = parsed.from?.value?.[0];
+      if (fromAddr) {
+        nomeMittente = fromAddr.name || fromAddr.address || nomeMittente;
+        emailMittente = fromAddr.address || emailMittente;
+      }
+    }
+
+    // Testo: cerca allegato HTML "testo mail"
+    const htmlAllegato = parsed.attachments?.find(a =>
+      a.filename?.toLowerCase().includes("testo") ||
+      a.contentType === "text/html"
+    );
+    if (htmlAllegato?.content) {
+      // Rileva charset dal content-type dell'allegato o dall'interno dell'HTML
+      const ctAllegato = htmlAllegato.contentType ?? "";
+      const csMatch = ctAllegato.match(/charset=["']?([^"';\s]+)/i);
+      let cs = csMatch?.[1] ?? "";
+      // Cerca anche nel meta charset dentro l'HTML se non trovato
+      if (!cs) {
+        const raw = htmlAllegato.content.toString("latin1");
+        const metaCs = raw.match(/charset=["']?([^"';\s>]+)/i);
+        cs = metaCs?.[1] ?? "windows-1252";
+      }
+      const html = iconv.encodingExists(cs)
+        ? iconv.decode(htmlAllegato.content as Buffer, cs)
+        : htmlAllegato.content.toString("utf-8");
+      descrizione = stripHtml(html).slice(0, 1500);
+    } else if (parsed.text) {
+      descrizione = parsed.text.trim().slice(0, 1500);
+    } else if (parsed.html) {
+      descrizione = stripHtml(parsed.html).slice(0, 1500);
+    }
+
+    // Foto e PDF allegati
+    const tipiAmmessi = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"];
+    allegati = (parsed.attachments ?? [])
+      .filter(a => tipiAmmessi.includes(a.contentType) && a.content)
+      .slice(0, 5)
+      .map(a => ({
+        buffer: a.content as Buffer,
+        filename: a.filename ?? `foto-${Date.now()}.jpg`,
+        contentType: a.contentType,
+      }));
+  } else {
+    // Nessun postacert.eml — usa corpo principale
+    descrizione = estraiCorpoPrincipale(data.payload).slice(0, 1500);
+  }
+
+  return {
+    messageId,
+    oggettoOriginale,
+    mittente: mittenteOriginale,
+    data: dataMail,
+    titolo,
+    descrizione,
+    nomeMittente,
+    emailMittente,
+    protocollo,
+    dataProtocollo,
+    allegati,
+  };
+}
+
+/** Recupera e parsa un singolo messaggio per id, senza dover rielencare l'etichetta di provenienza. */
+export async function getMailPerId(messageId: string): Promise<MailImport | null> {
+  const gmail = google.gmail({ version: "v1", auth: getAuth() });
+  return parseMessaggioPerId(gmail, messageId);
+}
+
+/** Una pagina di mail da un'etichetta, in parallelo. Per liste grandi, molto più veloce del fetch completo. */
+export async function getMailsPerEtichettaPaginato(
+  nomeEtichetta: string,
+  pageToken?: string,
+  maxResults = 10,
+): Promise<{ mails: MailImport[]; nextPageToken?: string }> {
+  const gmail = google.gmail({ version: "v1", auth: getAuth() });
+
+  const labelsRes = await gmail.users.labels.list({ userId: "me" });
+  const labelTarget = labelsRes.data.labels?.find(l => l.name === nomeEtichetta);
+  if (!labelTarget?.id) return { mails: [] };
+  const labelImportata = labelsRes.data.labels?.find(l => l.name === "Importata");
+
+  const listRes = await gmail.users.messages.list({
+    userId: "me",
+    labelIds: [labelTarget.id],
+    q: "-label:Importata",
+    maxResults,
+    pageToken,
+  });
+
+  const messages = listRes.data.messages ?? [];
+  const parsed = await Promise.all(messages.map(m => parseMessaggioPerId(gmail, m.id!, labelImportata?.id ?? undefined)));
+
+  return {
+    mails: parsed.filter((m): m is MailImport => m !== null),
+    nextPageToken: listRes.data.nextPageToken ?? undefined,
+  };
+}
+
 export async function getMailsPerEtichetta(nomeEtichetta: string): Promise<MailImport[]> {
   const gmail = google.gmail({ version: "v1", auth: getAuth() });
 
@@ -44,138 +212,8 @@ export async function getMailsPerEtichetta(nomeEtichetta: string): Promise<MailI
   });
 
   const messages = listRes.data.messages ?? [];
-  const risultati: MailImport[] = [];
-
-  for (const msg of messages) {
-    const full = await gmail.users.messages.get({
-      userId: "me",
-      id: msg.id!,
-      format: "full",
-    });
-    const data = full.data;
-
-    if (labelImportata?.id && data.labelIds?.includes(labelImportata.id)) continue;
-
-    const headers = data.payload?.headers ?? [];
-    const oggettoOriginale = headers.find(h => h.name === "Subject")?.value ?? "";
-    const mittenteOriginale = headers.find(h => h.name === "From")?.value ?? "";
-    const dataMail = headers.find(h => h.name === "Date")?.value ?? "";
-
-    // Cerca allegato postacert.eml
-    const postacertPart = trovaParte(data.payload, "postacert.eml");
-
-    let titolo = pulisciOggetto(oggettoOriginale);
-    let descrizione = "";
-    let nomeMittente = estraiNomeMittente(mittenteOriginale);
-    let emailMittente = estraiEmailMittente(mittenteOriginale);
-    let protocollo = "";
-    let dataProtocollo = "";
-    let allegati: { buffer: Buffer; filename: string; contentType: string }[] = [];
-
-    if (postacertPart?.body?.attachmentId) {
-      // Scarica il postacert.eml
-      const att = await gmail.users.messages.attachments.get({
-        userId: "me",
-        messageId: msg.id!,
-        id: postacertPart.body.attachmentId,
-      });
-      const emlBuffer = Buffer.from(att.data.data!, "base64url");
-
-      // Parsa per allegati e subject (mailparser gestisce base64/binary correttamente)
-      const parsed = await simpleParser(emlBuffer);
-
-      // Estrae manualmente il body HTML dal MIME del postacert.eml con decodifica QP + windows-1252
-      // (PEC dichiara charset=us-ascii ma scrive bytes windows-1252 — mailparser non sa gestirlo)
-      const testoEml = stripHtml(estraiHtmlDaMime(emlBuffer));
-
-      // Mittente reale
-      const matchNome = testoEml.match(/Mittente\s*:\s*(.+)/i);
-      const matchEmail = testoEml.match(/Mail\s+mittente\s*:\s*(.+)/i);
-      if (matchNome?.[1]) nomeMittente = matchNome[1].trim();
-      if (matchEmail?.[1]) emailMittente = matchEmail[1].trim();
-
-      // Protocollo e data: "Protocollo n. 24546 del 02-07-2026"
-      const matchProtocollo = testoEml.match(/Protocollo\s+n\.?\s*(\d+)\s+del\s+([\d\-\/]+)/i);
-      if (matchProtocollo) {
-        protocollo = matchProtocollo[1].trim();
-        dataProtocollo = matchProtocollo[2].trim();
-      }
-
-      // Usa parsed.subject del postacert.eml (MIME encoded-word, decodificato correttamente da mailparser)
-      // Il body HTML è corrotto da Poste Italiane (&#65533; per le accentate)
-      if (parsed.subject) {
-        titolo = pulisciOggetto(parsed.subject);
-      } else {
-        const matchOggetto = testoEml.match(/Oggetto\s*:\s*(.+)/i);
-        if (matchOggetto?.[1]) titolo = pulisciOggetto(matchOggetto[1]);
-      }
-
-      // Fallback mittente: from header dell'EML
-      if (!matchNome) {
-        const fromAddr = parsed.from?.value?.[0];
-        if (fromAddr) {
-          nomeMittente = fromAddr.name || fromAddr.address || nomeMittente;
-          emailMittente = fromAddr.address || emailMittente;
-        }
-      }
-
-      // Testo: cerca allegato HTML "testo mail"
-      const htmlAllegato = parsed.attachments?.find(a =>
-        a.filename?.toLowerCase().includes("testo") ||
-        a.contentType === "text/html"
-      );
-      if (htmlAllegato?.content) {
-        // Rileva charset dal content-type dell'allegato o dall'interno dell'HTML
-        const ctAllegato = htmlAllegato.contentType ?? "";
-        const csMatch = ctAllegato.match(/charset=["']?([^"';\s]+)/i);
-        let cs = csMatch?.[1] ?? "";
-        // Cerca anche nel meta charset dentro l'HTML se non trovato
-        if (!cs) {
-          const raw = htmlAllegato.content.toString("latin1");
-          const metaCs = raw.match(/charset=["']?([^"';\s>]+)/i);
-          cs = metaCs?.[1] ?? "windows-1252";
-        }
-        const html = iconv.encodingExists(cs)
-          ? iconv.decode(htmlAllegato.content as Buffer, cs)
-          : htmlAllegato.content.toString("utf-8");
-        descrizione = stripHtml(html).slice(0, 1500);
-      } else if (parsed.text) {
-        descrizione = parsed.text.trim().slice(0, 1500);
-      } else if (parsed.html) {
-        descrizione = stripHtml(parsed.html).slice(0, 1500);
-      }
-
-      // Foto e PDF allegati
-      const tipiAmmessi = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"];
-      allegati = (parsed.attachments ?? [])
-        .filter(a => tipiAmmessi.includes(a.contentType) && a.content)
-        .slice(0, 5)
-        .map(a => ({
-          buffer: a.content as Buffer,
-          filename: a.filename ?? `foto-${Date.now()}.jpg`,
-          contentType: a.contentType,
-        }));
-    } else {
-      // Nessun postacert.eml — usa corpo principale
-      descrizione = estraiCorpoPrincipale(data.payload).slice(0, 1500);
-    }
-
-    risultati.push({
-      messageId: msg.id!,
-      oggettoOriginale,
-      mittente: mittenteOriginale,
-      data: dataMail,
-      titolo,
-      descrizione,
-      nomeMittente,
-      emailMittente,
-      protocollo,
-      dataProtocollo,
-      allegati,
-    });
-  }
-
-  return risultati;
+  const parsed = await Promise.all(messages.map(m => parseMessaggioPerId(gmail, m.id!, labelImportata?.id ?? undefined)));
+  return parsed.filter((m): m is MailImport => m !== null);
 }
 
 export async function caricaAllegatiMail(

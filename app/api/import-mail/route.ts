@@ -1,12 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
-import { getMailsSegnalazioni, getMailsPerEtichetta, marcaImportata, caricaAllegatiMail, type MailImport } from "@/lib/gmail";
+import { getMailPerId, getMailsPerEtichettaPaginato, marcaImportata, caricaAllegatiMail, type MailImport } from "@/lib/gmail";
 import { classificaDelega } from "@/lib/classificatore";
 import { ETICHETTA_DELEGA } from "@/lib/constants";
 import { prisma } from "@/lib/prisma";
 import { supabase } from "@/lib/supabase";
 
 type Categoria = "segnalazione" | "progetto" | "contestazione";
+
+// Ordine fisso delle fonti attraversate dalla paginazione: prima le Segnalazioni, poi ogni
+// sotto-etichetta Deleghe (→ Progetto), infine le Contestazioni.
+const FONTI: { nomeEtichetta: string; categoria: Categoria; delega?: string }[] = [
+  { nomeEtichetta: "Segnalazioni", categoria: "segnalazione" },
+  ...Object.entries(ETICHETTA_DELEGA).map(([nomeEtichetta, delega]) => ({
+    nomeEtichetta: `Deleghe/${nomeEtichetta}`, categoria: "progetto" as Categoria, delega,
+  })),
+  { nomeEtichetta: "Contestazioni", categoria: "contestazione" as Categoria },
+];
 
 const GESTORE_KEYWORDS: [RegExp, "ACAM_ACQUE" | "ACAM_AMBIENTE" | "ATC"][] = [
   [/acam.{0,3}acque/i, "ACAM_ACQUE"],
@@ -19,19 +29,8 @@ function classificaGestore(testo: string): "ACAM_ACQUE" | "ACAM_AMBIENTE" | "ATC
   return "ACAM_AMBIENTE";
 }
 
-// Recupera in un colpo solo tutte le mail candidate dai tre binari manuali, con la
-// categoria e i campi suggeriti già assegnati. Usata sia da GET (anteprima) sia da
-// POST (per riprendere gli allegati delle mail selezionate).
-async function raccogliCandidate() {
-  const [segnalazioni, contestazioni, ...deleghe] = await Promise.all([
-    getMailsSegnalazioni(),
-    getMailsPerEtichetta("Contestazioni"),
-    ...Object.entries(ETICHETTA_DELEGA).map(([nomeEtichetta, delega]) =>
-      getMailsPerEtichetta(`Deleghe/${nomeEtichetta}`).then(mails => ({ delega, mails }))
-    ),
-  ]);
-
-  const campiComuni = (m: MailImport) => ({
+function campiComuni(m: MailImport) {
+  return {
     messageId: m.messageId,
     oggettoOriginale: m.oggettoOriginale,
     mittente: m.mittente,
@@ -45,21 +44,48 @@ async function raccogliCandidate() {
     emailMittente: m.emailMittente,
     protocollo: m.protocollo,
     dataProtocollo: m.dataProtocollo,
-  });
+  };
+}
 
-  const candidate = [
-    ...segnalazioni.map(m => ({ ...campiComuni(m), categoria: "segnalazione" as Categoria, delega: classificaDelega(`${m.titolo} ${m.descrizione}`), gestore: "" })),
-    ...deleghe.flatMap(({ delega, mails }) => mails.map(m => ({ ...campiComuni(m), categoria: "progetto" as Categoria, delega, gestore: "" }))),
-    ...contestazioni.map(m => ({ ...campiComuni(m), categoria: "contestazione" as Categoria, delega: "", gestore: classificaGestore(`${m.mittente} ${m.oggettoOriginale}`) })),
-  ];
+// GET — pagina di ~10 mail candidate, attraversando le fonti nell'ordine di FONTI.
+// Query: ?fonte=<indice>&pageToken=<token>. Salta da solo le fonti esaurite/vuote finché
+// non accumula almeno una mail o finisce le fonti, cosi il bottone "Carica altre" non
+// restituisce mai un batch vuoto a meno che non sia davvero finito.
+export async function GET(req: NextRequest) {
+  const token = await getToken({ req });
+  if (!token) return NextResponse.json({ error: "Non autorizzato" }, { status: 401 });
 
-  const mailMap = new Map<string, MailImport>([
-    ...segnalazioni.map((m): [string, MailImport] => [m.messageId, m]),
-    ...contestazioni.map((m): [string, MailImport] => [m.messageId, m]),
-    ...deleghe.flatMap(({ mails }) => mails.map((m): [string, MailImport] => [m.messageId, m])),
-  ]);
+  const { searchParams } = new URL(req.url);
+  let fonte = Number(searchParams.get("fonte") ?? "0");
+  let pageToken = searchParams.get("pageToken") ?? undefined;
 
-  return { candidate, mailMap };
+  type Candidata = ReturnType<typeof campiComuni> & { categoria: Categoria; delega: string; gestore: string };
+  const candidate: Candidata[] = [];
+
+  while (fonte < FONTI.length && candidate.length === 0) {
+    const f = FONTI[fonte];
+    const { mails, nextPageToken } = await getMailsPerEtichettaPaginato(f.nomeEtichetta, pageToken, 10);
+
+    for (const m of mails) {
+      candidate.push({
+        ...campiComuni(m),
+        categoria: f.categoria,
+        delega: f.categoria === "progetto" ? f.delega! : f.categoria === "segnalazione" ? classificaDelega(`${m.titolo} ${m.descrizione}`) : "",
+        gestore: f.categoria === "contestazione" ? classificaGestore(`${m.mittente} ${m.oggettoOriginale}`) : "",
+      });
+    }
+
+    if (nextPageToken) {
+      pageToken = nextPageToken;
+      break; // pagina piena o parziale su questa fonte, ma la fonte ha ancora altro: fermati qui
+    } else {
+      fonte++;
+      pageToken = undefined; // fonte esaurita, passa alla prossima
+    }
+  }
+
+  const nextCursor = fonte < FONTI.length ? { fonte, pageToken } : null;
+  return NextResponse.json({ mails: candidate, nextCursor });
 }
 
 async function caricaFile(cartella: string, buffer: Buffer, nomeFile: string): Promise<string> {
@@ -71,16 +97,8 @@ async function caricaFile(cartella: string, buffer: Buffer, nomeFile: string): P
   return publicUrl;
 }
 
-// GET — recupera mail da importare (Segnalazioni, Deleghe→Progetto, Contestazioni) con classificazione automatica
-export async function GET(req: NextRequest) {
-  const token = await getToken({ req });
-  if (!token) return NextResponse.json({ error: "Non autorizzato" }, { status: 401 });
-
-  const { candidate } = await raccogliCandidate();
-  return NextResponse.json(candidate);
-}
-
-// POST — importa le mail selezionate: Segnalazioni, Progetti o Contestazioni a seconda della categoria
+// POST — importa le mail selezionate: Segnalazioni, Progetti o Contestazioni a seconda della categoria.
+// Recupera ogni mail per id, senza rielencare le etichette di provenienza.
 export async function POST(req: NextRequest) {
   const token = await getToken({ req });
   if (!token) return NextResponse.json({ error: "Non autorizzato" }, { status: 401 });
@@ -102,7 +120,9 @@ export async function POST(req: NextRequest) {
     }[];
   };
 
-  const { mailMap } = await raccogliCandidate();
+  const originali = await Promise.all(importazioni.map(imp => getMailPerId(imp.messageId)));
+  const mailMap = new Map(importazioni.map((imp, i) => [imp.messageId, originali[i]]));
+
   let importate = 0;
 
   for (const imp of importazioni) {
