@@ -1,6 +1,16 @@
 import { createServer } from "http";
+import { readFileSync, writeFileSync } from "fs";
 import { google } from "googleapis";
 import "dotenv/config";
+
+function aggiornaEnv(path: string, token: string) {
+  const contenuto = readFileSync(path, "utf-8");
+  const riga = `GOOGLE_REFRESH_TOKEN="${token}"`;
+  const aggiornato = /^GOOGLE_REFRESH_TOKEN=.*$/m.test(contenuto)
+    ? contenuto.replace(/^GOOGLE_REFRESH_TOKEN=.*$/m, riga)
+    : contenuto.trimEnd() + "\n" + riga + "\n";
+  writeFileSync(path, aggiornato);
+}
 
 const oauth2 = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
@@ -28,10 +38,16 @@ const server = createServer(async (req, res) => {
 
   try {
     const { tokens } = await oauth2.getToken(code);
-    res.end("<h2>✓ Autorizzazione completata! Puoi chiudere questa finestra.</h2>");
-    console.log("\n✓ REFRESH TOKEN OTTENUTO:");
-    console.log(`\nGOOGLE_REFRESH_TOKEN="${tokens.refresh_token}"\n`);
-    console.log("Copia questo valore nel tuo .env e poi riavvia il server.\n");
+    if (!tokens.refresh_token) {
+      res.end("<h2>⚠ Nessun refresh_token ricevuto (probabilmente hai già un consenso attivo). Revoca l'accesso su myaccount.google.com/permissions e riprova.</h2>");
+      console.log("\n⚠ Google non ha restituito un refresh_token. Vai su https://myaccount.google.com/permissions, revoca l'accesso all'app, poi rilancia questo script.\n");
+      server.close();
+      return;
+    }
+    aggiornaEnv(".env.local", tokens.refresh_token);
+    aggiornaEnv(".env.production", tokens.refresh_token);
+    res.end("<h2>✓ Autorizzazione completata e .env aggiornati! Puoi chiudere questa finestra.</h2>");
+    console.log("\n✓ GOOGLE_REFRESH_TOKEN aggiornato automaticamente in .env.local e .env.production.\n");
   } catch (e) {
     res.end("Errore durante il recupero del token.");
     console.error(e);
