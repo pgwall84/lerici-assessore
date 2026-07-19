@@ -13,6 +13,22 @@ export const DELEGHE_LABEL: Record<Delega, string> = {
   MANUTENZIONE_PATRIMONIO: "Manutenzione Patrimonio",
 };
 
+// Nome sotto-etichetta Gmail "Deleghe/…" -> enum Delega. Verificato a mano contro le
+// etichette reali: 4 nomi non coincidono col nome dell'enum (RIFIUTI/Ciclo Rifiuti,
+// SISTEMA_IDRICO/Idrico, ILLUMINAZIONE/Pubblica Illuminazione, MANUTENZIONE_PATRIMONIO/Lavori Pubblici).
+export const ETICHETTA_DELEGA: Record<string, Delega> = {
+  "Accessibilità": "ACCESSIBILITA",
+  "Ambiente": "AMBIENTE",
+  "Ciclo Rifiuti": "RIFIUTI",
+  "Cimiteri": "CIMITERI",
+  "Digitalizzazione": "DIGITALIZZAZIONE",
+  "Idrico": "SISTEMA_IDRICO",
+  "Lavori Pubblici": "MANUTENZIONE_PATRIMONIO",
+  "Politiche Abitative": "POLITICHE_ABITATIVE",
+  "Pubblica Illuminazione": "ILLUMINAZIONE",
+  "Viabilità": "VIABILITA",
+};
+
 export const TIPO_LABEL: Record<TipoPratica, string> = {
   SEGNALAZIONE: "Segnalazione cittadino",
   MIA_IDEA: "Mia idea",
