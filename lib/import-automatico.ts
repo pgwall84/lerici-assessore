@@ -116,10 +116,17 @@ async function importaMozioneOInterrogazione(nomeEtichetta: string, tipo: TipoAt
   return risultato;
 }
 
+function estraiNumeroSeduta(testo: string): string | null {
+  const m = testo.match(/n\.?\s*(\d+)/i);
+  return m?.[1] ?? null;
+}
+
 /**
- * Verbali Giunta (etichetta "Giunta/Verbali"): si agganciano alla convocazione Giunta più
- * recente non ancora archiviata, marcandola ARCHIVIATO. Se non se ne trova una, crea comunque
- * una scheda minimale con solo il verbale, già archiviata.
+ * Verbali Giunta (etichetta "Giunta/Verbali"): si agganciano alla convocazione Giunta con lo
+ * stesso numero di seduta estratto dall'oggetto (es. "n. 28"), non semplicemente alla più
+ * recente non archiviata — altrimenti si rischia di archiviare la seduta sbagliata. Se il
+ * numero non si trova o non corrisponde a nessuna convocazione, non si indovina: si crea
+ * comunque una scheda minimale con solo il verbale, già archiviata (come da spec).
  */
 async function importaVerbaliGiunta(): Promise<RisultatoImport> {
   const mails = await getMailsPerEtichetta("Giunta/Verbali");
@@ -127,10 +134,14 @@ async function importaVerbaliGiunta(): Promise<RisultatoImport> {
 
   for (const m of mails) {
     try {
-      const convocazione = await prisma.attoPoliticoAmministrativo.findFirst({
-        where: { tipo: "CONVOCAZIONE_GIUNTA", stato: { not: "ARCHIVIATO" } },
-        orderBy: [{ dataSeduta: "desc" }, { createdAt: "desc" }],
-      });
+      const numeroSeduta = estraiNumeroSeduta(m.oggettoOriginale);
+      const convocazione = numeroSeduta
+        ? await prisma.attoPoliticoAmministrativo.findFirst({
+            where: { tipo: "CONVOCAZIONE_GIUNTA", stato: { not: "ARCHIVIATO" }, oggetto: { contains: numeroSeduta } },
+            orderBy: { createdAt: "desc" },
+          })
+        : null;
+
       const atto = convocazione ?? await prisma.attoPoliticoAmministrativo.create({
         data: { tipo: "CONVOCAZIONE_GIUNTA", oggetto: m.titolo, stato: "ARCHIVIATO", messageId: m.messageId },
       });
