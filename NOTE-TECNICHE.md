@@ -142,3 +142,11 @@ postgresql://postgres.xuemeeudiomtvjdqbkwg:PASSWORD@aws-1-eu-central-1.pooler.su
 Con questa stringa (via `$env:DATABASE_URL`/`export DATABASE_URL=...` prima del comando, dato che `prisma.config.ts` carica solo `.env`) sia `prisma migrate deploy` che `prisma migrate status` funzionano regolarmente. `npx prisma generate` invece non richiede mai rete (legge solo lo schema).
 
 **Nota collaterale trovata il 2026-07-19**: la migration `20260707000000_add_protocollo` risultava nel repo ma mai applicata a questo DB (drift — probabilmente la colonna era stata aggiunta a mano o con `db push` senza passare da `migrate`). Sintomo: `P3018` con `column "protocollo" ... already exists`. Risolto con `prisma migrate resolve --applied <nome_migrazione>` (operazione solo sui metadati di Prisma, non tocca lo schema reale) prima di ripetere `migrate deploy` per le migration successive.
+
+---
+
+## 13. Vercel Hobby: i cron possono girare al massimo 1 volta al giorno
+
+Uno `schedule` cron in `vercel.json` che scatta più di una volta al giorno (es. `"0 6,15 * * *"`, due volte) fa fallire il deploy in produzione con `deploy_failed` — *"Hobby accounts are limited to daily cron jobs"* — anche se il resto del deploy è corretto. Il piano Hobby consente solo cron a cadenza giornaliera (o più rada, es. `"0 8 * * 1,3,5"` va bene perché al massimo 1 volta al giorno nei giorni in cui scatta).
+
+**Conseguenza pratica**: se una spec chiede una cadenza più fitta (es. "2 volte al giorno" per il motore mail, sezione 6), va verificato il piano Vercel attivo *prima* di scrivere lo schedule — su Hobby va ridotto a 1x/giorno (o va fatto upgrade a Pro, decisione dell'utente, non da prendere in autonomia).
