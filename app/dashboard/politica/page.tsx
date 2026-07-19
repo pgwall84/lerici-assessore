@@ -43,13 +43,29 @@ export default function PoliticaPage() {
   const [loading, setLoading] = useState(true);
   const [filtroTipo, setFiltroTipo] = useState<TipoAtto | "">("");
   const [nascondiArchiviati, setNascondiArchiviati] = useState(true);
+  const [importando, setImportando] = useState(false);
 
-  useEffect(() => {
+  function carica() {
     fetch("/api/atti")
       .then(r => r.json())
       .then(data => { setAtti(data); setLoading(false); })
       .catch(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(carica, []);
+
+  async function importaDaMail() {
+    setImportando(true);
+    const res = await fetch("/api/importa-automatico", { method: "POST" });
+    setImportando(false);
+    if (res.ok) {
+      const r = await res.json();
+      carica();
+      alert(`Importati ${r.totale.creati} atti/giustifiche.${r.totale.ambigui > 0 ? ` ${r.totale.ambigui} con ODG da scegliere a mano.` : ""}${r.totale.errori.length > 0 ? `\n\nErrori:\n${r.totale.errori.join("\n")}` : ""}`);
+    } else {
+      alert("Errore durante l'importazione automatica");
+    }
+  }
 
   const attiFiltrati = atti.filter(a =>
     (!filtroTipo || a.tipo === filtroTipo) &&
@@ -62,12 +78,21 @@ export default function PoliticaPage() {
     <div className="space-y-4 pb-8">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-gray-900">🏛️ Attività Politico-Amministrativa</h1>
-        <Link
-          href="/dashboard/politica/nuovo"
-          className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700"
-        >
-          + Nuovo
-        </Link>
+        <div className="flex gap-2">
+          <button
+            onClick={importaDaMail}
+            disabled={importando}
+            className="text-sm bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+          >
+            {importando ? "Importazione…" : "📨 Importa da mail"}
+          </button>
+          <Link
+            href="/dashboard/politica/nuovo"
+            className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700"
+          >
+            + Nuovo
+          </Link>
+        </div>
       </div>
 
       {daVedere > 0 && (

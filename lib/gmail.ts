@@ -23,19 +23,22 @@ export async function getOrCreateLabel(name: string): Promise<string> {
 }
 
 export async function getMailsSegnalazioni(): Promise<MailImport[]> {
+  return getMailsPerEtichetta("Segnalazioni");
+}
+
+export async function getMailsPerEtichetta(nomeEtichetta: string): Promise<MailImport[]> {
   const gmail = google.gmail({ version: "v1", auth: getAuth() });
 
   const labelsRes = await gmail.users.labels.list({ userId: "me" });
-  const labelSegnalazioni = labelsRes.data.labels?.find(l => l.name === "Segnalazioni");
-  if (!labelSegnalazioni?.id) return [];
+  const labelTarget = labelsRes.data.labels?.find(l => l.name === nomeEtichetta);
+  if (!labelTarget?.id) return [];
   const labelImportata = labelsRes.data.labels?.find(l => l.name === "Importata");
 
   // Esclude lato Gmail le mail gia importate, altrimenti occupano posti nella
-  // finestra di maxResults e le segnalazioni piu vecchie non ancora importate
-  // non vengono mai recuperate.
+  // finestra di maxResults e le piu vecchie non ancora importate non vengono mai recuperate.
   const listRes = await gmail.users.messages.list({
     userId: "me",
-    labelIds: [labelSegnalazioni.id],
+    labelIds: [labelTarget.id],
     q: "-label:Importata",
     maxResults: 50,
   });
