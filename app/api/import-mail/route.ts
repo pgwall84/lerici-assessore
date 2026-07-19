@@ -3,6 +3,7 @@ import { getToken } from "next-auth/jwt";
 import { getMailPerId, getMailsPerEtichettaPaginato, marcaImportata, caricaAllegatiMail, type MailImport } from "@/lib/gmail";
 import { classificaDelega } from "@/lib/classificatore";
 import { ETICHETTA_DELEGA } from "@/lib/constants";
+import { contentTypeDaNomeFile } from "@/lib/estrazione-documenti";
 import { prisma } from "@/lib/prisma";
 import { supabase } from "@/lib/supabase";
 
@@ -91,7 +92,10 @@ export async function GET(req: NextRequest) {
 async function caricaFile(cartella: string, buffer: Buffer, nomeFile: string): Promise<string> {
   const ext = nomeFile.includes(".") ? nomeFile.split(".").pop() : "bin";
   const filename = `${cartella}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  const { error } = await supabase.storage.from("foto").upload(filename, buffer, { upsert: false });
+  const { error } = await supabase.storage.from("foto").upload(filename, buffer, {
+    contentType: contentTypeDaNomeFile(nomeFile),
+    upsert: false,
+  });
   if (error) throw new Error(error.message);
   const { data: { publicUrl } } = supabase.storage.from("foto").getPublicUrl(filename);
   return publicUrl;

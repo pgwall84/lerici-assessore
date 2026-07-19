@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getMailsPerEtichetta, marcaImportata } from "@/lib/gmail";
-import { estraiTestoDaFile, estraiVociZip, trovaOdgInZip } from "@/lib/estrazione-documenti";
+import { contentTypeDaNomeFile, estraiTestoDaFile, estraiVociZip, trovaOdgInZip } from "@/lib/estrazione-documenti";
 import { riformattaOdg } from "@/lib/claude";
 import { supabase } from "@/lib/supabase";
 import type { TipoAtto } from "@prisma/client";
@@ -19,7 +19,10 @@ function sommaRisultati(risultati: RisultatoImport[]): RisultatoImport {
 async function caricaFile(cartella: string, buffer: Buffer, nomeFile: string): Promise<string> {
   const ext = nomeFile.includes(".") ? nomeFile.split(".").pop() : "bin";
   const filename = `${cartella}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  const { error } = await supabase.storage.from(BUCKET).upload(filename, buffer, { upsert: false });
+  const { error } = await supabase.storage.from(BUCKET).upload(filename, buffer, {
+    contentType: contentTypeDaNomeFile(nomeFile),
+    upsert: false,
+  });
   if (error) throw new Error(error.message);
   const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(filename);
   return publicUrl;

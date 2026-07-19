@@ -3,6 +3,25 @@ import AdmZip from "adm-zip";
 
 const REGEX_ODG = /ordine.?del.?giorno|^odg|o\.d\.g/i;
 
+const CONTENT_TYPE_PER_ESTENSIONE: Record<string, string> = {
+  pdf: "application/pdf",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  doc: "application/msword",
+  rtf: "application/rtf",
+  zip: "application/zip",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+};
+
+/** Content-Type da associare all'oggetto Storage in base all'estensione del nome file. */
+export function contentTypeDaNomeFile(nomeFile: string): string {
+  const ext = nomeFile.toLowerCase().split(".").pop() ?? "";
+  return CONTENT_TYPE_PER_ESTENSIONE[ext] ?? "application/octet-stream";
+}
+
 export function estraiVociZip(buffer: Buffer): { nomeFile: string; buffer: Buffer }[] {
   const zip = new AdmZip(buffer);
   return zip.getEntries()

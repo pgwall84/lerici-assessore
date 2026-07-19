@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { supabase } from "@/lib/supabase";
-import { estraiTestoDaFile, estraiVociZip, trovaOdgInZip } from "@/lib/estrazione-documenti";
+import { contentTypeDaNomeFile, estraiTestoDaFile, estraiVociZip, trovaOdgInZip } from "@/lib/estrazione-documenti";
 import { riformattaOdg } from "@/lib/claude";
 import type { RuoloDocumento } from "@prisma/client";
 
@@ -11,7 +11,10 @@ const BUCKET = "foto";
 async function caricaESalva(attoId: string, buffer: Buffer, nomeFile: string, ruolo: RuoloDocumento) {
   const ext = nomeFile.includes(".") ? nomeFile.split(".").pop() : "bin";
   const filename = `atto-${attoId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  const { error } = await supabase.storage.from(BUCKET).upload(filename, buffer, { upsert: false });
+  const { error } = await supabase.storage.from(BUCKET).upload(filename, buffer, {
+    contentType: contentTypeDaNomeFile(nomeFile),
+    upsert: false,
+  });
   if (error) throw new Error(error.message);
   const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(filename);
   return prisma.documentoAtto.create({ data: { attoId, nomeFile, storageUrl: publicUrl, ruolo } });
