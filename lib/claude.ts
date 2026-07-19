@@ -73,3 +73,54 @@ export async function riformattaOdg(testoGrezzo: string): Promise<string[]> {
     return [];
   }
 }
+
+// Solo le categorie del binario Manuale: Consiglio/Giunta/Giustifica (binario Automatico) sono
+// sempre identificate con certezza dalla loro etichetta Gmail dedicata, mai da un'ipotesi su
+// testo libero — se una di queste arriva priva della sua etichetta nota, è un caso genuinamente
+// anomalo che va in Incerto, non un'ipotesi che l'AI deve provare a indovinare.
+const CATEGORIE_MAIL = ["segnalazione", "progetto", "contestazione"] as const;
+
+const PROMPT_CLASSIFICA = (mittente: string, oggetto: string, estratto: string) => `Sei un assistente che classifica una PEC in arrivo al Comune di Lerici per un tool di gestione pratiche dell'Assessore.
+Categorie possibili, una sola:
+- "segnalazione": un cittadino segnala un problema/disservizio al Comune
+- "progetto": riguarda un progetto/iniziativa amministrativa in corso, legato a una delega specifica
+- "contestazione": il Comune contesta un mancato servizio a un gestore esterno (ACAM Ambiente, ACAM Acque, ATC)
+
+Se il testo non permette di scegliere con sufficiente sicurezza una di queste categorie, rispondi con categoria null.
+Rispondi SOLO con un oggetto JSON, nessun altro testo, nel formato esatto:
+{"categoria": "segnalazione" | "progetto" | "contestazione" | null, "confidenza": 0.0-1.0}
+
+Mittente: "${mittente}"
+Oggetto: "${oggetto}"
+Estratto: "${estratto}"`;
+
+export type ClassificazioneMail = { categoria: typeof CATEGORIE_MAIL[number]; confidenza: number };
+
+// Usata dal motore di scansione mail (sezione 6) solo per i casi che le regole (etichette Gmail
+// note) non risolvono. Nessun output = tier Incerto, mai una forzatura verso una categoria a caso.
+export async function classificaMail(mittente: string, oggetto: string, estratto: string): Promise<ClassificazioneMail | null> {
+  const testo = estratto.trim().slice(0, 3000);
+
+  const msg = await getClient().messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 256,
+    messages: [{ role: "user", content: PROMPT_CLASSIFICA(mittente.trim(), oggetto.trim(), testo) }],
+  });
+
+  const blocco = msg.content.find(b => b.type === "text");
+  if (!blocco || blocco.type !== "text") return null;
+
+  const match = blocco.text.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+
+  try {
+    const parsed = JSON.parse(match[0]);
+    if (!parsed || typeof parsed !== "object") return null;
+    const categoria = parsed.categoria;
+    const confidenza = Number(parsed.confidenza);
+    if (!CATEGORIE_MAIL.includes(categoria) || !Number.isFinite(confidenza)) return null;
+    return { categoria, confidenza };
+  } catch {
+    return null;
+  }
+}

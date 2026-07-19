@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getMailsPerEtichetta, marcaImportata } from "@/lib/gmail";
+import type { MailImport } from "@/lib/gmail";
 import { contentTypeDaNomeFile, estraiTestoDaFile, estraiVociZip, trovaOdgInZip } from "@/lib/estrazione-documenti";
 import { riformattaOdg } from "@/lib/claude";
 import { supabase } from "@/lib/supabase";
@@ -7,14 +7,18 @@ import type { TipoAtto } from "@prisma/client";
 
 const BUCKET = "foto";
 
-export type RisultatoImport = { creati: number; ambigui: number; errori: string[] };
-
-function sommaRisultati(risultati: RisultatoImport[]): RisultatoImport {
-  return risultati.reduce(
-    (acc, r) => ({ creati: acc.creati + r.creati, ambigui: acc.ambigui + r.ambigui, errori: [...acc.errori, ...r.errori] }),
-    { creati: 0, ambigui: 0, errori: [] as string[] },
-  );
-}
+// Esito dell'esecuzione di una singola mail del binario Automatico (motore di scansione,
+// sezione 6). A differenza del vecchio `RisultatoImport` (aggregato su un intero elenco), qui
+// si esegue una mail alla volta perché il punto di ingresso è ora una riga MailProcessata, non
+// più una query diretta a Gmail per etichetta.
+export type EsitoEsecuzione =
+  | { esito: "COMPLETATO"; entitaId: string }
+  // ODG ambiguo nello zip: il sistema si ferma SOLO per questa mail, nessuna entità creata.
+  // Dal cron non è risolvibile (nessun umano a cui chiedere): la riga resta IN_ATTESA e il resto
+  // del binario automatico prosegue senza interruzioni. Dalla schermata di revisione (Sessione C)
+  // `candidati` alimenta la scelta manuale di quale file è l'ordine del giorno.
+  | { esito: "AMBIGUO"; candidati: { indice: number; nomeFile: string }[] }
+  | { esito: "ERRORE"; errore: string };
 
 async function caricaFile(cartella: string, buffer: Buffer, nomeFile: string): Promise<string> {
   const ext = nomeFile.includes(".") ? nomeFile.split(".").pop() : "bin";
@@ -28,7 +32,7 @@ async function caricaFile(cartella: string, buffer: Buffer, nomeFile: string): P
   return publicUrl;
 }
 
-// Non deve mai far fallire l'import della mail: un errore qui (es. chiave Claude non
+// Non deve mai far fallire l'esecuzione: un errore qui (es. chiave Claude non
 // configurata) lascia semplicemente odgTestoEstratto vuoto, riprovabile a mano dalla scheda.
 async function provaEstraiOdg(attoId: string, buffer: Buffer, nomeFile: string) {
   try {
@@ -55,70 +59,63 @@ async function trovaProssimoConsiglio(daData: Date) {
 /**
  * Convocazioni Giunta/Consiglio/Commissioni: crea l'atto, carica gli allegati, prova l'estrazione ODG.
  * Gli allegati possono arrivare come un unico zip (Consiglio) o come piu' PDF separati nella stessa
- * mail (visto in pratica anche per il Consiglio, non solo Giunta/Commissioni con un solo file): in
- * entrambi i casi vanno trattati come UN unico insieme di candidati per l'euristica ODG, altrimenti
- * ogni PDF separato finirebbe marcato ORDINE_GIORNO a prescindere. Se il nome non e' univoco, non si
- * indovina: tutto resta PRATICA_ALLEGATA e Marco sceglie a mano con "Estrai come ODG".
+ * mail: in entrambi i casi vanno trattati come UN unico insieme di candidati per l'euristica ODG,
+ * altrimenti ogni PDF separato finirebbe marcato ORDINE_GIORNO a prescindere.
+ *
+ * Ambiguità (più candidati, nessun match univoco): tipico dello zip del Consiglio (10-30 file) — in
+ * quel caso NON si crea nulla, si torna IN_ATTESA per la scelta manuale (sezione 6, eccezione nel
+ * binario automatico). Con al più un solo candidato (tipico di Giunta/Commissioni, singolo file
+ * senza zip) non c'è invece nulla da disambiguare: si crea comunque l'atto, il file resta
+ * PRATICA_ALLEGATA se il nome non combacia con l'euristica ODG — nessun blocco, come già oggi.
  */
-async function importaConvocazione(nomeEtichetta: string, tipo: TipoAtto): Promise<RisultatoImport> {
-  const mails = await getMailsPerEtichetta(nomeEtichetta);
-  const risultato: RisultatoImport = { creati: 0, ambigui: 0, errori: [] };
+export async function eseguiConvocazione(m: MailImport, tipo: TipoAtto, indiceOdgForzato?: number): Promise<EsitoEsecuzione> {
+  try {
+    const voci = m.allegati.flatMap(a =>
+      a.filename.toLowerCase().endsWith(".zip") ? estraiVociZip(a.buffer) : [{ nomeFile: a.filename, buffer: a.buffer }]
+    );
 
-  for (const m of mails) {
-    try {
-      const atto = await prisma.attoPoliticoAmministrativo.create({
-        data: { tipo, oggetto: m.titolo, messageId: m.messageId },
-      });
-
-      const voci = m.allegati.flatMap(a =>
-        a.filename.toLowerCase().endsWith(".zip") ? estraiVociZip(a.buffer) : [{ nomeFile: a.filename, buffer: a.buffer }]
-      );
-
-      if (voci.length > 0) {
-        const indiceOdg = trovaOdgInZip(voci);
-        for (let i = 0; i < voci.length; i++) {
-          const url = await caricaFile(`atto-${atto.id}`, voci[i].buffer, voci[i].nomeFile);
-          await prisma.documentoAtto.create({
-            data: { attoId: atto.id, nomeFile: voci[i].nomeFile, storageUrl: url, ruolo: i === indiceOdg ? "ORDINE_GIORNO" : "PRATICA_ALLEGATA" },
-          });
-        }
-        if (indiceOdg !== null) await provaEstraiOdg(atto.id, voci[indiceOdg].buffer, voci[indiceOdg].nomeFile);
-        else risultato.ambigui++;
-      }
-
-      await marcaImportata(m.messageId);
-      risultato.creati++;
-    } catch (e) {
-      risultato.errori.push(`${nomeEtichetta} — ${m.oggettoOriginale}: ${e instanceof Error ? e.message : e}`);
+    // Una scelta forzata (dalla schermata di revisione) salta del tutto l'euristica: Marco ha
+    // già guardato l'elenco file e indicato quale sia l'ODG.
+    const indiceOdg = indiceOdgForzato !== undefined ? indiceOdgForzato : (voci.length > 0 ? trovaOdgInZip(voci) : null);
+    if (indiceOdgForzato === undefined && indiceOdg === null && voci.length > 1) {
+      return { esito: "AMBIGUO", candidati: voci.map((v, i) => ({ indice: i, nomeFile: v.nomeFile })) };
     }
+
+    const atto = await prisma.attoPoliticoAmministrativo.create({
+      data: { tipo, oggetto: m.titolo, messageId: m.messageId },
+    });
+
+    for (let i = 0; i < voci.length; i++) {
+      const url = await caricaFile(`atto-${atto.id}`, voci[i].buffer, voci[i].nomeFile);
+      await prisma.documentoAtto.create({
+        data: { attoId: atto.id, nomeFile: voci[i].nomeFile, storageUrl: url, ruolo: i === indiceOdg ? "ORDINE_GIORNO" : "PRATICA_ALLEGATA" },
+      });
+    }
+    if (indiceOdg !== null) await provaEstraiOdg(atto.id, voci[indiceOdg].buffer, voci[indiceOdg].nomeFile);
+
+    return { esito: "COMPLETATO", entitaId: atto.id };
+  } catch (e) {
+    return { esito: "ERRORE", errore: e instanceof Error ? e.message : String(e) };
   }
-  return risultato;
 }
 
 /** Mozioni/Interrogazioni: PDF singolo, nessuna estrazione ODG, tentativo di collegamento al Consiglio successivo. */
-async function importaMozioneOInterrogazione(nomeEtichetta: string, tipo: TipoAtto): Promise<RisultatoImport> {
-  const mails = await getMailsPerEtichetta(nomeEtichetta);
-  const risultato: RisultatoImport = { creati: 0, ambigui: 0, errori: [] };
-
-  for (const m of mails) {
-    try {
-      const consiglioCollegato = await trovaProssimoConsiglio(new Date());
-      const atto = await prisma.attoPoliticoAmministrativo.create({
-        data: { tipo, oggetto: m.titolo, messageId: m.messageId, consiglioCollegatoId: consiglioCollegato?.id },
+export async function eseguiMozioneOInterrogazione(m: MailImport, tipo: TipoAtto): Promise<EsitoEsecuzione> {
+  try {
+    const consiglioCollegato = await trovaProssimoConsiglio(new Date());
+    const atto = await prisma.attoPoliticoAmministrativo.create({
+      data: { tipo, oggetto: m.titolo, messageId: m.messageId, consiglioCollegatoId: consiglioCollegato?.id },
+    });
+    for (const a of m.allegati) {
+      const url = await caricaFile(`atto-${atto.id}`, a.buffer, a.filename);
+      await prisma.documentoAtto.create({
+        data: { attoId: atto.id, nomeFile: a.filename, storageUrl: url, ruolo: "PRATICA_ALLEGATA" },
       });
-      for (const a of m.allegati) {
-        const url = await caricaFile(`atto-${atto.id}`, a.buffer, a.filename);
-        await prisma.documentoAtto.create({
-          data: { attoId: atto.id, nomeFile: a.filename, storageUrl: url, ruolo: "PRATICA_ALLEGATA" },
-        });
-      }
-      await marcaImportata(m.messageId);
-      risultato.creati++;
-    } catch (e) {
-      risultato.errori.push(`${nomeEtichetta} — ${m.oggettoOriginale}: ${e instanceof Error ? e.message : e}`);
     }
+    return { esito: "COMPLETATO", entitaId: atto.id };
+  } catch (e) {
+    return { esito: "ERRORE", errore: e instanceof Error ? e.message : String(e) };
   }
-  return risultato;
 }
 
 function estraiNumeroSeduta(testo: string): string | null {
@@ -127,85 +124,54 @@ function estraiNumeroSeduta(testo: string): string | null {
 }
 
 /**
- * Verbali Giunta (etichetta "Giunta/Verbali"): si agganciano alla convocazione Giunta con lo
- * stesso numero di seduta estratto dall'oggetto (es. "n. 28"), non semplicemente alla più
- * recente non archiviata — altrimenti si rischia di archiviare la seduta sbagliata. Se il
- * numero non si trova o non corrisponde a nessuna convocazione, non si indovina: si crea
- * comunque una scheda minimale con solo il verbale, già archiviata (come da spec).
+ * Verbali Giunta: si agganciano alla convocazione Giunta con lo stesso numero di seduta estratto
+ * dall'oggetto (es. "n. 28"), non semplicemente alla più recente non archiviata. Se il numero non
+ * si trova o non corrisponde a nessuna convocazione, non si indovina il collegamento — ma si crea
+ * comunque una scheda minimale con solo il verbale, già archiviata: qui non è previsto un blocco
+ * (a differenza dello zip ambiguo del Consiglio), il rischio noto della spec è esplicito su questo —
+ * meglio una scheda da ricollegare a mano che un verbale perso.
  */
-async function importaVerbaliGiunta(): Promise<RisultatoImport> {
-  const mails = await getMailsPerEtichetta("Giunta/Verbali");
-  const risultato: RisultatoImport = { creati: 0, ambigui: 0, errori: [] };
+export async function eseguiVerbaleGiunta(m: MailImport): Promise<EsitoEsecuzione> {
+  try {
+    const numeroSeduta = estraiNumeroSeduta(m.oggettoOriginale);
+    const convocazione = numeroSeduta
+      ? await prisma.attoPoliticoAmministrativo.findFirst({
+          where: { tipo: "CONVOCAZIONE_GIUNTA", stato: { not: "ARCHIVIATO" }, oggetto: { contains: numeroSeduta } },
+          orderBy: { createdAt: "desc" },
+        })
+      : null;
 
-  for (const m of mails) {
-    try {
-      const numeroSeduta = estraiNumeroSeduta(m.oggettoOriginale);
-      const convocazione = numeroSeduta
-        ? await prisma.attoPoliticoAmministrativo.findFirst({
-            where: { tipo: "CONVOCAZIONE_GIUNTA", stato: { not: "ARCHIVIATO" }, oggetto: { contains: numeroSeduta } },
-            orderBy: { createdAt: "desc" },
-          })
-        : null;
+    const atto = convocazione ?? await prisma.attoPoliticoAmministrativo.create({
+      data: { tipo: "CONVOCAZIONE_GIUNTA", oggetto: m.titolo, stato: "ARCHIVIATO", messageId: m.messageId },
+    });
+    if (convocazione) await prisma.attoPoliticoAmministrativo.update({ where: { id: atto.id }, data: { stato: "ARCHIVIATO" } });
 
-      const atto = convocazione ?? await prisma.attoPoliticoAmministrativo.create({
-        data: { tipo: "CONVOCAZIONE_GIUNTA", oggetto: m.titolo, stato: "ARCHIVIATO", messageId: m.messageId },
+    for (const a of m.allegati) {
+      const url = await caricaFile(`atto-${atto.id}`, a.buffer, a.filename);
+      await prisma.documentoAtto.create({
+        data: { attoId: atto.id, nomeFile: a.filename, storageUrl: url, ruolo: "PRATICA_ALLEGATA" },
       });
-      if (convocazione) await prisma.attoPoliticoAmministrativo.update({ where: { id: atto.id }, data: { stato: "ARCHIVIATO" } });
-
-      for (const a of m.allegati) {
-        const url = await caricaFile(`atto-${atto.id}`, a.buffer, a.filename);
-        await prisma.documentoAtto.create({
-          data: { attoId: atto.id, nomeFile: a.filename, storageUrl: url, ruolo: "PRATICA_ALLEGATA" },
-        });
-      }
-      if (!convocazione) risultato.ambigui++;
-
-      await marcaImportata(m.messageId);
-      risultato.creati++;
-    } catch (e) {
-      risultato.errori.push(`Giunta/Verbali — ${m.oggettoOriginale}: ${e instanceof Error ? e.message : e}`);
     }
+
+    return { esito: "COMPLETATO", entitaId: atto.id };
+  } catch (e) {
+    return { esito: "ERRORE", errore: e instanceof Error ? e.message : String(e) };
   }
-  return risultato;
 }
 
-async function importaGiustifiche(): Promise<RisultatoImport> {
-  const mails = await getMailsPerEtichetta("Giustifica");
-  const risultato: RisultatoImport = { creati: 0, ambigui: 0, errori: [] };
-
-  for (const m of mails) {
-    try {
-      const giustifica = await prisma.giustifica.create({
-        data: { oggetto: m.titolo, ufficioMittente: m.nomeMittente || null, messageId: m.messageId },
+export async function eseguiGiustifica(m: MailImport): Promise<EsitoEsecuzione> {
+  try {
+    const giustifica = await prisma.giustifica.create({
+      data: { oggetto: m.titolo, ufficioMittente: m.nomeMittente || null, messageId: m.messageId },
+    });
+    for (const a of m.allegati) {
+      const url = await caricaFile(`giustifica-${giustifica.id}`, a.buffer, a.filename);
+      await prisma.documentoGiustifica.create({
+        data: { giustificaId: giustifica.id, nomeFile: a.filename, storageUrl: url },
       });
-      for (const a of m.allegati) {
-        const url = await caricaFile(`giustifica-${giustifica.id}`, a.buffer, a.filename);
-        await prisma.documentoGiustifica.create({
-          data: { giustificaId: giustifica.id, nomeFile: a.filename, storageUrl: url },
-        });
-      }
-      await marcaImportata(m.messageId);
-      risultato.creati++;
-    } catch (e) {
-      risultato.errori.push(`Giustifica — ${m.oggettoOriginale}: ${e instanceof Error ? e.message : e}`);
     }
+    return { esito: "COMPLETATO", entitaId: giustifica.id };
+  } catch (e) {
+    return { esito: "ERRORE", errore: e instanceof Error ? e.message : String(e) };
   }
-  return risultato;
-}
-
-export async function eseguiImportazioneAutomatica() {
-  const [consiglio, commissioni, interrogazioni, mozioni, convocazioniGiunta, verbaliGiunta, giustifiche] = await Promise.all([
-    importaConvocazione("Consiglio Comunale", "CONVOCAZIONE_CONSIGLIO"),
-    importaConvocazione("Consiglio Comunale/Commissioni", "CONVOCAZIONE_COMMISSIONE"),
-    importaMozioneOInterrogazione("Consiglio Comunale/Interrogazioni", "INTERROGAZIONE"),
-    importaMozioneOInterrogazione("Consiglio Comunale/Mozioni", "MOZIONE"),
-    importaConvocazione("Giunta/Convocazioni", "CONVOCAZIONE_GIUNTA"),
-    importaVerbaliGiunta(),
-    importaGiustifiche(),
-  ]);
-
-  return {
-    totale: sommaRisultati([consiglio, commissioni, interrogazioni, mozioni, convocazioniGiunta, verbaliGiunta, giustifiche]),
-    dettaglio: { consiglio, commissioni, interrogazioni, mozioni, convocazioniGiunta, verbaliGiunta, giustifiche },
-  };
 }

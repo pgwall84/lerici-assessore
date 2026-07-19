@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import { simpleParser } from "mailparser";
 import { supabase } from "@/lib/supabase";
+import { ETICHETTA_INCERTO } from "@/lib/constants";
 import iconv from "iconv-lite";
 import he from "he";
 
@@ -155,6 +156,7 @@ async function parseMessaggioPerId(
     protocollo,
     dataProtocollo,
     allegati,
+    labelIds: data.labelIds ?? [],
   };
 }
 
@@ -192,6 +194,47 @@ export async function getMailsPerEtichettaPaginato(
     mails: parsed.filter((m): m is MailImport => m !== null),
     nextPageToken: listRes.data.nextPageToken ?? undefined,
   };
+}
+
+/**
+ * Una pagina di mail da TUTTA la casella (non per etichetta) — per il motore di scansione
+ * (sezione 6): la classificazione ora copre tutta la posta in arrivo, non solo le etichette
+ * già mappate, così "Incerto" può intercettare anche mail senza nessuna etichetta nota.
+ * Esclude lato query inviate/bozze/cestino/spam (non hanno bisogno di classificazione) e,
+ * come ottimizzazione di volume, le già "Importata": il pregresso già gestito dal vecchio
+ * flusso non ha bisogno di una riga MailProcessata retroattiva — la deduplica vera resta
+ * comunque il controllo su MailProcessata lato chiamante, non questo filtro.
+ */
+export async function getMailsPaginato(
+  pageToken?: string,
+  maxResults = 25,
+): Promise<{ mails: MailImport[]; nextPageToken?: string }> {
+  const gmail = google.gmail({ version: "v1", auth: getAuth() });
+
+  const labelsRes = await gmail.users.labels.list({ userId: "me" });
+  const labelImportata = labelsRes.data.labels?.find(l => l.name === "Importata");
+
+  const listRes = await gmail.users.messages.list({
+    userId: "me",
+    q: "-in:sent -in:draft -in:trash -in:spam -label:Importata",
+    maxResults,
+    pageToken,
+  });
+
+  const messages = listRes.data.messages ?? [];
+  const parsed = await Promise.all(messages.map(m => parseMessaggioPerId(gmail, m.id!, labelImportata?.id ?? undefined)));
+
+  return {
+    mails: parsed.filter((m): m is MailImport => m !== null),
+    nextPageToken: listRes.data.nextPageToken ?? undefined,
+  };
+}
+
+/** Mappa labelId -> nome etichetta, per tradurre MailImport.labelIds in nomi da confrontare con la tassonomia. */
+export async function getMappaEtichette(): Promise<Map<string, string>> {
+  const gmail = google.gmail({ version: "v1", auth: getAuth() });
+  const res = await gmail.users.labels.list({ userId: "me" });
+  return new Map((res.data.labels ?? []).map(l => [l.id!, l.name!]));
 }
 
 export async function getMailsPerEtichetta(nomeEtichetta: string): Promise<MailImport[]> {
@@ -242,6 +285,19 @@ export async function caricaAllegatiMail(
 export async function marcaImportata(messageId: string): Promise<void> {
   const gmail = google.gmail({ version: "v1", auth: getAuth() });
   const labelId = await getOrCreateLabel("Importata");
+  await gmail.users.messages.modify({
+    userId: "me",
+    id: messageId,
+    requestBody: { addLabelIds: [labelId] },
+  });
+}
+
+/** Etichetta puramente informativa sullo stato di classificazione — a differenza di "Importata"
+ * (che segue sempre un'entità creata), questa si applica appena il motore determina binario: INCERTO,
+ * non essendoci nessuna entità la cui creazione debba prima andare a buon fine. */
+export async function marcaIncerto(messageId: string): Promise<void> {
+  const gmail = google.gmail({ version: "v1", auth: getAuth() });
+  const labelId = await getOrCreateLabel(ETICHETTA_INCERTO);
   await gmail.users.messages.modify({
     userId: "me",
     id: messageId,
@@ -401,4 +457,5 @@ export type MailImport = {
   protocollo: string;
   dataProtocollo: string;
   allegati: { buffer: Buffer; filename: string; contentType: string }[];
+  labelIds: string[];
 };

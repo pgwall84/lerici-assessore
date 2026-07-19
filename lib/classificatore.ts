@@ -88,6 +88,17 @@ export function classificaDelega(testo: string): string {
   return best.delega;
 }
 
+const GESTORE_KEYWORDS: [RegExp, "ACAM_ACQUE" | "ACAM_AMBIENTE" | "ATC"][] = [
+  [/acam.{0,3}acque/i, "ACAM_ACQUE"],
+  [/acam.{0,3}ambiente/i, "ACAM_AMBIENTE"],
+  [/\batc\b/i, "ATC"],
+];
+
+export function classificaGestore(testo: string): "ACAM_ACQUE" | "ACAM_AMBIENTE" | "ATC" {
+  for (const [re, gestore] of GESTORE_KEYWORDS) if (re.test(testo)) return gestore;
+  return "ACAM_AMBIENTE";
+}
+
 export function estraiTitolo(oggetto: string, corpo: string): string {
   if (oggetto && oggetto.trim().length > 5) {
     return oggetto.replace(/^(re:|fwd?:|i:|fw:)\s*/gi, "").trim().slice(0, 120);

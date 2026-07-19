@@ -1,22 +1,46 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { DELEGHE_LABEL } from "@/lib/constants";
 import type { Delega } from "@prisma/client";
 
-type Categoria = "segnalazione" | "progetto" | "contestazione";
+type Categoria = "segnalazione" | "progetto" | "contestazione" | "giustifica";
+type Binario = "AUTOMATICO" | "MANUALE" | "INCERTO";
 
 const CATEGORIA_LABEL: Record<Categoria, string> = {
   segnalazione: "📢 Segnalazione",
   progetto: "📁 Progetto",
   contestazione: "⚠️ Contestazione",
+  giustifica: "📝 Giustifica",
 };
 
 const CATEGORIA_COLORE: Record<Categoria, string> = {
   segnalazione: "bg-red-100 text-red-700",
   progetto: "bg-blue-100 text-blue-700",
   contestazione: "bg-yellow-100 text-yellow-800",
+  giustifica: "bg-purple-100 text-purple-700",
+};
+
+const BINARIO_LABEL: Record<Binario, string> = {
+  AUTOMATICO: "⚙️ Automatico — da confermare",
+  MANUALE: "✋ Manuale",
+  INCERTO: "❓ Incerto",
+};
+
+const BINARIO_COLORE: Record<Binario, string> = {
+  AUTOMATICO: "bg-gray-100 text-gray-600",
+  MANUALE: "bg-blue-50 text-blue-700",
+  INCERTO: "bg-red-50 text-red-700",
+};
+
+const TIPO_AUTOMATICO_LABEL: Record<string, string> = {
+  CONVOCAZIONE_CONSIGLIO: "Convocazione Consiglio",
+  CONVOCAZIONE_COMMISSIONE: "Convocazione Commissione",
+  CONVOCAZIONE_GIUNTA: "Convocazione Giunta",
+  MOZIONE: "Mozione",
+  INTERROGAZIONE: "Interrogazione",
+  VERBALE_GIUNTA: "Verbale Giunta",
+  GIUSTIFICA: "Giustifica",
 };
 
 const GESTORE_LABEL: Record<string, string> = {
@@ -25,243 +49,349 @@ const GESTORE_LABEL: Record<string, string> = {
   ATC: "ATC",
 };
 
-type MailAnteprima = {
+type Voce = {
+  mailProcessataId: string;
+  binario: Binario;
+  categoriaProposta: string | null;
+  confidenza: number | null;
   messageId: string;
-  categoria: Categoria;
   oggettoOriginale: string;
   mittente: string;
-  data: string;
+  nomeMittente: string;
+  emailMittente: string;
+  titolo: string;
   descrizione: string;
+  protocollo: string;
+  dataProtocollo: string;
   hasAllegati: boolean;
   nAllegati: number;
-  titolo: string;
+  delegaSuggerita: string;
+  gestoreSuggerito: string;
+  // stato locale di modifica
+  categoria: Categoria | "";
   delega: string;
   gestore: string;
   luogo: string;
-  nomeMittente: string;
-  emailMittente: string;
-  protocollo: string;
-  dataProtocollo: string;
-  selezionata: boolean;
+  // stato locale per la scelta ODG (solo Automatico ambiguo)
+  candidatiOdg: { indice: number; nomeFile: string }[] | null;
+  indiceOdgScelto: number | null;
 };
 
-type Cursor = { fonte: number; pageToken?: string } | null;
+const FILTRI: { value: Binario | ""; label: string }[] = [
+  { value: "", label: "Tutte" },
+  { value: "INCERTO", label: "❓ Incerto" },
+  { value: "MANUALE", label: "✋ Manuale" },
+  { value: "AUTOMATICO", label: "⚙️ Automatico" },
+];
+
+function toVoce(r: Omit<Voce, "categoria" | "delega" | "gestore" | "luogo" | "candidatiOdg" | "indiceOdgScelto">): Voce {
+  const categoriaIniziale = r.binario === "INCERTO"
+    ? ""
+    : (["segnalazione", "progetto", "contestazione"].includes(r.categoriaProposta ?? "") ? (r.categoriaProposta as Categoria) : "");
+  return {
+    ...r,
+    categoria: categoriaIniziale,
+    delega: r.delegaSuggerita,
+    gestore: r.gestoreSuggerito,
+    luogo: "",
+    candidatiOdg: null,
+    indiceOdgScelto: null,
+  };
+}
 
 export default function ImportMailPage() {
-  const router = useRouter();
-  const [mails, setMails] = useState<MailAnteprima[]>([]);
+  const [voci, setVoci] = useState<Voce[]>([]);
   const [loading, setLoading] = useState(true);
   const [caricandoAltre, setCaricandoAltre] = useState(false);
-  const [cursor, setCursor] = useState<Cursor>({ fonte: 0 });
-  const [importando, setImportando] = useState(false);
+  const [cursor, setCursor] = useState<string | null>(null);
   const [espansa, setEspansa] = useState<string | null>(null);
+  const [confermando, setConfermando] = useState<string | null>(null);
+  const [filtro, setFiltro] = useState<Binario | "">("");
+  const [conteggi, setConteggi] = useState({ manuale: 0, incerto: 0, automatico: 0 });
 
-  useEffect(() => {
-    fetch("/api/import-mail")
+  function caricaConteggi() {
+    fetch("/api/motore-mail").then(r => r.ok ? r.json() : null).then(d => { if (d) setConteggi(d); }).catch(() => {});
+  }
+
+  function carica(binario: Binario | "") {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (binario) params.set("binario", binario);
+    fetch(`/api/motore-mail/revisione?${params}`)
       .then(r => r.json())
       .then(data => {
-        setMails(data.mails.map((m: Omit<MailAnteprima, "selezionata">) => ({ ...m, selezionata: true })));
+        setVoci(data.mails.map(toVoce));
         setCursor(data.nextCursor);
         setLoading(false);
       });
-  }, []);
+  }
+
+  useEffect(() => { carica(filtro); caricaConteggi(); }, [filtro]);
 
   async function caricaAltre() {
     if (!cursor) return;
     setCaricandoAltre(true);
-    const params = new URLSearchParams({ fonte: String(cursor.fonte) });
-    if (cursor.pageToken) params.set("pageToken", cursor.pageToken);
-    const res = await fetch(`/api/import-mail?${params}`);
+    const params = new URLSearchParams({ cursor });
+    if (filtro) params.set("binario", filtro);
+    const res = await fetch(`/api/motore-mail/revisione?${params}`);
     const data = await res.json();
-    setMails(ms => [...ms, ...data.mails.map((m: Omit<MailAnteprima, "selezionata">) => ({ ...m, selezionata: true }))]);
+    setVoci(vs => [...vs, ...data.mails.map(toVoce)]);
     setCursor(data.nextCursor);
     setCaricandoAltre(false);
   }
 
-  function aggiorna(messageId: string, campo: string, valore: string | boolean) {
-    setMails(ms => ms.map(m => m.messageId === messageId ? { ...m, [campo]: valore } : m));
+  function aggiorna(id: string, campo: keyof Voce, valore: string | number | null) {
+    setVoci(vs => vs.map(v => v.mailProcessataId === id ? { ...v, [campo]: valore } : v));
   }
 
-  async function importa() {
-    const selezionate = mails.filter(m => m.selezionata);
-    if (!selezionate.length) return;
-    setImportando(true);
-    const res = await fetch("/api/import-mail", {
+  function rimuovi(id: string) {
+    setVoci(vs => vs.filter(v => v.mailProcessataId !== id));
+    caricaConteggi();
+  }
+
+  async function conferma(v: Voce) {
+    setConfermando(v.mailProcessataId);
+
+    const body = v.binario === "AUTOMATICO"
+      ? (v.indiceOdgScelto !== null ? { indiceOdgForzato: v.indiceOdgScelto } : {})
+      : {
+          categoria: v.categoria,
+          titolo: v.titolo,
+          descrizione: v.descrizione.slice(0, 1000),
+          delega: v.delega || undefined,
+          gestore: v.gestore || undefined,
+          luogo: v.luogo || undefined,
+          nomeMittente: v.nomeMittente || undefined,
+          emailMittente: v.emailMittente || undefined,
+          protocollo: v.protocollo || undefined,
+          dataProtocollo: v.dataProtocollo || undefined,
+        };
+
+    const res = await fetch(`/api/motore-mail/${v.mailProcessataId}/conferma`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        importazioni: selezionate.map(m => ({
-          messageId: m.messageId,
-          categoria: m.categoria,
-          titolo: m.titolo,
-          delega: m.delega,
-          gestore: m.gestore,
-          descrizione: m.descrizione.slice(0, 1000),
-          luogo: m.luogo,
-          nomeMittente: m.nomeMittente,
-          emailMittente: m.emailMittente,
-          protocollo: m.protocollo,
-          dataProtocollo: m.dataProtocollo,
-        })),
-      }),
+      body: JSON.stringify(body),
     });
-    setImportando(false);
-    if (res.ok) {
-      const { importate } = await res.json();
-      alert(`${importate} elementi creati!`);
-      router.push("/dashboard");
+    setConfermando(null);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(`Errore: ${JSON.stringify(err.error ?? res.status)}`);
+      return;
     }
-  }
 
-  const selezionate = mails.filter(m => m.selezionata).length;
-  const tutteSelezionate = mails.length > 0 && selezionate === mails.length;
-
-  function toggleTutte() {
-    setMails(ms => ms.map(m => ({ ...m, selezionata: !tutteSelezionate })));
+    const r = await res.json();
+    if (r.ambiguo) {
+      aggiorna(v.mailProcessataId, "candidatiOdg", r.candidati);
+      return;
+    }
+    rimuovi(v.mailProcessataId);
   }
 
   return (
     <div className="space-y-4 pb-32">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-gray-900">Importa da mail</h1>
-          <p className="text-xs text-gray-500">Segnalazioni, Deleghe→Progetto, Contestazioni</p>
-        </div>
-        <div className="flex gap-2 items-center">
-          {mails.length > 0 && (
-            <button
-              onClick={toggleTutte}
-              className="text-xs px-3 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50"
-            >
-              {tutteSelezionate ? "Deseleziona tutte" : "Seleziona tutte"}
-            </button>
-          )}
+      <div>
+        <h1 className="text-lg font-semibold text-gray-900">Revisione mail</h1>
+        <p className="text-xs text-gray-500">Motore di scansione — conferma o correggi prima di creare la pratica</p>
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        {FILTRI.map(f => (
           <button
-            onClick={importa}
-            disabled={!selezionate || importando}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-40 hover:bg-blue-700"
+            key={f.value}
+            onClick={() => setFiltro(f.value)}
+            className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+              filtro === f.value ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300"
+            }`}
           >
-            {importando ? "Importo…" : `Importa ${selezionate > 0 ? `(${selezionate})` : ""}`}
+            {f.label}
+            {f.value === "INCERTO" && conteggi.incerto > 0 && <span className="ml-1 opacity-70">{conteggi.incerto}</span>}
+            {f.value === "MANUALE" && conteggi.manuale > 0 && <span className="ml-1 opacity-70">{conteggi.manuale}</span>}
+            {f.value === "AUTOMATICO" && conteggi.automatico > 0 && <span className="ml-1 opacity-70">{conteggi.automatico}</span>}
           </button>
-        </div>
+        ))}
       </div>
 
       {loading ? (
-        <div className="text-center py-16 text-gray-400">Caricamento mail…</div>
-      ) : mails.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">Caricamento…</div>
+      ) : voci.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <p className="text-4xl mb-3">📭</p>
-          <p>Nessuna mail da importare</p>
+          <p>Nessuna mail da revisionare</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {mails.map(m => (
-            <div key={m.messageId} className={`bg-white rounded-xl border transition-colors ${m.selezionata ? "border-blue-300" : "border-gray-200 opacity-60"}`}>
-              {/* Header riga */}
+          {voci.map(v => (
+            <div key={v.mailProcessataId} className="bg-white rounded-xl border border-gray-200">
               <div className="flex items-center gap-3 p-3">
-                <input
-                  type="checkbox"
-                  checked={m.selezionata}
-                  onChange={e => aggiorna(m.messageId, "selezionata", e.target.checked)}
-                  className="w-4 h-4 accent-blue-600 shrink-0"
-                />
                 <div className="flex-1 min-w-0">
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${CATEGORIA_COLORE[m.categoria]}`}>
-                    {CATEGORIA_LABEL[m.categoria]}
-                  </span>
-                  <p className="text-sm font-medium text-gray-900 truncate">{m.titolo}</p>
-                  <p className="text-xs text-gray-500 truncate">{m.nomeMittente}</p>
+                  <div className="flex gap-1.5 flex-wrap mb-1">
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${BINARIO_COLORE[v.binario]}`}>
+                      {BINARIO_LABEL[v.binario]}
+                    </span>
+                    {v.binario === "AUTOMATICO" && v.categoriaProposta && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-gray-100 text-gray-600">
+                        {TIPO_AUTOMATICO_LABEL[v.categoriaProposta] ?? v.categoriaProposta}
+                      </span>
+                    )}
+                    {v.binario !== "AUTOMATICO" && v.categoria && (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${CATEGORIA_COLORE[v.categoria]}`}>
+                        {CATEGORIA_LABEL[v.categoria]}
+                      </span>
+                    )}
+                    {v.confidenza !== null && v.confidenza < 1 && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-50 text-gray-400">
+                        AI {Math.round(v.confidenza * 100)}%
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm font-medium text-gray-900 truncate">{v.titolo}</p>
+                  <p className="text-xs text-gray-500 truncate">{v.nomeMittente}</p>
                   <div className="flex gap-2 flex-wrap">
-                    {m.protocollo && <p className="text-xs text-gray-400">Prot. {m.protocollo} del {m.dataProtocollo}</p>}
-                    {m.hasAllegati && <p className="text-xs text-blue-500">📎 {m.nAllegati} allegati</p>}
+                    {v.protocollo && <p className="text-xs text-gray-400">Prot. {v.protocollo} del {v.dataProtocollo}</p>}
+                    {v.hasAllegati && <p className="text-xs text-blue-500">📎 {v.nAllegati} allegati</p>}
                   </div>
                 </div>
                 <button
-                  onClick={() => setEspansa(espansa === m.messageId ? null : m.messageId)}
+                  onClick={() => setEspansa(espansa === v.mailProcessataId ? null : v.mailProcessataId)}
                   className="text-xs text-blue-600 shrink-0"
                 >
-                  {espansa === m.messageId ? "▲ Chiudi" : "▼ Modifica"}
+                  {espansa === v.mailProcessataId ? "▲ Chiudi" : "▼ Dettagli"}
                 </button>
               </div>
 
-              {/* Campi modificabili */}
-              {espansa === m.messageId && (
+              {espansa === v.mailProcessataId && (
                 <div className="border-t border-gray-100 p-3 space-y-3">
-                  {/* Anteprima corpo */}
                   <div className="bg-gray-50 rounded-lg p-2 text-xs text-gray-600 max-h-32 overflow-y-auto whitespace-pre-wrap">
-                    {m.descrizione || "(corpo vuoto)"}
+                    {v.descrizione || "(corpo vuoto)"}
                   </div>
 
-                  <div className="grid grid-cols-1 gap-2">
-                    <div>
-                      <label className="text-xs text-gray-500">Titolo / Oggetto</label>
-                      <input
-                        value={m.titolo}
-                        onChange={e => aggiorna(m.messageId, "titolo", e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-
-                    {m.categoria === "contestazione" ? (
-                      <div>
-                        <label className="text-xs text-gray-500">Gestore</label>
-                        <select
-                          value={m.gestore}
-                          onChange={e => aggiorna(m.messageId, "gestore", e.target.value)}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
-                        >
-                          {Object.keys(GESTORE_LABEL).map(g => (
-                            <option key={g} value={g}>{GESTORE_LABEL[g]}</option>
-                          ))}
-                        </select>
+                  {v.binario === "AUTOMATICO" ? (
+                    v.candidatiOdg ? (
+                      <div className="space-y-2">
+                        <p className="text-xs text-gray-600">
+                          Più file possibili: quale è l&apos;ordine del giorno?
+                        </p>
+                        {v.candidatiOdg.map(c => (
+                          <label key={c.indice} className="flex items-center gap-2 text-sm">
+                            <input
+                              type="radio"
+                              name={`odg-${v.mailProcessataId}`}
+                              checked={v.indiceOdgScelto === c.indice}
+                              onChange={() => aggiorna(v.mailProcessataId, "indiceOdgScelto", c.indice)}
+                            />
+                            {c.nomeFile}
+                          </label>
+                        ))}
                       </div>
                     ) : (
-                      <div>
-                        <label className="text-xs text-gray-500">Delega</label>
-                        <select
-                          value={m.delega}
-                          onChange={e => aggiorna(m.messageId, "delega", e.target.value)}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
-                        >
-                          {(Object.keys(DELEGHE_LABEL) as Delega[]).map(d => (
-                            <option key={d} value={d}>{DELEGHE_LABEL[d]}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    {m.categoria === "segnalazione" && (
-                      <>
+                      <p className="text-xs text-gray-500">
+                        Vai avanti con la creazione automatica dell&apos;atto/giustifica come previsto.
+                      </p>
+                    )
+                  ) : (
+                    <div className="grid grid-cols-1 gap-2">
+                      {v.binario === "INCERTO" && (
                         <div>
-                          <label className="text-xs text-gray-500">Luogo</label>
-                          <input
-                            value={m.luogo}
-                            onChange={e => aggiorna(m.messageId, "luogo", e.target.value)}
-                            placeholder="Es. Via Roma, Lerici"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
+                          <label className="text-xs text-gray-500">Categoria</label>
+                          <select
+                            value={v.categoria}
+                            onChange={e => aggiorna(v.mailProcessataId, "categoria", e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
+                          >
+                            <option value="">Seleziona…</option>
+                            {(Object.keys(CATEGORIA_LABEL) as Categoria[]).map(c => (
+                              <option key={c} value={c}>{CATEGORIA_LABEL[c]}</option>
+                            ))}
+                          </select>
+                          <p className="text-[11px] text-gray-400 mt-1">
+                            Se è una convocazione Consiglio/Giunta o una giustifica, meglio applicare l&apos;etichetta giusta su Gmail: verrà classificata da sola al prossimo giro.
+                          </p>
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
+                      )}
+
+                      <div>
+                        <label className="text-xs text-gray-500">Titolo / Oggetto</label>
+                        <input
+                          value={v.titolo}
+                          onChange={e => aggiorna(v.mailProcessataId, "titolo", e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      {v.categoria === "contestazione" ? (
+                        <div>
+                          <label className="text-xs text-gray-500">Gestore</label>
+                          <select
+                            value={v.gestore}
+                            onChange={e => aggiorna(v.mailProcessataId, "gestore", e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
+                          >
+                            {Object.keys(GESTORE_LABEL).map(g => (
+                              <option key={g} value={g}>{GESTORE_LABEL[g]}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (v.categoria === "segnalazione" || v.categoria === "progetto") && (
+                        <div>
+                          <label className="text-xs text-gray-500">Delega</label>
+                          <select
+                            value={v.delega}
+                            onChange={e => aggiorna(v.mailProcessataId, "delega", e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
+                          >
+                            {(Object.keys(DELEGHE_LABEL) as Delega[]).map(d => (
+                              <option key={d} value={d}>{DELEGHE_LABEL[d]}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      {v.categoria === "segnalazione" && (
+                        <>
                           <div>
-                            <label className="text-xs text-gray-500">Nome segnalante</label>
+                            <label className="text-xs text-gray-500">Luogo</label>
                             <input
-                              value={m.nomeMittente}
-                              onChange={e => aggiorna(m.messageId, "nomeMittente", e.target.value)}
+                              value={v.luogo}
+                              onChange={e => aggiorna(v.mailProcessataId, "luogo", e.target.value)}
+                              placeholder="Es. Via Roma, Lerici"
                               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                           </div>
-                          <div>
-                            <label className="text-xs text-gray-500">Email segnalante</label>
-                            <input
-                              value={m.emailMittente}
-                              onChange={e => aggiorna(m.messageId, "emailMittente", e.target.value)}
-                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-xs text-gray-500">Nome segnalante</label>
+                              <input
+                                value={v.nomeMittente}
+                                onChange={e => aggiorna(v.mailProcessataId, "nomeMittente", e.target.value)}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-gray-500">Email segnalante</label>
+                              <input
+                                value={v.emailMittente}
+                                onChange={e => aggiorna(v.mailProcessataId, "emailMittente", e.target.value)}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
                           </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => conferma(v)}
+                    disabled={
+                      confermando === v.mailProcessataId ||
+                      (v.binario !== "AUTOMATICO" && !v.categoria) ||
+                      (v.candidatiOdg !== null && v.indiceOdgScelto === null)
+                    }
+                    className="w-full bg-blue-600 text-white rounded-lg py-2 text-sm font-medium disabled:opacity-50 hover:bg-blue-700"
+                  >
+                    {confermando === v.mailProcessataId ? "Conferma…" : v.candidatiOdg ? "✓ Conferma con questo file" : "✓ Conferma"}
+                  </button>
                 </div>
               )}
             </div>

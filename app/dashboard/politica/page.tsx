@@ -48,7 +48,11 @@ export default function PoliticaPage() {
     if (res.ok) {
       const r = await res.json();
       carica();
-      alert(`Importati ${r.totale.creati} atti/giustifiche.${r.totale.ambigui > 0 ? ` ${r.totale.ambigui} con ODG da scegliere a mano.` : ""}${r.totale.errori.length > 0 ? `\n\nErrori:\n${r.totale.errori.join("\n")}` : ""}`);
+      alert(
+        r.primaEsecuzione
+          ? `Prima esecuzione del motore mail: ${r.scansionate} mail nuove classificate, nessuna eseguita in automatico — conferma almeno una voce dalla revisione per attivare il binario automatico.`
+          : `${r.completati} completate automaticamente, ${r.inAttesa} in attesa (conferma manuale o ODG da scegliere).${r.errori.length > 0 ? `\n\nErrori:\n${r.errori.join("\n")}` : ""}`
+      );
     } else {
       alert("Errore durante l'importazione automatica");
     }

@@ -329,6 +329,36 @@ enum RuoloDocumento {
 }
 
 // ---------------------------------------------------------------------------
+// MAIL PROCESSATA — log di verità del motore di scansione mail (sezione 6 spec):
+// il DB, non le etichette Gmail, decide cosa è già stato gestito.
+// ---------------------------------------------------------------------------
+model MailProcessata {
+  id                String              @id @default(cuid())
+  messageId         String              @unique
+  mittente          String?
+  oggetto           String?
+  categoriaProposta String?
+  confidenza        Float?
+  binario           BinarioMail
+  esito             EsitoMailProcessata @default(IN_ATTESA)
+  entitaCreataId    String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+}
+
+enum BinarioMail {
+  AUTOMATICO
+  MANUALE
+  INCERTO
+}
+
+enum EsitoMailProcessata {
+  IN_ATTESA
+  COMPLETATO
+  ERRORE
+}
+
+// ---------------------------------------------------------------------------
 // BANDO — monitoraggio bandi pubblici rilevanti per le deleghe
 // ---------------------------------------------------------------------------
 model Bando {

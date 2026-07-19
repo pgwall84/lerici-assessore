@@ -1,6 +1,6 @@
 {
   "crons": [
     { "path": "/api/cron/check-bandi", "schedule": "0 8 * * 1,3,5" },
-    { "path": "/api/cron/importa-automatico", "schedule": "30 7 * * *" }
+    { "path": "/api/cron/motore-mail", "schedule": "0 6,15 * * *" }
   ]
 }

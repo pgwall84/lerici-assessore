@@ -29,6 +29,7 @@ export default function Navbar() {
   const [bandiBadge, setBandiBadge] = useState(0);
   const [giustificheBadge, setGiustificheBadge] = useState(0);
   const [politicaBadge, setPoliticaBadge] = useState(0);
+  const [incertoBadge, setIncertoBadge] = useState(0);
   const [altroOpen, setAltroOpen] = useState(false);
   const altroRef = useRef<HTMLDivElement>(null);
   const badgeTotale = bandiBadge + giustificheBadge;
@@ -45,6 +46,10 @@ export default function Navbar() {
     fetch("/api/atti?visualizzato=false")
       .then(r => r.ok ? r.json() : [])
       .then((data: unknown[]) => setPoliticaBadge(data.length))
+      .catch(() => {});
+    fetch("/api/motore-mail")
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { incerto: number } | null) => setIncertoBadge(data?.incerto ?? 0))
       .catch(() => {});
   }, [pathname]);
 
@@ -86,6 +91,11 @@ export default function Navbar() {
               {l.href === "/dashboard/politica" && politicaBadge > 0 && (
                 <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
                   {politicaBadge > 9 ? "9+" : politicaBadge}
+                </span>
+              )}
+              {l.href === "/dashboard/import-mail" && incertoBadge > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                  {incertoBadge > 9 ? "9+" : incertoBadge}
                 </span>
               )}
             </Link>
@@ -159,6 +169,11 @@ export default function Navbar() {
             {l.href === "/dashboard/politica" && politicaBadge > 0 && (
               <span className="absolute top-1 right-1/4 bg-red-600 text-white text-[9px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
                 {politicaBadge > 9 ? "9+" : politicaBadge}
+              </span>
+            )}
+            {l.href === "/dashboard/import-mail" && incertoBadge > 0 && (
+              <span className="absolute top-1 right-1/4 bg-red-600 text-white text-[9px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
+                {incertoBadge > 9 ? "9+" : incertoBadge}
               </span>
             )}
           </Link>

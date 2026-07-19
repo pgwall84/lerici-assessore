@@ -255,3 +255,52 @@ export const STATO_PROGETTO_COLORE: Record<StatoProgetto, string> = {
 
 export const STATI_PROGETTO_OPERATIVA: StatoProgetto[] = ["IN_CORSO", "SOSPESO"];
 export const STATI_PROGETTO_ARCHIVIO: StatoProgetto[] = ["CONCLUSO", "ARCHIVIATO"];
+
+// --- Motore di scansione mail (sezione 6 spec) ---
+
+// Etichetta Gmail -> regola di classificazione. Copre esattamente le stesse etichette già
+// consumate oggi da import-mail/import-automatico (vedi lib/import-automatico.ts e
+// app/api/import-mail/route.ts) + le sotto-etichette esplicitamente "fuori scope" per ora
+// (Giunta/Delibere, Giunta/Determine) e quelle che riflettono solo uno stato già gestito
+// altrove (Segnalazioni/Chiusa, Segnalazioni/In corso) — nessuna delle due va classificata.
+// Qualunque etichetta NON presente qui (o sotto-etichetta di un ramo noto non mappata) finisce
+// in binario INCERTO dopo il tentativo di classificazione AI.
+export type VoceTassonomiaMail =
+  | { fuoriScope: true }
+  | { binario: "AUTOMATICO"; categoria: "atto"; tipo: TipoAtto }
+  | { binario: "AUTOMATICO"; categoria: "verbaleGiunta" }
+  | { binario: "AUTOMATICO"; categoria: "giustifica" }
+  | { binario: "MANUALE"; categoria: "segnalazione" }
+  | { binario: "MANUALE"; categoria: "progetto"; delega: Delega }
+  | { binario: "MANUALE"; categoria: "contestazione" };
+
+export const TASSONOMIA_MAIL: Record<string, VoceTassonomiaMail> = {
+  "Consiglio Comunale": { binario: "AUTOMATICO", categoria: "atto", tipo: "CONVOCAZIONE_CONSIGLIO" },
+  "Consiglio Comunale/Commissioni": { binario: "AUTOMATICO", categoria: "atto", tipo: "CONVOCAZIONE_COMMISSIONE" },
+  "Consiglio Comunale/Interrogazioni": { binario: "AUTOMATICO", categoria: "atto", tipo: "INTERROGAZIONE" },
+  "Consiglio Comunale/Mozioni": { binario: "AUTOMATICO", categoria: "atto", tipo: "MOZIONE" },
+  "Giunta/Convocazioni": { binario: "AUTOMATICO", categoria: "atto", tipo: "CONVOCAZIONE_GIUNTA" },
+  "Giunta/Verbali": { binario: "AUTOMATICO", categoria: "verbaleGiunta" },
+  "Giunta/Delibere": { fuoriScope: true },
+  "Giunta/Determine": { fuoriScope: true },
+  "Giustifica": { binario: "AUTOMATICO", categoria: "giustifica" },
+  "Segnalazioni": { binario: "MANUALE", categoria: "segnalazione" },
+  "Segnalazioni/Chiusa": { fuoriScope: true },
+  "Segnalazioni/In corso": { fuoriScope: true },
+  "Contestazioni": { binario: "MANUALE", categoria: "contestazione" },
+  ...Object.fromEntries(
+    Object.entries(ETICHETTA_DELEGA).map(([nomeEtichetta, delega]) => [
+      `Deleghe/${nomeEtichetta}`,
+      { binario: "MANUALE", categoria: "progetto", delega } as VoceTassonomiaMail,
+    ])
+  ),
+};
+
+// Stringa da persistere in MailProcessata.categoriaProposta: per gli atti usa il TipoAtto
+// specifico (non il generico "atto"), altrimenti in Sessione B non si saprebbe più quale
+// gestore invocare (Consiglio? Giunta? Mozione?) senza ri-derivarlo dalle etichette.
+export function categoriaProposta(voce: Exclude<VoceTassonomiaMail, { fuoriScope: true }>): string {
+  return "tipo" in voce ? voce.tipo : voce.categoria;
+}
+
+export const ETICHETTA_INCERTO = "Incerto/Da classificare";
