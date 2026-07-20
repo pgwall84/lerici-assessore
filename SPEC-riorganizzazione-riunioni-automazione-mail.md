@@ -18,7 +18,7 @@ Oggi tutto passa per un unico modello `Pratica` (Segnalazioni + Progetti mischia
 Questa spec copre tre evolutive correlate, pensate insieme perché condividono modelli (Persona, Progetto), pattern UI (diario, documenti, conferma prima delle azioni pesanti) e un building block tecnico comune (estrazione testo → API Claude → elenco puntato):
 
 1. **Separare in sezioni distinte** nella sidebar: Segnalazioni (esistente, invariata), Progetti (nuova), Attività Politico-Amministrativa (nuova), Contestazioni (nuova), Giustifiche (nuova), Riunioni (nuova)
-2. **Automatizzare la classificazione** di tutta la posta in arrivo, su **due binari distinti**: automatico con notifica a posteriori per le categorie ad alta confidenza (identificazione quasi certa da mittente/oggetto), conferma umana prima di ogni azione per tutte le altre — vedi sezione 6
+2. **Automatizzare la classificazione** di tutta la posta in arrivo, su **tre binari distinti**: automatico con notifica a posteriori per le categorie ad alta confidenza, conferma umana prima di ogni azione per le categorie ambigue, e un tier "Incerto" per i casi che nessuno dei due riesce a risolvere — orchestrati da un motore di scansione schedulato (non più a trigger manuale) con un log di verità nel DB — vedi sezione 6
 3. **Riunioni**: checklist vocale per preparare e seguire incontri con capi settore (o altri), collegabile sia a una Persona sia — novità di questa unificazione — a un Progetto
 
 ---
@@ -400,90 +400,109 @@ Euristica su nome file: pattern regex case-insensitive tipo `/ordine.?del.?giorn
 
 ---
 
-## 6. Automazione mail: classificazione e azioni
+## 6. Automazione mail: motore di scansione schedulato
 
-### Due binari: automatico (con badge) vs conferma manuale
+### Cambio architetturale rispetto alla prima versione di questa spec
 
-Non tutte le categorie hanno lo stesso livello di rischio in caso di errore di classificazione. Le attività politico-amministrative (Consiglio Comunale e relative sotto-etichette, Giunta e relative sotto-etichette, Giustifica) hanno **identificazione quasi certa**: mittente fisso (protocollo/segreteria comunale), oggetto standardizzato ("CONVOCAZIONE CONSIGLIO COMUNALE", "MOZIONE N. ...", ecc.) — il margine di ambiguità è minimo, molto più basso che per una Segnalazione (linguaggio libero del cittadino) o per l'assegnazione di una Delega a un Progetto (serve capire il contenuto). Per queste, **etichettatura e caricamento nel tool avvengono in automatico**, senza schermata di conferma preventiva — la "conferma" diventa un **badge di notifica** (numero rosso, stesso pattern già previsto per i bandi NUOVO) sulla voce di sidebar corrispondente, che Marco consulta quando vuole, non prima che l'azione avvenga.
+La prima versione di questa sezione assumeva che le etichette Gmail stesse fossero la fonte di verità su "cosa è già stato importato" (pattern `-label:Importata` ereditato dal flusso Segnalazioni originale). L'uso reale ha mostrato il limite di questo approccio: in un caso (categoria Giunta), le mail sono state etichettate "Importata" **senza** che la scrittura nel tool fosse andata a buon fine — Gmail diceva "fatto", il DB diceva altro. Da qui il cambio: **il DB, non Gmail, è la fonte di verità**.
 
-**Binario automatico** (etichetta + creazione entità senza conferma preventiva, badge dopo):
+```prisma
+model MailProcessata {
+  id                String    @id @default(cuid())
+  messageId         String    @unique
+  mittente          String?
+  oggetto           String?
+  categoriaProposta String?
+  confidenza        Float?
+  binario           BinarioMail
+  esito             EsitoMailProcessata  @default(IN_ATTESA)
+  entitaCreataId    String?              // id della Pratica/Progetto/Atto/Contestazione/Giustifica creata, se esito COMPLETATO
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+enum BinarioMail {
+  AUTOMATICO
+  MANUALE
+  INCERTO
+}
+
+enum EsitoMailProcessata {
+  IN_ATTESA
+  COMPLETATO
+  ERRORE
+}
+```
+
+**Regola non negoziabile**: qualunque etichetta Gmail (di categoria o "Importata") viene scritta **solo dopo** che `esito` è stato impostato a `COMPLETATO` — cioè solo dopo conferma che la riga nel DB esiste davvero. Se la creazione fallisce, `esito` resta `ERRORE`, Gmail non viene toccato, e la riga in `MailProcessata` è il posto dove si vede cosa è rimasto indietro invece di scoprirlo per caso mesi dopo, come successo con Giunta.
+
+### Tre binari (non più due)
+
+**Binario automatico** (etichetta + creazione entità senza conferma preventiva, badge dopo — invariato nel perimetro già deciso):
 - Consiglio Comunale (convocazione stessa, Commissioni, Interrogazioni, Mozioni)
-- Giunta (Convocazioni, Verbali — Delibere/Determine restano fuori scope come già stabilito)
+- Giunta (Convocazioni, Verbali — Delibere/Determine restano fuori scope)
 - Giustifica
 
-**Binario a conferma manuale** (schermata di revisione prima di ogni azione, come già descritto sotto):
-- Segnalazioni (nuova mail da importare, e assegnazione sotto-categoria/delega)
-- Deleghe → Progetto (serve capire il contenuto per assegnare la delega corretta)
-- Contestazioni
+**Binario a conferma manuale** (schermata di revisione prima di ogni azione, invariato):
+- Segnalazioni, Deleghe → Progetto, Contestazioni
 
-Questa suddivisione è il punto di partenza; **da rivalutare nel tempo** se il binario automatico si dimostra affidabile anche per altre categorie.
+**Binario Incerto** (nuovo): quando né le regole né la classificazione AI raggiungono una soglia di confidenza sufficiente per proporre una categoria affidabile. La mail non viene forzata in una categoria sbagliata — resta con `binario: INCERTO`, etichettata in Gmail con un'etichetta dedicata ("Incerto/Da classificare", visibile anche fuori dal tool) invece di "Importata". Badge rosso dedicato in sidebar. A differenza del binario manuale (dove il sistema propone una categoria e Marco la corregge se serve), qui **non viene proposta alcuna categoria di default** — Marco sceglie da zero tra tutte quelle disponibili, perché il sistema onestamente non ha un'ipotesi affidabile da offrire.
+
+Questa suddivisione è il punto di partenza; **da rivalutare nel tempo** se il binario automatico si dimostra affidabile anche per altre categorie oggi manuali.
 
 ### Eccezione nel binario automatico: zip del Consiglio con ODG ambiguo
 
-Anche dentro il binario automatico c'è un caso che **non può essere automatico**: quando lo zip di una convocazione di Consiglio non permette di individuare con certezza il file dell'ordine del giorno (nessun file corrisponde all'euristica, o più di uno corrisponde — vedi sezione 5). In quel caso specifico, il sistema si ferma e chiede conferma solo per quella mail, con la schermata che mostra l'elenco dei file dello zip per la scelta manuale — il resto del binario automatico continua a funzionare senza interruzioni per le altre mail.
+Anche dentro il binario automatico c'è un caso che **non può essere automatico**: quando lo zip di una convocazione di Consiglio non permette di individuare con certezza il file dell'ordine del giorno. In quel caso specifico, il sistema si ferma e chiede conferma solo per quella mail, con la schermata che mostra l'elenco dei file dello zip per la scelta manuale — il resto del binario automatico continua a funzionare senza interruzioni per le altre mail.
 
 ### Tassonomia reale (etichette Gmail già in uso)
-
-Marco ha già una struttura di etichette Gmail consolidata. Usarla come tassonomia di riferimento significa che la classificazione, per la maggior parte dei casi, può basarsi su regole affidabili invece di indovinare con l'AI — il problema non è più "che categoria è questa mail", ma "a quale etichetta esistente corrisponde", che è un problema più vincolato.
 
 | Etichetta Gmail | Sotto-etichetta | Entità creata nel tool | Binario | Note |
 |---|---|---|---|---|
 | Segnalazioni | — (mail nuova, da importare) | `Pratica` (SEGNALAZIONE) | Manuale | Flusso esistente, invariato |
-| Segnalazioni | Chiusa | *(riflette `StatoPratica.CHIUSA`)* | — | Già gestito oggi da `spostaInChiusa()`: quando la Pratica passa a CHIUSA, il tool applica l'etichetta Gmail — nessuna modifica necessaria |
-| Segnalazioni | In corso | *(riflette `StatoPratica.IN_CORSO`)* | — | Da allineare allo stesso pattern di "Chiusa": oggi lo spostamento automatico dell'etichetta è implementato solo per la chiusura — va esteso per applicare "In corso" quando la Pratica passa a quello stato, per coerenza bidirezionale con Gmail |
-| Segnalazioni | *(altre sotto-etichette per delega)* | Campo `delega` su `Pratica`, precompilato | Manuale | **Da allineare ai nomi esatti dell'enum `Delega`** — vedi nota sotto |
-| Consiglio Comunale | *(nessuna, mail sulla seduta stessa)* | `AttoPoliticoAmministrativo` — CONVOCAZIONE_CONSIGLIO | **Automatico** | Estrazione ODG da zip (sezione 5); eccezione se ODG ambiguo, vedi sopra |
-| Consiglio Comunale | Commissioni | `AttoPoliticoAmministrativo` — CONVOCAZIONE_COMMISSIONE | **Automatico** | Solo ODG, nessuna pratica allegata |
-| Consiglio Comunale | Interrogazioni | `AttoPoliticoAmministrativo` — INTERROGAZIONE | **Automatico** | PDF singolo, tentativo collegamento al Consiglio successivo |
+| Segnalazioni | Chiusa | *(riflette `StatoPratica.CHIUSA`)* | — | Già gestito oggi da `spostaInChiusa()` |
+| Segnalazioni | In corso | *(riflette `StatoPratica.IN_CORSO`)* | — | Da estendere allo stesso pattern di "Chiusa" |
+| Segnalazioni | *(altre sotto-etichette per delega)* | Campo `delega` su `Pratica`, precompilato | Manuale | Da allineare ai nomi esatti dell'enum `Delega` — vedi nota sotto |
+| Consiglio Comunale | *(nessuna, mail sulla seduta stessa)* | `AttoPoliticoAmministrativo` — CONVOCAZIONE_CONSIGLIO | **Automatico** | Estrazione ODG da zip (sezione 5); eccezione se ODG ambiguo |
+| Consiglio Comunale | Commissioni | `AttoPoliticoAmministrativo` — CONVOCAZIONE_COMMISSIONE | **Automatico** | Solo ODG |
+| Consiglio Comunale | Interrogazioni | `AttoPoliticoAmministrativo` — INTERROGAZIONE | **Automatico** | Tentativo collegamento al Consiglio successivo |
 | Consiglio Comunale | Mozioni | `AttoPoliticoAmministrativo` — MOZIONE | **Automatico** | Come Interrogazioni |
 | Contestazioni | — | `Contestazione` | Manuale | Nuovo modello (sezione 3bis) |
-| Deleghe | Accessibilità, Ambiente, Ciclo Rifiuti, Cimiteri, Digitalizzazione, Idrico, Lavori Pubblici, Politiche Abitative, Pubblica Illuminazione, Viabilità | `Progetto`, campo `delega` precompilato dalla sotto-etichetta | Manuale | Mappatura diretta 1:1 con l'enum `Delega` già esistente — zero ambiguità sulla delega, ma la creazione del Progetto resta a conferma (serve leggere il contenuto per titolo/descrizione) |
-| Giunta | Convocazioni | `AttoPoliticoAmministrativo` — CONVOCAZIONE_GIUNTA | **Automatico** | Estrazione ODG, allegati semplici |
-| Giunta | Verbali | Aggiorna l'`AttoPoliticoAmministrativo` della convocazione corrispondente | **Automatico** | Verbale allegato all'Atto già esistente (match per data/oggetto), stato → `ARCHIVIATO`. Se non si trova una convocazione corrispondente, si crea comunque una scheda minimale con solo il verbale (comunque nel binario automatico, compare nel badge), da collegare a mano |
-| Giunta | Delibere, Determine | — | — | **Fuori scope per ora** (confermato): solo etichetta Gmail, nessuna azione nel tool. Rivalutare se l'uso emerge in futuro |
+| Deleghe | (le 10 sotto-etichette) | `Progetto`, campo `delega` precompilato | Manuale | Mappatura diretta 1:1 con l'enum `Delega`, ma la creazione del Progetto resta a conferma |
+| Giunta | Convocazioni | `AttoPoliticoAmministrativo` — CONVOCAZIONE_GIUNTA | **Automatico** | Estrazione ODG |
+| Giunta | Verbali | Aggiorna l'Atto della convocazione corrispondente | **Automatico** | Match per data/oggetto, stato → ARCHIVIATO |
+| Giunta | Delibere, Determine | — | — | Fuori scope per ora |
 | Giustifica | — | `Giustifica` | **Automatico** | Nuovo modello (sezione 3ter) |
-
-**Mail che non corrispondono a nessuna etichetta nota**: restano in una coda "non classificata" per revisione manuale — non si inventa una categoria residuale.
+| *(nessuna corrispondenza)* | — | — | **Incerto** | Nessuna categoria proposta, scelta manuale da zero |
 
 ### ⚠️ Nota: allineamento nomi etichette Segnalazioni-per-delega ↔ enum `Delega`
 
-Le sotto-etichette di "Segnalazioni" per delega esistono già in Gmail ma **vanno verificate nome per nome contro l'enum `Delega` in `schema.prisma`**, perché almeno un disallineamento è già visibile: l'enum usa `RIFIUTI`, mentre l'etichetta "Deleghe" vista in questa spec è `Ciclo Rifiuti`. Consigliato: prima di scrivere il parser, esportare l'elenco completo delle sotto-etichette reali di "Segnalazioni" da Gmail e incrociarle a mano con l'enum, così si scrive la mappatura una volta sola invece di scoprirla bug per bug.
+Disallineamenti già confermati durante l'implementazione della Fase 1: `RIFIUTI`/`Ciclo Rifiuti`, `SISTEMA_IDRICO`/`Idrico`, `ILLUMINAZIONE`/`Pubblica Illuminazione`, `MANUTENZIONE_PATRIMONIO`/`Lavori Pubblici`. La mappatura nome-etichetta → valore-enum va scritta una volta sola prima del parser, non scoperta bug per bug.
 
-Una volta fatta questa mappatura, il campo `delega` su `Pratica` può essere precompilato in automatico dalla sotto-etichetta esattamente come già previsto per `Progetto` dalle etichette "Deleghe" — stessa logica, riuso diretto.
+### Metodo di classificazione: a regole, con AI per i casi residui, Incerto come rete di sicurezza
 
-### Etichetta "Importata": generalizzare il pattern esistente
+1. **Regole primarie** su mittente/oggetto per i casi standard (etichetta Gmail già presente e affidabile, o pattern testuale chiaro)
+2. **Classificazione AI (Claude)** per i casi che le regole non risolvono — la chiave Anthropic è già configurata in produzione dalla Fase 2, stesso client riusabile
+3. Se anche l'AI non raggiunge una confidenza sufficiente: **Incerto**, nessuna forzatura
 
-Oggi "Importata" è usata solo nel flusso Segnalazioni (per evitare reimportazioni doppie, query Gmail con `-label:Importata`). Con l'automazione estesa a tutte le categorie, la stessa convenzione va **generalizzata a tutte**: ogni volta che il tool crea un'entità a partire da una mail, applica la stessa etichetta "Importata" su quel messaggio — il `messageId` salvato nel DB è già sufficiente per sapere *cosa* è stato importato e *dove*; l'etichetta serve solo a tenere pulita la casella e a far funzionare il filtro `-label:Importata`, esteso naturalmente a tutte le nuove categorie.
+### Motore schedulato (non più a trigger manuale)
 
-### Metodo di classificazione: a regole, con AI solo per i casi residui
+Cron 2 volte al giorno (orari da affinare, es. mattina presto + metà pomeriggio), stesso meccanismo Vercel Cron già usato per i Bandi ma calendario separato. Ad ogni esecuzione:
 
-1. **Regole primarie** su mittente/oggetto per riconoscere la sotto-etichetta corretta — es. oggetto con "CONVOCAZIONE" + "GIUNTA" → `Giunta > Convocazioni`; mittente riconducibile ad ACAM/ATC + oggetto con "contestazione"/"mancato ritiro" → `Contestazioni`. Le **Deleghe** in particolare si prestano bene a un riconoscimento per parole chiave nell'oggetto/corpo
-2. **Classificazione AI (Claude)** solo per i casi che le regole non risolvono con sufficiente confidenza
+1. Interroga Gmail per i messaggi non ancora presenti in `MailProcessata` (prima esecuzione: tutto il pregresso non etichettato; esecuzioni successive: solo i nuovi arrivi)
+2. Per ciascuno: classifica, determina il binario, scrive la riga in `MailProcessata` con `esito: IN_ATTESA`
+3. Binario automatico → tenta la creazione dell'entità; se riesce, `esito: COMPLETATO` + etichette Gmail applicate; se fallisce, `esito: ERRORE`, nessuna etichetta, resta visibile per intervento
+4. Binario manuale e Incerto → restano `IN_ATTESA` finché Marco non conferma dalla schermata di revisione (estensione di `/dashboard/import-mail`); solo alla conferma si arriva a `COMPLETATO` ed Gmail viene aggiornato
 
-### Conferma umana prima di qualsiasi azione: nessuna sorpresa (binario manuale)
+### Prima esecuzione: conferma totale, poi automatico per binario
 
-Punto centrale per tutto ciò che **non** rientra nel binario automatico definito sopra: **nessuna etichetta Gmail viene scritta e nessuna entità viene creata nel tool senza una conferma esplicita, mail per mail.**
+Un flag temporaneo (es. `impostazioni.primaEsecuzioneMotoreMail: boolean`, o un semplice controllo "esistono già righe in `MailProcessata`?") forza **tutte** le mail della primissima esecuzione — incluse quelle del binario automatico — a passare dalla schermata di conferma, indipendentemente dal binario assegnato. Marco verifica che classificazione ed etichettatura siano corrette prima di disattivare il flag. Da quel momento, si torna al comportamento per binario descritto sopra: automatico resta automatico, manuale resta manuale, Incerto resta sempre a scelta manuale per definizione.
 
-Riuso ed estensione del pattern già esistente in `/dashboard/import-mail`. Per ogni mail non ancora importata (Segnalazioni, Deleghe→Progetto, Contestazioni), la schermata di revisione mostra una riga con:
+### Badge di notifica
 
-- Mittente e oggetto originali
-- **Categoria proposta** dal sistema (es. "Progetto → Delega: Viabilità", "Contestazione → ACAM Ambiente")
-- **Etichetta Gmail** che verrebbe applicata
-- Un livello di confidenza, se la categoria è arrivata dalla classificazione AI e non da una regola certa
-
-Marco scorre l'elenco, **corregge con un tap** le righe sbagliate, e solo dopo conferma — riga per riga o in blocco per quelle corrette — il tool esegue: crea l'entità e applica l'etichetta Gmail corrispondente. Prima della conferma, la mail resta esattamente come arrivata: **nessuna fase automatica silenziosa a monte**.
-
-- **Etichettatura Gmail**: applicata solo dopo conferma, come tutto il resto
-- **Creazione di entità nel tool**: sempre con conferma esplicita, mai automatica
-
-### Badge di notifica (binario automatico)
-
-Per Consiglio Comunale/Giunta/Giustifica (binario automatico), la "conferma" diventa un badge — stesso pattern già previsto per i Bandi NUOVO:
-
-- Voce di sidebar **🏛️ Attività Politico-Amministrativa**: badge rosso con il conteggio di `AttoPoliticoAmministrativo` con `visualizzato: false`
-- Voce di sidebar **📝 Giustifiche**: badge rosso con il conteggio di `Giustifica` con `visualizzata: false`
-- Aprire la scheda di dettaglio imposta `visualizzato: true` / `visualizzata: true` + relativo timestamp, il badge si aggiorna di conseguenza
-- L'unica eccezione che interrompe il flusso automatico è il caso ODG ambiguo nello zip dei Consigli (vedi sopra), che compare invece in una piccola coda di conferma dedicata, separata dal badge generico
+- **🏛️ Attività Politico-Amministrativa**: badge rosso su `AttoPoliticoAmministrativo` con `visualizzato: false`
+- **📝 Giustifiche**: badge rosso su `Giustifica` con `visualizzata: false`
+- **Incerto**: badge rosso dedicato sul conteggio `MailProcessata` con `binario: INCERTO` e `esito: IN_ATTESA`
+- Aprire la scheda di dettaglio (o risolvere la classificazione, per Incerto) azzera il badge corrispondente
 
 ---
 
@@ -516,6 +535,7 @@ La feature **Riunioni** (sezione 4) è largamente indipendente dal resto — dip
 - **Matching Verbale → Convocazione corrispondente**: il match per data/oggetto potrebbe non essere sempre univoco. Se fallisce, meglio creare comunque la scheda con il verbale e lasciare a Marco il collegamento manuale.
 - **Dipendenza dalla tassonomia Gmail esistente**: le regole di classificazione sono costruite sulla struttura di etichette attuale. Se in futuro Marco riorganizza le etichette in Gmail, le regole vanno aggiornate di conseguenza.
 - **Binario automatico**: accettato un rischio di classificazione errata più basso ma non nullo, in cambio di zero attrito. Se in futuro si osservano errori ricorrenti su una di queste categorie (es. mittente/oggetto meno standardizzato del previsto), va rivalutato lo spostamento di quella specifica categoria nel binario a conferma manuale — non è una scelta definitiva e irreversibile.
+- **Motore schedulato e `MailProcessata`**: questa tabella è ora l'unica fonte di verità su cosa è stato processato — se in futuro si modifica manualmente un'etichetta Gmail senza passare dal tool, il DB non se ne accorge automaticamente (e viceversa: cancellare a mano una riga in `MailProcessata` senza toccare Gmail può causare un doppio tentativo di importazione alla scansione successiva, gestito comunque in sicurezza dal vincolo `@unique` su `messageId`, ma da evitare come pratica).
 
 ### Garanzia: nessuna azione è irreversibile
 

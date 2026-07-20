@@ -11,6 +11,8 @@ export default function GiustifichePage() {
   const [loading, setLoading] = useState(true);
   const [espansa, setEspansa] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [inviando, setInviando] = useState<string | null>(null);
+  const [tab, setTab] = useState<"daInoltrare" | "inoltrate">("daInoltrare");
 
   useEffect(() => {
     carica();
@@ -39,12 +41,31 @@ export default function GiustifichePage() {
     }
   }
 
-  async function toggleInoltrata(g: GiustificaCard, e: React.MouseEvent) {
+  async function invia(g: GiustificaCard, e: React.MouseEvent) {
     e.stopPropagation();
+    if (inviando) return;
+    setInviando(g.id);
+    try {
+      const res = await fetch(`/api/giustifiche/${g.id}/inoltra`, { method: "POST" });
+      if (res.ok) {
+        const aggiornata = await res.json();
+        setGiustifiche(gs => gs.map(x => x.id === g.id ? { ...x, inoltrata: aggiornata.inoltrata, inoltrataAt: aggiornata.inoltrataAt } : x));
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error ?? "Errore invio email");
+      }
+    } finally {
+      setInviando(null);
+    }
+  }
+
+  async function annullaInoltro(g: GiustificaCard, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!confirm("Segnare di nuovo come da inoltrare?")) return;
     const res = await fetch(`/api/giustifiche/${g.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ inoltrata: !g.inoltrata }),
+      body: JSON.stringify({ inoltrata: false }),
     });
     if (res.ok) {
       const aggiornata = await res.json();
@@ -88,7 +109,9 @@ export default function GiustifichePage() {
   }
 
   const daVedere = giustifiche.filter(g => !g.visualizzata).length;
-  const daInoltrare = giustifiche.filter(g => g.visualizzata && !g.inoltrata).length;
+  const totaleDaInoltrare = giustifiche.filter(g => !g.inoltrata).length;
+  const totaleInoltrate = giustifiche.filter(g => g.inoltrata).length;
+  const giustificheVista = giustifiche.filter(g => tab === "daInoltrare" ? !g.inoltrata : g.inoltrata);
 
   return (
     <div className="space-y-4 pb-8">
@@ -102,31 +125,48 @@ export default function GiustifichePage() {
         </Link>
       </div>
 
-      {(daVedere > 0 || daInoltrare > 0) && (
+      {daVedere > 0 && (
         <div className="flex gap-2">
-          {daVedere > 0 && (
-            <span className="text-xs px-3 py-1.5 rounded-full bg-red-100 text-red-700 font-medium">
-              🔴 {daVedere} da vedere
-            </span>
-          )}
-          {daInoltrare > 0 && (
-            <span className="text-xs px-3 py-1.5 rounded-full bg-gray-100 text-gray-600 font-medium">
-              {daInoltrare} da inoltrare
-            </span>
-          )}
+          <span className="text-xs px-3 py-1.5 rounded-full bg-red-100 text-red-700 font-medium">
+            🔴 {daVedere} da vedere
+          </span>
         </div>
       )}
 
+      {/* Tab Da inoltrare / Inoltrate */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setTab("daInoltrare")}
+          className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors
+            ${tab === "daInoltrare" ? "bg-blue-600 text-white shadow-sm" : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+        >
+          ✉️ Da inoltrare
+          <span className={`ml-2 text-xs font-mono ${tab === "daInoltrare" ? "text-blue-200" : "text-gray-400"}`}>
+            {totaleDaInoltrare}
+          </span>
+        </button>
+        <button
+          onClick={() => setTab("inoltrate")}
+          className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors
+            ${tab === "inoltrate" ? "bg-gray-700 text-white shadow-sm" : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+        >
+          ✓ Inoltrate
+          <span className={`ml-2 text-xs font-mono ${tab === "inoltrate" ? "text-gray-300" : "text-gray-400"}`}>
+            {totaleInoltrate}
+          </span>
+        </button>
+      </div>
+
       {loading ? (
         <div className="text-center py-16 text-gray-400">Caricamento…</div>
-      ) : giustifiche.length === 0 ? (
+      ) : giustificheVista.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <p className="text-4xl mb-3">📝</p>
-          <p>Nessuna giustifica ancora</p>
+          <p>{tab === "daInoltrare" ? "Nessuna giustifica da inoltrare" : "Nessuna giustifica inoltrata"}</p>
         </div>
       ) : (
         <div className="divide-y divide-gray-100 bg-white rounded-xl border border-gray-200 overflow-hidden">
-          {giustifiche.map(g => (
+          {giustificheVista.map(g => (
             <div key={g.id}>
               <button
                 onClick={() => espandi(g)}
@@ -140,14 +180,22 @@ export default function GiustifichePage() {
                     {new Date(g.dataRicezione).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "numeric" })}
                   </p>
                 </div>
-                <button
-                  onClick={e => toggleInoltrata(g, e)}
-                  className={`shrink-0 text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
-                    g.inoltrata ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"
-                  }`}
-                >
-                  {g.inoltrata ? "✓ Inoltrata" : "Da inoltrare"}
-                </button>
+                {g.inoltrata ? (
+                  <button
+                    onClick={e => annullaInoltro(g, e)}
+                    className="shrink-0 text-xs px-2.5 py-1 rounded-full font-medium bg-green-100 text-green-800 hover:bg-green-200 transition-colors"
+                  >
+                    ✓ Inoltrata
+                  </button>
+                ) : (
+                  <button
+                    onClick={e => invia(g, e)}
+                    disabled={inviando === g.id}
+                    className="shrink-0 text-xs px-2.5 py-1 rounded-full font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  >
+                    {inviando === g.id ? "Invio…" : "📧 Invia"}
+                  </button>
+                )}
               </button>
 
               {espansa === g.id && (
