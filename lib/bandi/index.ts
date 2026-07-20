@@ -5,8 +5,8 @@ import { parseAnciLiguria } from "./fonti/anci-liguria";
 import { parseUpel } from "./fonti/upel";
 import { calcolaHash } from "./dedup";
 import { isBandoRilevante } from "./filtro-territoriale";
-import { inviaBandiTelegram, inviaSegnalazioneRottura } from "./notifica";
-import type { BandoRaw } from "./fonti/types";
+import { inviaBandiTelegram, inviaSegnalazioneRottura, inviaSegnalazioneEstrazione } from "./notifica";
+import type { BandoRaw, RisultatoFonte } from "./fonti/types";
 import type { Delega } from "@prisma/client";
 
 // Keyword mapping per assegnare delega euristica
@@ -33,7 +33,7 @@ function rilevaDelegaEuristica(b: BandoRaw): Delega | undefined {
 
 type FonteConfig = {
   nome: string;
-  fn: () => Promise<BandoRaw[]>;
+  fn: () => Promise<RisultatoFonte>;
 };
 
 const FONTI: FonteConfig[] = [
@@ -51,10 +51,19 @@ const FONTI: FonteConfig[] = [
 export async function checkBandi(): Promise<{ nuovi: number; errori: string[] }> {
   const errori: string[] = [];
   const tuttiNuovi: BandoRaw[] = [];
+  // Righe delle fonti con almeno un fallimento di estrazione in questo run, per l'alert Telegram
+  // dedicato — vedi inviaSegnalazioneEstrazione. Il riepilogo completo (comprese le fonti senza
+  // fallimenti) va sempre in console.log, visibile nei log della function ad ogni esecuzione.
+  const righeFallimenti: string[] = [];
 
   for (const fonte of FONTI) {
     try {
-      const risultati = await fonte.fn();
+      const { bandi: risultati, candidati, estratti, nonBando, falliti } = await fonte.fn();
+
+      console.log(`[bandi] ${fonte.nome}: candidati ${candidati}, estratti ${estratti}, non bando ${nonBando}, falliti ${falliti}`);
+      if (falliti > 0) {
+        righeFallimenti.push(`${fonte.nome}: ${falliti}/${candidati} candidati falliti (estratti ${estratti}, non bando ${nonBando})`);
+      }
 
       if (risultati.length === 0) {
         // Controlla se anche la run precedente era vuota (2 run consecutive)
@@ -87,6 +96,8 @@ export async function checkBandi(): Promise<{ nuovi: number; errori: string[] }>
             descrizione: raw.descrizione?.slice(0, 1000),
             dotazione: raw.dotazione?.slice(0, 200),
             beneficiari: raw.beneficiari?.slice(0, 300),
+            sogliaPopolazione: raw.sogliaPopolazione,
+            tipoBeneficiario: raw.tipoBeneficiario,
             dataApertura: raw.dataApertura,
             dataChiusura: raw.dataChiusura,
             delega: delega ?? null,
@@ -115,6 +126,14 @@ export async function checkBandi(): Promise<{ nuovi: number; errori: string[] }>
       });
     } catch (err) {
       errori.push(`Telegram: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  if (righeFallimenti.length > 0) {
+    try {
+      await inviaSegnalazioneEstrazione(righeFallimenti);
+    } catch (err) {
+      errori.push(`Telegram (segnalazione estrazione): ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

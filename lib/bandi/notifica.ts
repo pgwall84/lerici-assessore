@@ -54,3 +54,14 @@ export async function inviaSegnalazioneRottura(fonte: string): Promise<void> {
   if (!token || !chatId) return;
   await sendTelegram(token, chatId, `⚠️ *Bandi — nessun risultato da ${fonte}*\nPossibile cambio layout del sito sorgente. Verificare manualmente.`);
 }
+
+// Alert dedicato per i fallimenti di estrazione AI (lib/bandi/estrazione-ai.ts): distinto dalla
+// segnalazione di rottura sopra (quella è "una fonte non trova più nulla", questa è "alcuni
+// candidati falliscono l'estrazione pur essendo stati trovati") — un aumento anomalo va reso
+// visibile invece di tradursi silenziosamente in meno bandi salvati.
+export async function inviaSegnalazioneEstrazione(righe: string[]): Promise<void> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+  await sendTelegram(token, chatId, `⚠️ *Bandi — errori di estrazione*\n${righe.join("\n")}`);
+}

@@ -31,17 +31,26 @@ export default function BandiPage() {
   const [loading, setLoading] = useState(true);
   const [filtroStato, setFiltroStato] = useState<StatoBando | "">("");
   const [filtroDelega, setFiltroDelega] = useState<Delega | "">("");
+  const [filtroEnte, setFiltroEnte] = useState<string>("");
+  const [entiDisponibili, setEntiDisponibili] = useState<string[]>([]);
   const [espanso, setEspanso] = useState<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams();
     if (filtroStato) params.set("stato", filtroStato);
     if (filtroDelega) params.set("delega", filtroDelega);
+    if (filtroEnte) params.set("ente", filtroEnte);
     setLoading(true);
     fetch(`/api/bandi?${params}`)
       .then(r => r.json())
-      .then(data => { setBandi(data); setLoading(false); });
-  }, [filtroStato, filtroDelega]);
+      .then((data: Bando[]) => {
+        setBandi(data);
+        setLoading(false);
+        // Le opzioni del filtro fonte crescono soltanto (mai ridotte da un filtro già applicato),
+        // così scegliere una fonte non fa sparire le altre dalla tendina.
+        setEntiDisponibili(prev => Array.from(new Set([...prev, ...data.map(b => b.ente)])).sort());
+      });
+  }, [filtroStato, filtroDelega, filtroEnte]);
 
   async function cambiaStato(id: string, stato: StatoBando) {
     const res = await fetch(`/api/bandi/${id}`, {
@@ -100,6 +109,16 @@ export default function BandiPage() {
           <option value="">Tutte le deleghe</option>
           {(Object.keys(DELEGHE_LABEL) as Delega[]).map(d => (
             <option key={d} value={d}>{DELEGHE_LABEL[d]}</option>
+          ))}
+        </select>
+        <select
+          value={filtroEnte}
+          onChange={e => setFiltroEnte(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">Tutte le fonti</option>
+          {entiDisponibili.map(ente => (
+            <option key={ente} value={ente}>{ente}</option>
           ))}
         </select>
       </div>

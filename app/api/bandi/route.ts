@@ -9,11 +9,13 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const stato = searchParams.get("stato");
   const delega = searchParams.get("delega");
+  const ente = searchParams.get("ente");
 
   const bandi = await prisma.bando.findMany({
     where: {
       ...(stato ? { stato: stato as never } : {}),
       ...(delega ? { delega: delega as never } : {}),
+      ...(ente ? { ente } : {}),
     },
     orderBy: [
       { stato: "asc" },

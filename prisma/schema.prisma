@@ -385,22 +385,33 @@ enum EsitoMailProcessata {
 // BANDO — monitoraggio bandi pubblici rilevanti per le deleghe
 // ---------------------------------------------------------------------------
 model Bando {
-  id            String     @id @default(cuid())
-  titolo        String
-  ente          String
-  fonteUrl      String
-  bandoUrl      String?
-  descrizione   String?
-  dotazione     String?
-  beneficiari   String?
-  dataApertura  DateTime?
-  dataChiusura  DateTime?
-  delega        Delega?
-  hashContenuto String     @unique
-  stato         StatoBando @default(NUOVO)
-  notificato    Boolean    @default(false)
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  id               String            @id @default(cuid())
+  titolo           String
+  ente             String
+  fonteUrl         String
+  bandoUrl         String?
+  descrizione      String?
+  dotazione        String?
+  beneficiari      String?
+  dataApertura     DateTime?
+  dataChiusura     DateTime?
+  delega           Delega?
+  hashContenuto    String            @unique
+  stato            StatoBando        @default(NUOVO)
+  notificato       Boolean           @default(false)
+  // Estratti via AI (lib/bandi/estrazione-ai.ts) dal testo della pagina — solo informativi,
+  // nessun filtro escludente automatico: null se il bando non specifica un tetto/tipo esplicito.
+  sogliaPopolazione Int?
+  tipoBeneficiario  TipoBeneficiario?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+enum TipoBeneficiario {
+  ENTE_PUBBLICO
+  IMPRESA
+  MISTO
+  CITTADINO
 }
 
 enum StatoBando {

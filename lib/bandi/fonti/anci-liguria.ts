@@ -1,16 +1,11 @@
 import * as cheerio from "cheerio";
-import type { BandoRaw } from "./types";
+import type { BandoRaw, RisultatoFonte } from "./types";
+import { estraiBatch } from "../estrazione-ai";
 
 const FONTE_URL = "https://www.anciliguria.it/bandi";
 const ENTE = "ANCI Liguria";
 
-function parseData(testo: string): Date | undefined {
-  const m = testo.match(/(\d{2})\/(\d{2})\/(\d{4})/);
-  if (!m) return undefined;
-  return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
-}
-
-export async function parseAnciLiguria(): Promise<BandoRaw[]> {
+export async function parseAnciLiguria(): Promise<RisultatoFonte> {
   const res = await fetch(FONTE_URL, {
     headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36" },
     signal: AbortSignal.timeout(15000),
@@ -18,45 +13,39 @@ export async function parseAnciLiguria(): Promise<BandoRaw[]> {
   if (!res.ok) throw new Error(`ANCI Liguria: HTTP ${res.status}`);
   const html = await res.text();
   const $ = cheerio.load(html);
-  const risultati: BandoRaw[] = [];
 
+  // Individuazione dei candidati (invariata): un box per bando, con link diretto. Il testo
+  // dell'intero box (stato+scadenza+titolo+descrizione) viene passato per intero all'estrazione
+  // AI al posto delle regex che prima separavano prefisso/titolo/scadenza a mano.
+  const candidati: Array<{ bandoUrl: string; testo: string }> = [];
   $(".european-box").each((_, el) => {
     const bandoUrl = $(el).find("a[href*='/bandi/']").attr("href") ?? "";
     if (!bandoUrl) return;
 
     // Testo completo del box (senza il link "VEDI DETTAGLIO")
-    const testoBruto = $(el).clone()
+    const testo = $(el).clone()
       .find(".european-in-box-link").remove().end()
       .text().replace(/\s+/g, " ").trim();
+    if (testo.length < 10) return;
 
-    // Rimuovi il prefisso stato+data: "APERTO SCADE IL: 31/08/2026, ORE 12:00 " o "CHIUSO IL: ..."
-    const prefixRe = /^(APERTO|CHIUSO|IN APERTURA)[\s\S]*?ORE \d{2}:\d{2}\s*/i;
-    const testoPulito = testoBruto.replace(prefixRe, "").trim();
-
-    // La prima riga significativa è il titolo
-    const righe = testoPulito.split(/\n|(?<=\w{3,}\.)\s+(?=[A-ZÀ-Ù])/);
-    const titolo = righe[0]?.trim() ?? "";
-    if (!titolo || titolo.length < 5) return;
-
-    // Descrizione: il testo rimanente
-    const descrizione = righe.slice(1).join(" ").trim().slice(0, 500) || undefined;
-
-    // Data chiusura dal testo bruto
-    const scadenzaMatch = testoBruto.match(/SCADE IL:\s*(\d{2}\/\d{2}\/\d{4})/i);
-    const dataChiusura = scadenzaMatch ? parseData(scadenzaMatch[1]) : undefined;
-
-    // Salta i bandi già chiusi
-    if (dataChiusura && dataChiusura < new Date()) return;
-
-    risultati.push({
-      titolo: titolo.slice(0, 250),
-      ente: ENTE,
-      fonteUrl: FONTE_URL,
-      bandoUrl,
-      descrizione,
-      dataChiusura,
-    });
+    candidati.push({ bandoUrl, testo });
   });
 
-  return risultati;
+  const { risultati, estratti, nonBando, falliti } = await estraiBatch(candidati, ENTE);
+
+  const bandi: BandoRaw[] = risultati.map(({ candidato, campi }) => ({
+    titolo: campi.titolo,
+    ente: ENTE,
+    fonteUrl: FONTE_URL,
+    bandoUrl: candidato.bandoUrl,
+    descrizione: campi.descrizione,
+    dotazione: campi.dotazione,
+    beneficiari: campi.beneficiari,
+    dataChiusura: campi.dataChiusura ? new Date(campi.dataChiusura) : undefined,
+    ambitoTerritoriale: campi.ambitoTerritoriale,
+    sogliaPopolazione: campi.sogliaPopolazione,
+    tipoBeneficiario: campi.tipoBeneficiario,
+  }));
+
+  return { bandi, candidati: candidati.length, estratti, nonBando, falliti };
 }
