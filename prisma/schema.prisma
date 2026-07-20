@@ -141,6 +141,7 @@ model Progetto {
   fonteFinanziamento String?
   bandoId            String?
   descrizione        String?
+  protocollo         String?
   note               NotaProgetto[]
   documenti          DocumentoProgetto[]
   riunioni           Riunione[]
@@ -221,10 +222,20 @@ model Contestazione {
   dataInvio   DateTime?
   esito       EsitoContestazione       @default(IN_ATTESA)
   noteEsito   String?
+  protocollo  String?
+  note        NotaContestazione[]
   documenti   DocumentoContestazione[]
   messageId   String?
   createdAt   DateTime                 @default(now())
   updatedAt   DateTime                 @updatedAt
+}
+
+model NotaContestazione {
+  id              String        @id @default(cuid())
+  contestazioneId String
+  contestazione   Contestazione @relation(fields: [contestazioneId], references: [id], onDelete: Cascade)
+  testo           String
+  createdAt       DateTime      @default(now())
 }
 
 enum Gestore {
@@ -335,6 +346,7 @@ enum RuoloDocumento {
 model MailProcessata {
   id                String              @id @default(cuid())
   messageId         String              @unique
+  threadId          String?
   mittente          String?
   oggetto           String?
   categoriaProposta String?
@@ -350,6 +362,17 @@ enum BinarioMail {
   AUTOMATICO
   MANUALE
   INCERTO
+  // Mail fuori scope per il tool (newsletter, bollettini, inviti — non spam in senso
+  // stretto, solo non pertinente): risolta subito in COMPLETATO durante lo scan stesso,
+  // salta di proposito il gate "prima esecuzione" — non crea né modifica nulla nel DB
+  // del tool, quindi non c'è un'azione reale da cui proteggersi rimandandola. Vedi
+  // NOTE-TECNICHE.md per il confronto con PROPOSTA_CONTINUAZIONE, che invece rispetta
+  // il gate perché comporta un'azione reale (creare o collegare un'entità).
+  NON_RILEVANTE
+  // Match debole nella catena di riconoscimento continuazione (oggetto normalizzato +
+  // mittente/destinatario, senza protocollo/threadId a confermare): propone di agganciare
+  // la mail a un'entità esistente, ma richiede sempre conferma umana — mai eseguito da solo.
+  PROPOSTA_CONTINUAZIONE
 }
 
 enum EsitoMailProcessata {

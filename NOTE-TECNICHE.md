@@ -150,3 +150,16 @@ Con questa stringa (via `$env:DATABASE_URL`/`export DATABASE_URL=...` prima del 
 Uno `schedule` cron in `vercel.json` che scatta più di una volta al giorno (es. `"0 6,15 * * *"`, due volte) fa fallire il deploy in produzione con `deploy_failed` — *"Hobby accounts are limited to daily cron jobs"* — anche se il resto del deploy è corretto. Il piano Hobby consente solo cron a cadenza giornaliera (o più rada, es. `"0 8 * * 1,3,5"` va bene perché al massimo 1 volta al giorno nei giorni in cui scatta).
 
 **Conseguenza pratica**: se una spec chiede una cadenza più fitta (es. "2 volte al giorno" per il motore mail, sezione 6), va verificato il piano Vercel attivo *prima* di scrivere lo schedule — su Hobby va ridotto a 1x/giorno (o va fatto upgrade a Pro, decisione dell'utente, non da prendere in autonomia).
+
+---
+
+## 14. Motore mail: `NON_RILEVANTE` salta di proposito il gate "prima esecuzione" — non è un'incoerenza
+
+`primaEsecuzione()` (`lib/motore-mail.ts`) decide se il binario Automatico può agire senza conferma, contando le righe `MailProcessata` con `esito: COMPLETATO` **e `entitaCreataId` non nullo**. Il filtro su `entitaCreataId` è voluto e va preservato se si tocca questa funzione:
+
+- **`BinarioMail.NON_RILEVANTE`** (mail fuori scope per il tool — newsletter, bollettini, inviti) raggiunge `esito: COMPLETATO` **subito in fase di scan**, senza mai passare da `IN_ATTESA` né da una conferma umana, e senza creare nessuna entità (`entitaCreataId` resta `null`). Se questa riga contasse per il gate, la prima newsletter scansionata sbloccherebbe da sola il binario Automatico prima che Marco abbia mai confermato una vera azione — un buco di sicurezza, non un dettaglio.
+- **I match forti di continuazione** (protocollo/threadId, sezione 6 evolutiva) restano invece `binario: AUTOMATICO` con `entitaCreataId` sempre valorizzato quando completano (agganciano contenuto a un'entità reale) — **rispettano** il gate come qualunque altra riga Automatico.
+
+La differenza non è arbitraria: il gate protegge da un'azione reale sbagliata sul DB del tool (creare o modificare qualcosa prima che il meccanismo sia stato validato una volta). `NON_RILEVANTE` non fa nessuna delle due cose — è pura igiene della casella (etichetta informativa + smaltimento), non un'azione su cui serva prudenza.
+
+**Nota collaterale verificata dal vivo il 2026-07-20**: con la soglia di confidenza generica (0.6, la stessa usata per segnalazione/progetto/contestazione) l'AI ha classificato `non_rilevante` una mail che era in realtà la chiusura di una vera segnalazione cittadina ("Mancato ritiro ingombranti", Marco stesso nel thread), confidenza 0.85. Corretto alzando una soglia dedicata `SOGLIA_NON_RILEVANTE = 0.9` in `lib/motore-mail.ts`, più alta di quella generica di proposito: qui un falso positivo sparisce subito senza controllo umano, mentre per le altre categorie un falso positivo resta comunque in Manuale a conferma — il costo di un errore non è lo stesso, la soglia non deve esserlo. Sotto soglia, la mail va a Incerto (mai a Manuale: "non_rilevante" non è una categoria selezionabile in quel form).

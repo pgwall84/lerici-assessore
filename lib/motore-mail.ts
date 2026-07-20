@@ -1,16 +1,25 @@
 import { prisma } from "@/lib/prisma";
-import { getMailsPaginato, getMappaEtichette, getMailPerId, marcaImportata, marcaIncerto, applicaEtichetta, type MailImport } from "@/lib/gmail";
+import { getMailsPaginato, getMappaEtichette, getMailPerId, marcaImportata, marcaIncerto, marcaNonRilevante, applicaEtichetta, type MailImport } from "@/lib/gmail";
 import { classificaMail } from "@/lib/claude";
 import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria } from "@/lib/constants";
-import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, type EsitoEsecuzione } from "@/lib/import-automatico";
+import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, type EsitoEsecuzione } from "@/lib/import-automatico";
+import { trovaContinuazioneForte, trovaContinuazioneDebole, codificaEntita } from "@/lib/continuazione";
 
 const SOGLIA_CONFIDENZA = 0.6;
+// Più alta delle altre categorie di proposito: un falso positivo qui scompare subito senza mai
+// passare da un controllo umano (a differenza di segnalazione/progetto/contestazione, che restano
+// comunque in Manuale a conferma). Verificato dal vivo il 2026-07-20: con la soglia generica (0.6)
+// una mail di chiusura di una vera segnalazione cittadina ("Mancato ritiro ingombranti", confidenza
+// 0.85) è stata classificata non_rilevante — alzata la soglia specifica per ridurre il rischio.
+const SOGLIA_NON_RILEVANTE = 0.9;
 
 export type RisultatoScansione = {
   processate: number;
   automatico: number;
   manuale: number;
   incerto: number;
+  nonRilevante: number;
+  propostaContinuazione: number;
   fuoriScope: number;
   nextPageToken?: string;
 };
@@ -23,13 +32,33 @@ export function trovaVoceTassonomia(nomiEtichette: string[]) {
   return null;
 }
 
-type Esito = "AUTOMATICO" | "MANUALE" | "INCERTO" | "FUORI_SCOPE";
+type Esito = "AUTOMATICO" | "MANUALE" | "INCERTO" | "NON_RILEVANTE" | "PROPOSTA_CONTINUAZIONE" | "FUORI_SCOPE";
 
 // Scrive (al più) una riga MailProcessata per la mail — mai un'azione sull'entità né
 // un'etichetta "Importata"/di categoria: quelle restano legate a un esito COMPLETATO di
 // creazione entità, di competenza della Sessione B. L'unica etichetta scritta qui è
 // "Incerto/Da classificare", puramente informativa sullo stato di classificazione.
 async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise<Esito> {
+  // Livelli 1-2 della catena di continuazione (protocollo, poi threadId): controllati PRIMA di
+  // qualunque etichetta/classificazione, perché sono un segnale affidabile a prescindere — una
+  // mail può avere l'etichetta "Segnalazioni" (da filtro Gmail) ed essere comunque la prosecuzione
+  // di una pratica già esistente, non una nuova. Match forte -> sempre Automatico, mai indovinato.
+  const continuazioneForte = await trovaContinuazioneForte(m);
+  if (continuazioneForte) {
+    await prisma.mailProcessata.create({
+      data: {
+        messageId: m.messageId,
+        threadId: m.threadId || null,
+        mittente: m.mittente,
+        oggetto: m.oggettoOriginale,
+        categoriaProposta: "CONTINUAZIONE",
+        confidenza: 1,
+        binario: "AUTOMATICO",
+      },
+    });
+    return "AUTOMATICO";
+  }
+
   const voceNota = trovaVoceTassonomia(nomiEtichette);
 
   if (voceNota && "fuoriScope" in voceNota) {
@@ -40,6 +69,7 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
     await prisma.mailProcessata.create({
       data: {
         messageId: m.messageId,
+        threadId: m.threadId || null,
         mittente: m.mittente,
         oggetto: m.oggettoOriginale,
         categoriaProposta: categoriaProposta(voceNota),
@@ -59,11 +89,42 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
     // ignorato di proposito — vedi commento sopra
   }
 
-  if (classificazione && classificazione.confidenza >= SOGLIA_CONFIDENZA) {
+  if (classificazione && classificazione.categoria === "non_rilevante") {
+    if (classificazione.confidenza >= SOGLIA_NON_RILEVANTE) {
+      // Fuori scope per il tool: nessuna entità, si risolve subito — non ha senso farla
+      // accumulare in Incerto insieme ai casi genuinamente ambigui. Nota: questo esito
+      // COMPLETATO salta di proposito il gate primaEsecuzione() (vedi commento su quella
+      // funzione più sotto) — non è un'azione reale su cui serva prima una conferma umana.
+      await prisma.mailProcessata.create({
+        data: {
+          messageId: m.messageId,
+          threadId: m.threadId || null,
+          mittente: m.mittente,
+          oggetto: m.oggettoOriginale,
+          categoriaProposta: classificazione.categoria,
+          confidenza: classificazione.confidenza,
+          binario: "NON_RILEVANTE",
+          esito: "COMPLETATO",
+        },
+      });
+      try {
+        await marcaNonRilevante(m.messageId);
+      } catch {
+        // Etichetta informativa: un fallimento qui non blocca lo scan, la riga DB resta comunque la fonte di verità.
+      }
+      return "NON_RILEVANTE";
+    }
+    // Confidenza insufficiente per la soglia più alta di non_rilevante: NON deve cadere nel ramo
+    // Manuale sotto ("non_rilevante" non è una categoria selezionabile in quel form) — va dritta
+    // a Incerto (categoria/confidenza restano comunque salvate, solo informative).
+  }
+
+  if (classificazione && classificazione.categoria !== "non_rilevante" && classificazione.confidenza >= SOGLIA_CONFIDENZA) {
     // L'AI propone solo una categoria: non produce mai un'azione automatica, sempre a conferma.
     await prisma.mailProcessata.create({
       data: {
         messageId: m.messageId,
+        threadId: m.threadId || null,
         mittente: m.mittente,
         oggetto: m.oggettoOriginale,
         categoriaProposta: classificazione.categoria,
@@ -74,9 +135,29 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
     return "MANUALE";
   }
 
+  // Ultima chance prima di arrendersi a Incerto: livello 3 della catena, match debole per
+  // oggetto normalizzato + mittente. Mai eseguito da solo — genera solo una proposta, sempre
+  // a conferma umana ("Collega" o "Crea nuova" dalla schermata di revisione).
+  const continuazioneDebole = await trovaContinuazioneDebole(m);
+  if (continuazioneDebole) {
+    await prisma.mailProcessata.create({
+      data: {
+        messageId: m.messageId,
+        threadId: m.threadId || null,
+        mittente: m.mittente,
+        oggetto: m.oggettoOriginale,
+        categoriaProposta: codificaEntita(continuazioneDebole),
+        confidenza: null,
+        binario: "PROPOSTA_CONTINUAZIONE",
+      },
+    });
+    return "PROPOSTA_CONTINUAZIONE";
+  }
+
   await prisma.mailProcessata.create({
     data: {
       messageId: m.messageId,
+      threadId: m.threadId || null,
       mittente: m.mittente,
       oggetto: m.oggettoOriginale,
       categoriaProposta: classificazione?.categoria ?? null,
@@ -104,7 +185,7 @@ export async function scansionaMail(pageToken?: string, maxResults = 25): Promis
     getMappaEtichette(),
   ]);
 
-  const risultato: RisultatoScansione = { processate: 0, automatico: 0, manuale: 0, incerto: 0, fuoriScope: 0, nextPageToken };
+  const risultato: RisultatoScansione = { processate: 0, automatico: 0, manuale: 0, incerto: 0, nonRilevante: 0, propostaContinuazione: 0, fuoriScope: 0, nextPageToken };
 
   for (const m of mails) {
     const esistente = await prisma.mailProcessata.findUnique({ where: { messageId: m.messageId } });
@@ -117,22 +198,35 @@ export async function scansionaMail(pageToken?: string, maxResults = 25): Promis
     if (esito === "AUTOMATICO") risultato.automatico++;
     else if (esito === "MANUALE") risultato.manuale++;
     else if (esito === "INCERTO") risultato.incerto++;
+    else if (esito === "NON_RILEVANTE") risultato.nonRilevante++;
+    else if (esito === "PROPOSTA_CONTINUAZIONE") risultato.propostaContinuazione++;
     else risultato.fuoriScope++;
   }
 
   return risultato;
 }
 
-/** true finché nessuna mail è mai stata effettivamente completata (creazione entità riuscita) —
- * usato in Sessione B per forzare la conferma totale al primo giro reale, indipendentemente da
- * quante righe IN_ATTESA lo scan di verifica di questa sessione abbia già scritto. */
+/** true finché nessuna mail è mai stata effettivamente completata con un'azione reale (entità
+ * creata o collegata) — usato per forzare la conferma totale al primo giro reale, indipendentemente
+ * da quante righe IN_ATTESA uno scan di verifica abbia già scritto.
+ *
+ * Il filtro `entitaCreataId: { not: null }` è voluto: le righe NON_RILEVANTE raggiungono
+ * `esito: COMPLETATO` da sole già in fase di scan (senza mai passare da IN_ATTESA né da una
+ * conferma umana, per design — vedi commento su BinarioMail.NON_RILEVANTE in schema.prisma e
+ * NOTE-TECNICHE.md). Se contassero, la prima newsletter scansionata sbloccherebbe da sola il
+ * binario Automatico prima che Marco abbia mai confermato una vera azione. I match forti di
+ * continuazione (Sessione E) restano invece `binario: AUTOMATICO` e valorizzano sempre
+ * `entitaCreataId` quando completano: continuano a rispettare il gate come ogni riga Automatico. */
 export async function primaEsecuzione(): Promise<boolean> {
-  const completate = await prisma.mailProcessata.count({ where: { esito: "COMPLETATO" } });
+  const completate = await prisma.mailProcessata.count({
+    where: { esito: "COMPLETATO", entitaCreataId: { not: null } },
+  });
   return completate === 0;
 }
 
-// categoriaProposta -> gestore. Solo le 7 combinazioni del binario Automatico: Manuale/Incerto
-// restano sempre a conferma umana (Sessione C), non hanno un gestore di esecuzione qui.
+// categoriaProposta -> gestore. Solo le 8 combinazioni del binario Automatico (le 7 già note +
+// CONTINUAZIONE): Manuale/Incerto/Proposta continuazione restano sempre a conferma umana
+// (Sessione C), non hanno un gestore di esecuzione qui.
 const GESTORI_AUTOMATICO: Record<string, (m: MailImport) => Promise<EsitoEsecuzione>> = {
   CONVOCAZIONE_CONSIGLIO: m => eseguiConvocazione(m, "CONVOCAZIONE_CONSIGLIO"),
   CONVOCAZIONE_COMMISSIONE: m => eseguiConvocazione(m, "CONVOCAZIONE_COMMISSIONE"),
@@ -141,6 +235,7 @@ const GESTORI_AUTOMATICO: Record<string, (m: MailImport) => Promise<EsitoEsecuzi
   INTERROGAZIONE: m => eseguiMozioneOInterrogazione(m, "INTERROGAZIONE"),
   VERBALE_GIUNTA: eseguiVerbaleGiunta,
   GIUSTIFICA: eseguiGiustifica,
+  CONTINUAZIONE: eseguiContinuazione,
 };
 
 export type RisultatoMotore = {
@@ -207,7 +302,10 @@ export async function eseguiMotoreMail(maxPagineScan = 20, maxEsecuzioni = 15): 
           // L'entità è comunque creata e COMPLETATO è già scritto — l'etichetta è solo di comodo,
           // un suo fallimento non deve far sembrare fallita l'importazione.
         }
-        const nomeEtichetta = riga.categoriaProposta ? etichettaPerCategoria(riga.categoriaProposta) : null;
+        // eseguiContinuazione (categoriaProposta "CONTINUAZIONE") calcola l'etichetta lui stesso,
+        // perché dipende dall'entità trovata (segnalazione/progetto+delega/contestazione), non da
+        // una lookup generica sul categoriaProposta della riga.
+        const nomeEtichetta = esito.etichetta ?? (riga.categoriaProposta ? etichettaPerCategoria(riga.categoriaProposta) : null);
         if (nomeEtichetta) {
           try { await applicaEtichetta(riga.messageId, nomeEtichetta); } catch { /* idem sopra */ }
         }

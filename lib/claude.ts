@@ -74,21 +74,24 @@ export async function riformattaOdg(testoGrezzo: string): Promise<string[]> {
   }
 }
 
-// Solo le categorie del binario Manuale: Consiglio/Giunta/Giustifica (binario Automatico) sono
-// sempre identificate con certezza dalla loro etichetta Gmail dedicata, mai da un'ipotesi su
-// testo libero — se una di queste arriva priva della sua etichetta nota, è un caso genuinamente
-// anomalo che va in Incerto, non un'ipotesi che l'AI deve provare a indovinare.
-const CATEGORIE_MAIL = ["segnalazione", "progetto", "contestazione"] as const;
+// Le prime tre sono le categorie del binario Manuale: Consiglio/Giunta/Giustifica (binario
+// Automatico) sono sempre identificate con certezza dalla loro etichetta Gmail dedicata, mai da
+// un'ipotesi su testo libero — se una di queste arriva priva della sua etichetta nota, è un caso
+// genuinamente anomalo che va in Incerto, non un'ipotesi che l'AI deve provare a indovinare.
+// "non_rilevante" è la quarta: mail fuori scope per il tool (newsletter, bollettini, inviti a
+// eventi) — va smaltita subito (binario NON_RILEVANTE), non lasciata in Incerto all'infinito.
+const CATEGORIE_MAIL = ["segnalazione", "progetto", "contestazione", "non_rilevante"] as const;
 
 const PROMPT_CLASSIFICA = (mittente: string, oggetto: string, estratto: string) => `Sei un assistente che classifica una PEC in arrivo al Comune di Lerici per un tool di gestione pratiche dell'Assessore.
 Categorie possibili, una sola:
 - "segnalazione": un cittadino segnala un problema/disservizio al Comune
 - "progetto": riguarda un progetto/iniziativa amministrativa in corso, legato a una delega specifica
 - "contestazione": il Comune contesta un mancato servizio a un gestore esterno (ACAM Ambiente, ACAM Acque, ATC)
+- "non_rilevante": non è materia di nessuna delle categorie sopra — newsletter, bollettini informativi, inviti a eventi/convegni, comunicazioni generiche che non richiedono la creazione di una pratica
 
 Se il testo non permette di scegliere con sufficiente sicurezza una di queste categorie, rispondi con categoria null.
 Rispondi SOLO con un oggetto JSON, nessun altro testo, nel formato esatto:
-{"categoria": "segnalazione" | "progetto" | "contestazione" | null, "confidenza": 0.0-1.0}
+{"categoria": "segnalazione" | "progetto" | "contestazione" | "non_rilevante" | null, "confidenza": 0.0-1.0}
 
 Mittente: "${mittente}"
 Oggetto: "${oggetto}"

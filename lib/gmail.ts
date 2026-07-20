@@ -1,7 +1,7 @@
 import { google } from "googleapis";
 import { simpleParser } from "mailparser";
 import { supabase } from "@/lib/supabase";
-import { ETICHETTA_INCERTO } from "@/lib/constants";
+import { ETICHETTA_INCERTO, ETICHETTA_NON_RILEVANTE } from "@/lib/constants";
 import iconv from "iconv-lite";
 import he from "he";
 
@@ -146,6 +146,7 @@ async function parseMessaggioPerId(
 
   return {
     messageId,
+    threadId: data.threadId ?? "",
     oggettoOriginale,
     mittente: mittenteOriginale,
     data: dataMail,
@@ -293,6 +294,19 @@ export async function applicaEtichetta(messageId: string, nomeEtichetta: string)
   });
 }
 
+/** Rimuove un'etichetta qualunque, se esiste. Nessun errore se l'etichetta non è mai esistita. */
+export async function rimuoviEtichetta(messageId: string, nomeEtichetta: string): Promise<void> {
+  const gmail = google.gmail({ version: "v1", auth: getAuth() });
+  const labelsRes = await gmail.users.labels.list({ userId: "me" });
+  const label = labelsRes.data.labels?.find(l => l.name === nomeEtichetta);
+  if (!label?.id) return;
+  await gmail.users.messages.modify({
+    userId: "me",
+    id: messageId,
+    requestBody: { removeLabelIds: [label.id] },
+  });
+}
+
 export async function marcaImportata(messageId: string): Promise<void> {
   return applicaEtichetta(messageId, "Importata");
 }
@@ -302,6 +316,12 @@ export async function marcaImportata(messageId: string): Promise<void> {
  * non essendoci nessuna entità la cui creazione debba prima andare a buon fine. */
 export async function marcaIncerto(messageId: string): Promise<void> {
   return applicaEtichetta(messageId, ETICHETTA_INCERTO);
+}
+
+/** Come marcaIncerto: nessuna entità creata, solo un'etichetta informativa — la mail è stata
+ * riconosciuta come fuori scope per il tool (binario NON_RILEVANTE), non come ambigua. */
+export async function marcaNonRilevante(messageId: string): Promise<void> {
+  return applicaEtichetta(messageId, ETICHETTA_NON_RILEVANTE);
 }
 
 export async function spostaInChiusa(messageId: string): Promise<void> {
@@ -446,6 +466,7 @@ function stripHtml(html: string): string {
 
 export type MailImport = {
   messageId: string;
+  threadId: string;
   oggettoOriginale: string;
   mittente: string;
   data: string;

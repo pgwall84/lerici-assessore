@@ -324,3 +324,4 @@ export function etichettaPerCategoria(categoria: string, delega?: Delega): strin
 }
 
 export const ETICHETTA_INCERTO = "Incerto/Da classificare";
+export const ETICHETTA_NON_RILEVANTE = "Bassa priorità/Non rilevante";

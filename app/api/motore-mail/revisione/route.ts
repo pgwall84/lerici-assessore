@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getMailPerId, getMappaEtichette } from "@/lib/gmail";
 import { trovaVoceTassonomia } from "@/lib/motore-mail";
 import { classificaDelega, classificaGestore } from "@/lib/classificatore";
+import { decodificaEntita } from "@/lib/continuazione";
 
 const TAKE = 10;
 
@@ -27,9 +28,23 @@ export async function GET(req: NextRequest) {
   const mappaEtichette = await getMappaEtichette();
   const mails = await Promise.all(righe.map(r => getMailPerId(r.messageId)));
 
-  const risultato = righe.map((r, i) => {
+  const risultato = await Promise.all(righe.map(async (r, i) => {
     const mail = mails[i];
     if (!mail) return null;
+
+    // Match debole (sezione 6 evolutiva): l'entità candidata è già decisa in fase di scan
+    // (codificata in categoriaProposta) — qui si recupera solo il titolo aggiornato per mostrarla.
+    let entitaProposta: { tipo: string; id: string; titolo: string } | null = null;
+    if (r.binario === "PROPOSTA_CONTINUAZIONE") {
+      const decodificata = decodificaEntita(r.categoriaProposta);
+      if (decodificata) {
+        const titolo =
+          decodificata.tipo === "pratica" ? (await prisma.pratica.findUnique({ where: { id: Number(decodificata.id) } }))?.titolo
+          : decodificata.tipo === "progetto" ? (await prisma.progetto.findUnique({ where: { id: decodificata.id } }))?.titolo
+          : (await prisma.contestazione.findUnique({ where: { id: decodificata.id } }))?.oggetto;
+        if (titolo) entitaProposta = { tipo: decodificata.tipo, id: decodificata.id, titolo };
+      }
+    }
 
     const nomiEtichette = mail.labelIds.map(lid => mappaEtichette.get(lid)).filter((n): n is string => !!n);
     const voceNota = trovaVoceTassonomia(nomiEtichette);
@@ -55,9 +70,11 @@ export async function GET(req: NextRequest) {
       nAllegati: mail.allegati.length,
       delegaSuggerita,
       gestoreSuggerito: classificaGestore(`${mail.mittente} ${mail.oggettoOriginale}`),
+      entitaProposta,
     };
-  }).filter((r): r is NonNullable<typeof r> => r !== null);
+  }));
+  const risultatoFiltrato = risultato.filter((r): r is NonNullable<typeof r> => r !== null);
 
   const nextCursor = righe.length === TAKE ? righe[righe.length - 1].id : null;
-  return NextResponse.json({ mails: risultato, nextCursor });
+  return NextResponse.json({ mails: risultatoFiltrato, nextCursor });
 }

@@ -1,7 +1,9 @@
 import { prisma } from "@/lib/prisma";
-import type { MailImport } from "@/lib/gmail";
+import { caricaAllegatiMail, type MailImport } from "@/lib/gmail";
 import { contentTypeDaNomeFile, estraiTestoDaFile, estraiVociZip, trovaOdgInZip } from "@/lib/estrazione-documenti";
 import { riformattaOdg } from "@/lib/claude";
+import { etichettaPerCategoria } from "@/lib/constants";
+import { trovaContinuazioneForte, type TipoEntitaContinuazione } from "@/lib/continuazione";
 import { supabase } from "@/lib/supabase";
 import type { TipoAtto } from "@prisma/client";
 
@@ -12,7 +14,10 @@ const BUCKET = "foto";
 // si esegue una mail alla volta perché il punto di ingresso è ora una riga MailProcessata, non
 // più una query diretta a Gmail per etichetta.
 export type EsitoEsecuzione =
-  | { esito: "COMPLETATO"; entitaId: string }
+  // `etichetta`: solo per i gestori (es. eseguiContinuazione) la cui entità di destinazione non
+  // è ricavabile dal semplice categoriaProposta della riga — il chiamante la usa al posto del
+  // lookup generico via etichettaPerCategoria(riga.categoriaProposta).
+  | { esito: "COMPLETATO"; entitaId: string; etichetta?: string }
   // ODG ambiguo nello zip: il sistema si ferma SOLO per questa mail, nessuna entità creata.
   // Dal cron non è risolvibile (nessun umano a cui chiedere): la riga resta IN_ATTESA e il resto
   // del binario automatico prosegue senza interruzioni. Dalla schermata di revisione (Sessione C)
@@ -174,4 +179,66 @@ export async function eseguiGiustifica(m: MailImport): Promise<EsitoEsecuzione> 
   } catch (e) {
     return { esito: "ERRORE", errore: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/**
+ * Aggancia una mail a un'entità già nota (tipo+id espliciti, non ri-derivata) con una nota nel
+ * diario + eventuali allegati — nessuna nuova entità creata. Condivisa da:
+ * - `eseguiContinuazione`, per i match forti (protocollo/threadId), che prima ri-trova l'entità
+ * - la conferma "Collega" del match debole (Sessione C), dove l'entità è già stata decisa da
+ *   Marco e arriva già come tipo+id, senza bisogno di ri-eseguire nessuna ricerca
+ */
+export async function eseguiCollegamento(m: MailImport, tipo: TipoEntitaContinuazione, id: string): Promise<EsitoEsecuzione> {
+  try {
+    const testoNota = m.descrizione.trim() || m.titolo;
+
+    if (tipo === "pratica") {
+      const praticaId = Number(id);
+      const pratica = await prisma.pratica.findUnique({ where: { id: praticaId } });
+      if (!pratica) return { esito: "ERRORE", errore: "Pratica non più trovata" };
+      await prisma.nota.create({ data: { praticaId, testo: testoNota } });
+      if (m.allegati.length) {
+        const urls = await caricaAllegatiMail(m.allegati, praticaId);
+        await Promise.all(urls.map(url => prisma.foto.create({ data: { praticaId, path: url } })));
+      }
+      return { esito: "COMPLETATO", entitaId: String(praticaId), etichetta: etichettaPerCategoria("segnalazione") ?? undefined };
+    }
+
+    if (tipo === "progetto") {
+      const progetto = await prisma.progetto.findUnique({ where: { id } });
+      if (!progetto) return { esito: "ERRORE", errore: "Progetto non più trovato" };
+      await prisma.notaProgetto.create({ data: { progettoId: progetto.id, testo: testoNota } });
+      await Promise.all(m.allegati.map(async a => {
+        const url = await caricaFile(`progetto-${progetto.id}`, a.buffer, a.filename);
+        await prisma.documentoProgetto.create({ data: { progettoId: progetto.id, nomeFile: a.filename, storageUrl: url } });
+      }));
+      return { esito: "COMPLETATO", entitaId: progetto.id, etichetta: etichettaPerCategoria("progetto", progetto.delega) ?? undefined };
+    }
+
+    // contestazione
+    const contestazione = await prisma.contestazione.findUnique({ where: { id } });
+    if (!contestazione) return { esito: "ERRORE", errore: "Contestazione non più trovata" };
+    await prisma.notaContestazione.create({ data: { contestazioneId: contestazione.id, testo: testoNota } });
+    await Promise.all(m.allegati.map(async a => {
+      const url = await caricaFile(`contestazione-${contestazione.id}`, a.buffer, a.filename);
+      await prisma.documentoContestazione.create({ data: { contestazioneId: contestazione.id, nomeFile: a.filename, storageUrl: url } });
+    }));
+    return { esito: "COMPLETATO", entitaId: contestazione.id, etichetta: etichettaPerCategoria("contestazione") ?? undefined };
+  } catch (e) {
+    return { esito: "ERRORE", errore: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Match forte di continuazione (protocollo/threadId, sezione 6 evolutiva): non crea una nuova
+ * entità, aggancia la mail a quella già trovata. Ri-esegue la ricerca invece di fidarsi di un
+ * riferimento salvato in MailProcessata — stesso principio già usato per la delega dei Progetti
+ * (Sessione C): i dati vivi restano la fonte di verità, non una stringa serializzata allo scan.
+ */
+export async function eseguiContinuazione(m: MailImport): Promise<EsitoEsecuzione> {
+  const trovata = await trovaContinuazioneForte(m);
+  if (!trovata) {
+    return { esito: "ERRORE", errore: "Continuazione non più trovata (protocollo/thread non corrispondono più a un'entità esistente)" };
+  }
+  return eseguiCollegamento(m, trovata.tipo, trovata.id);
 }

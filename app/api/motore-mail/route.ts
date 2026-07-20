@@ -7,11 +7,12 @@ export async function GET(req: NextRequest) {
   const token = await getToken({ req });
   if (!token) return NextResponse.json({ error: "Non autorizzato" }, { status: 401 });
 
-  const [manuale, incerto, automatico] = await Promise.all([
+  const [manuale, incerto, automatico, propostaContinuazione] = await Promise.all([
     prisma.mailProcessata.count({ where: { esito: "IN_ATTESA", binario: "MANUALE" } }),
     prisma.mailProcessata.count({ where: { esito: "IN_ATTESA", binario: "INCERTO" } }),
     prisma.mailProcessata.count({ where: { esito: "IN_ATTESA", binario: "AUTOMATICO" } }),
+    prisma.mailProcessata.count({ where: { esito: "IN_ATTESA", binario: "PROPOSTA_CONTINUAZIONE" } }),
   ]);
 
-  return NextResponse.json({ manuale, incerto, automatico });
+  return NextResponse.json({ manuale, incerto, automatico, propostaContinuazione });
 }

@@ -5,7 +5,7 @@ import { DELEGHE_LABEL } from "@/lib/constants";
 import type { Delega } from "@prisma/client";
 
 type Categoria = "segnalazione" | "progetto" | "contestazione" | "giustifica";
-type Binario = "AUTOMATICO" | "MANUALE" | "INCERTO";
+type Binario = "AUTOMATICO" | "MANUALE" | "INCERTO" | "PROPOSTA_CONTINUAZIONE";
 
 const CATEGORIA_LABEL: Record<Categoria, string> = {
   segnalazione: "📢 Segnalazione",
@@ -25,12 +25,14 @@ const BINARIO_LABEL: Record<Binario, string> = {
   AUTOMATICO: "⚙️ Automatico — da confermare",
   MANUALE: "✋ Manuale",
   INCERTO: "❓ Incerto",
+  PROPOSTA_CONTINUAZIONE: "🔗 Possibile continuazione",
 };
 
 const BINARIO_COLORE: Record<Binario, string> = {
   AUTOMATICO: "bg-gray-100 text-gray-600",
   MANUALE: "bg-blue-50 text-blue-700",
   INCERTO: "bg-red-50 text-red-700",
+  PROPOSTA_CONTINUAZIONE: "bg-purple-50 text-purple-700",
 };
 
 const TIPO_AUTOMATICO_LABEL: Record<string, string> = {
@@ -41,6 +43,13 @@ const TIPO_AUTOMATICO_LABEL: Record<string, string> = {
   INTERROGAZIONE: "Interrogazione",
   VERBALE_GIUNTA: "Verbale Giunta",
   GIUSTIFICA: "Giustifica",
+  CONTINUAZIONE: "Continuazione di una pratica",
+};
+
+const TIPO_ENTITA_LABEL: Record<string, string> = {
+  pratica: "📢 Segnalazione",
+  progetto: "📁 Progetto",
+  contestazione: "⚠️ Contestazione",
 };
 
 const GESTORE_LABEL: Record<string, string> = {
@@ -67,6 +76,7 @@ type Voce = {
   nAllegati: number;
   delegaSuggerita: string;
   gestoreSuggerito: string;
+  entitaProposta: { tipo: string; id: string; titolo: string } | null;
   // stato locale di modifica
   categoria: Categoria | "";
   delega: string;
@@ -75,17 +85,20 @@ type Voce = {
   // stato locale per la scelta ODG (solo Automatico ambiguo)
   candidatiOdg: { indice: number; nomeFile: string }[] | null;
   indiceOdgScelto: number | null;
+  // stato locale solo per Possibile continuazione: collegare o creare comunque una voce nuova
+  modalitaProposta: "collega" | "nuova";
 };
 
 const FILTRI: { value: Binario | ""; label: string }[] = [
   { value: "", label: "Tutte" },
   { value: "INCERTO", label: "❓ Incerto" },
   { value: "MANUALE", label: "✋ Manuale" },
+  { value: "PROPOSTA_CONTINUAZIONE", label: "🔗 Continuazione" },
   { value: "AUTOMATICO", label: "⚙️ Automatico" },
 ];
 
-function toVoce(r: Omit<Voce, "categoria" | "delega" | "gestore" | "luogo" | "candidatiOdg" | "indiceOdgScelto">): Voce {
-  const categoriaIniziale = r.binario === "INCERTO"
+function toVoce(r: Omit<Voce, "categoria" | "delega" | "gestore" | "luogo" | "candidatiOdg" | "indiceOdgScelto" | "modalitaProposta">): Voce {
+  const categoriaIniziale = r.binario === "INCERTO" || r.binario === "PROPOSTA_CONTINUAZIONE"
     ? ""
     : (["segnalazione", "progetto", "contestazione"].includes(r.categoriaProposta ?? "") ? (r.categoriaProposta as Categoria) : "");
   return {
@@ -96,6 +109,7 @@ function toVoce(r: Omit<Voce, "categoria" | "delega" | "gestore" | "luogo" | "ca
     luogo: "",
     candidatiOdg: null,
     indiceOdgScelto: null,
+    modalitaProposta: "collega",
   };
 }
 
@@ -107,7 +121,7 @@ export default function ImportMailPage() {
   const [espansa, setEspansa] = useState<string | null>(null);
   const [confermando, setConfermando] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<Binario | "">("");
-  const [conteggi, setConteggi] = useState({ manuale: 0, incerto: 0, automatico: 0 });
+  const [conteggi, setConteggi] = useState({ manuale: 0, incerto: 0, automatico: 0, propostaContinuazione: 0 });
 
   function caricaConteggi() {
     fetch("/api/motore-mail").then(r => r.ok ? r.json() : null).then(d => { if (d) setConteggi(d); }).catch(() => {});
@@ -154,7 +168,10 @@ export default function ImportMailPage() {
 
     const body = v.binario === "AUTOMATICO"
       ? (v.indiceOdgScelto !== null ? { indiceOdgForzato: v.indiceOdgScelto } : {})
+      : v.binario === "PROPOSTA_CONTINUAZIONE" && v.modalitaProposta === "collega"
+      ? { azione: "collega" }
       : {
+          azione: "nuova",
           categoria: v.categoria,
           titolo: v.titolo,
           descrizione: v.descrizione.slice(0, 1000),
@@ -208,6 +225,7 @@ export default function ImportMailPage() {
             {f.value === "INCERTO" && conteggi.incerto > 0 && <span className="ml-1 opacity-70">{conteggi.incerto}</span>}
             {f.value === "MANUALE" && conteggi.manuale > 0 && <span className="ml-1 opacity-70">{conteggi.manuale}</span>}
             {f.value === "AUTOMATICO" && conteggi.automatico > 0 && <span className="ml-1 opacity-70">{conteggi.automatico}</span>}
+            {f.value === "PROPOSTA_CONTINUAZIONE" && conteggi.propostaContinuazione > 0 && <span className="ml-1 opacity-70">{conteggi.propostaContinuazione}</span>}
           </button>
         ))}
       </div>
@@ -237,6 +255,11 @@ export default function ImportMailPage() {
                     {v.binario !== "AUTOMATICO" && v.categoria && (
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${CATEGORIA_COLORE[v.categoria]}`}>
                         {CATEGORIA_LABEL[v.categoria]}
+                      </span>
+                    )}
+                    {v.binario === "PROPOSTA_CONTINUAZIONE" && v.entitaProposta && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">
+                        {TIPO_ENTITA_LABEL[v.entitaProposta.tipo] ?? v.entitaProposta.tipo}: {v.entitaProposta.titolo.slice(0, 40)}
                       </span>
                     )}
                     {v.confidenza !== null && v.confidenza < 1 && (
@@ -289,9 +312,33 @@ export default function ImportMailPage() {
                         Vai avanti con la creazione automatica dell&apos;atto/giustifica come previsto.
                       </p>
                     )
+                  ) : v.binario === "PROPOSTA_CONTINUAZIONE" && v.modalitaProposta === "collega" ? (
+                    <div className="space-y-2">
+                      <p className="text-xs text-gray-600">
+                        Verrà aggiunta una nota (+ eventuali allegati) a{" "}
+                        <strong>
+                          {v.entitaProposta ? `${TIPO_ENTITA_LABEL[v.entitaProposta.tipo] ?? v.entitaProposta.tipo}: ${v.entitaProposta.titolo}` : "questa entità"}
+                        </strong>
+                        , senza creare nulla di nuovo.
+                      </p>
+                      <button
+                        onClick={() => aggiorna(v.mailProcessataId, "modalitaProposta", "nuova")}
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        Non è la stessa cosa? Crea una voce nuova invece
+                      </button>
+                    </div>
                   ) : (
                     <div className="grid grid-cols-1 gap-2">
-                      {v.binario === "INCERTO" && (
+                      {v.binario === "PROPOSTA_CONTINUAZIONE" && (
+                        <button
+                          onClick={() => aggiorna(v.mailProcessataId, "modalitaProposta", "collega")}
+                          className="text-xs text-purple-600 hover:underline text-left"
+                        >
+                          ← Torna a &quot;Collega a {v.entitaProposta?.titolo}&quot;
+                        </button>
+                      )}
+                      {(v.binario === "INCERTO" || v.binario === "PROPOSTA_CONTINUAZIONE") && (
                         <div>
                           <label className="text-xs text-gray-500">Categoria</label>
                           <select
@@ -385,12 +432,20 @@ export default function ImportMailPage() {
                     onClick={() => conferma(v)}
                     disabled={
                       confermando === v.mailProcessataId ||
-                      (v.binario !== "AUTOMATICO" && !v.categoria) ||
-                      (v.candidatiOdg !== null && v.indiceOdgScelto === null)
+                      (v.candidatiOdg !== null && v.indiceOdgScelto === null) ||
+                      ((v.binario === "INCERTO" || (v.binario === "PROPOSTA_CONTINUAZIONE" && v.modalitaProposta === "nuova")) && !v.categoria)
                     }
-                    className="w-full bg-blue-600 text-white rounded-lg py-2 text-sm font-medium disabled:opacity-50 hover:bg-blue-700"
+                    className={`w-full text-white rounded-lg py-2 text-sm font-medium disabled:opacity-50 ${
+                      v.binario === "PROPOSTA_CONTINUAZIONE" && v.modalitaProposta === "collega" ? "bg-purple-600 hover:bg-purple-700" : "bg-blue-600 hover:bg-blue-700"
+                    }`}
                   >
-                    {confermando === v.mailProcessataId ? "Conferma…" : v.candidatiOdg ? "✓ Conferma con questo file" : "✓ Conferma"}
+                    {confermando === v.mailProcessataId
+                      ? "Conferma…"
+                      : v.candidatiOdg
+                      ? "✓ Conferma con questo file"
+                      : v.binario === "PROPOSTA_CONTINUAZIONE" && v.modalitaProposta === "collega"
+                      ? "🔗 Collega"
+                      : "✓ Conferma"}
                   </button>
                 </div>
               )}
