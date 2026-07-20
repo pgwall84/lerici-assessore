@@ -171,3 +171,15 @@ La differenza non è arbitraria: il gate protegge da un'azione reale sbagliata s
 Scoperto il 2026-07-21 aggiungendo due colonne a `Bando`: `prisma migrate dev` rileva "drift" e minaccia `prisma migrate reset` (**cancella tutti i dati**) perché rigiocando tutte le migrazioni in `prisma/migrations/` su un DB shadow non si ottiene lo schema reale — mancano `Bando`, `StatoBando`, `MailInviata`, `Pratica.messageId`. Questi oggetti esistono davvero nel DB (funzionano, li abbiamo scritti/letti più volte in questa sessione) ma nessun file di migrazione tracciato li ha mai creati — probabilmente applicati in passato con `prisma db push` o SQL manuale, mai da una migrazione vera. `prisma migrate status` invece non se ne accorge e dice "up to date": controlla solo che le righe in `_prisma_migrations` combacino con i file, non fa il confronto strutturale profondo che fa `migrate dev`.
 
 **Non è mai da risolvere con `prisma migrate reset`** (cancellerebbe dati di produzione veri). Per aggiungere nuove colonne/tabelle senza toccare questo drift pre-esistente: scrivere a mano il file `migration.sql` nella cartella nuova (stesso formato delle altre), applicarlo con `npx prisma db execute --file <path>` (session pooler, niente `--schema`: la config viene da `prisma.config.ts` in Prisma 7), poi `npx prisma migrate resolve --applied <nome_cartella>` per allinearlo alla cronologia — mai `prisma migrate dev` su questo DB finché il drift di fondo non viene sistemato a parte (fuori scope finché non lo chiede esplicitamente Marco, è un problema preesistente non causato da questa modifica).
+
+---
+
+## 16. Vercel Hobby: il tetto di durata (`maxDuration`) di una function è 300s, non 60s — non confondere con il limite di frequenza dei cron (nota #13)
+
+Verificato via API Vercel (`GET /v2/teams`, piano confermato `hobby`) e documentazione ufficiale il 2026-07-21: con *fluid compute* (attivo di default) il piano Hobby consente **fino a 300 secondi (5 minuti)** di `maxDuration` per una function, non 60 come inizialmente assunto nel cron `check-bandi` (`app/api/cron/check-bandi/route.ts`, poi alzato a 120s per margine). Il piano Pro arriva a 800s (1800s in beta "extended").
+
+**Non confondere due limiti diversi dello stesso piano Hobby**:
+- **Frequenza dei cron** (nota #13): max 1 esecuzione al giorno — *questo* fa fallire il deploy con `deploy_failed` se violato.
+- **Durata massima di una singola esecuzione** (questa nota): 300s — molto più permissivo di quanto sembri intuitivo pensando a "Hobby = piano gratuito limitato".
+
+Prima di assumere un tetto di durata per dimensionare `maxDuration`, verificare il piano reale via `curl https://api.vercel.com/v2/teams -H "Authorization: Bearer $TOKEN"` (token in `%APPDATA%/xdg.data/com.vercel.cli/auth.json` su Windows) invece di affidarsi a un numero ricordato — i limiti Vercel cambiano nel tempo (fluid compute è una novità relativamente recente che ha alzato parecchio il tetto Hobby).
