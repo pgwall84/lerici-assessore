@@ -42,9 +42,11 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
   // Livelli 1-2 della catena di continuazione (protocollo, poi threadId): controllati PRIMA di
   // qualunque etichetta/classificazione, perché sono un segnale affidabile a prescindere — una
   // mail può avere l'etichetta "Segnalazioni" (da filtro Gmail) ed essere comunque la prosecuzione
-  // di una pratica già esistente, non una nuova. Match forte -> sempre Automatico, mai indovinato.
+  // di una pratica già esistente, non una nuova. Match forte univoco -> sempre Automatico, mai
+  // indovinato. Match forte AMBIGUO (protocollo su più di un'entità) -> mai eseguito da solo:
+  // declassato a PROPOSTA_CONTINUAZIONE come il match debole, con avviso esplicito in UI.
   const continuazioneForte = await trovaContinuazioneForte(m);
-  if (continuazioneForte) {
+  if (continuazioneForte.esito === "trovato") {
     await prisma.mailProcessata.create({
       data: {
         messageId: m.messageId,
@@ -57,6 +59,20 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
       },
     });
     return "AUTOMATICO";
+  }
+  if (continuazioneForte.esito === "ambiguo") {
+    await prisma.mailProcessata.create({
+      data: {
+        messageId: m.messageId,
+        threadId: m.threadId || null,
+        mittente: m.mittente,
+        oggetto: m.oggettoOriginale,
+        categoriaProposta: codificaEntita(continuazioneForte.candidati[0], true),
+        confidenza: null,
+        binario: "PROPOSTA_CONTINUAZIONE",
+      },
+    });
+    return "PROPOSTA_CONTINUAZIONE";
   }
 
   const voceNota = trovaVoceTassonomia(nomiEtichette);

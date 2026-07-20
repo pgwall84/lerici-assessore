@@ -9,32 +9,47 @@ export type EntitaTrovata = {
   titolo: string;
 };
 
-/** Codifica/decodifica la coppia tipo+id in categoriaProposta per PROPOSTA_CONTINUAZIONE
- * (nessuna colonna nuova su MailProcessata per questo — stesso principio già usato per gli
- * altri binari: la stringa libera basta, si ri-deriva il resto dai dati vivi quando serve). */
-export function codificaEntita(e: EntitaTrovata): string {
-  return `${e.tipo}:${e.id}`;
+/** Codifica/decodifica la coppia tipo+id (+ flag ambiguo) in categoriaProposta per
+ * PROPOSTA_CONTINUAZIONE (nessuna colonna nuova su MailProcessata per questo — stesso principio
+ * già usato per gli altri binari: la stringa libera basta, si ri-deriva il resto dai dati vivi
+ * quando serve). `ambiguo: true` segnala che il protocollo corrispondeva a più di un'entità e
+ * questa è solo la prima trovata — va mostrato con un avviso, non spacciato per un match pulito. */
+export function codificaEntita(e: EntitaTrovata, ambiguo = false): string {
+  return `${e.tipo}:${e.id}${ambiguo ? ":ambiguo" : ""}`;
 }
 
-export function decodificaEntita(categoriaProposta: string | null): { tipo: TipoEntitaContinuazione; id: string } | null {
+export function decodificaEntita(categoriaProposta: string | null): { tipo: TipoEntitaContinuazione; id: string; ambiguo: boolean } | null {
   if (!categoriaProposta) return null;
-  const [tipo, id] = categoriaProposta.split(":");
+  const [tipo, id, flag] = categoriaProposta.split(":");
   if (tipo !== "pratica" && tipo !== "progetto" && tipo !== "contestazione") return null;
   if (!id) return null;
-  return { tipo, id };
+  return { tipo, id, ambiguo: flag === "ambiguo" };
 }
 
-async function trovaPerProtocollo(protocollo: string): Promise<EntitaTrovata | null> {
-  const pratica = await prisma.pratica.findFirst({ where: { protocollo } });
-  if (pratica) return { tipo: "pratica", id: String(pratica.id), titolo: pratica.titolo };
+export type RisultatoProtocollo =
+  | { esito: "nessuno" }
+  | { esito: "univoco"; entita: EntitaTrovata }
+  // Più di una riga (anche tra tabelle diverse) condivide lo stesso protocollo — non si indovina
+  // quale sia quella giusta: il chiamante deve trattarlo come il match debole (conferma umana),
+  // mai come esecuzione automatica.
+  | { esito: "ambiguo"; candidati: EntitaTrovata[] };
 
-  const progetto = await prisma.progetto.findFirst({ where: { protocollo } });
-  if (progetto) return { tipo: "progetto", id: progetto.id, titolo: progetto.titolo };
+async function trovaPerProtocollo(protocollo: string): Promise<RisultatoProtocollo> {
+  const [pratiche, progetti, contestazioni] = await Promise.all([
+    prisma.pratica.findMany({ where: { protocollo } }),
+    prisma.progetto.findMany({ where: { protocollo } }),
+    prisma.contestazione.findMany({ where: { protocollo } }),
+  ]);
 
-  const contestazione = await prisma.contestazione.findFirst({ where: { protocollo } });
-  if (contestazione) return { tipo: "contestazione", id: contestazione.id, titolo: contestazione.oggetto };
+  const candidati: EntitaTrovata[] = [
+    ...pratiche.map(p => ({ tipo: "pratica" as const, id: String(p.id), titolo: p.titolo })),
+    ...progetti.map(p => ({ tipo: "progetto" as const, id: p.id, titolo: p.titolo })),
+    ...contestazioni.map(c => ({ tipo: "contestazione" as const, id: c.id, titolo: c.oggetto })),
+  ];
 
-  return null;
+  if (candidati.length === 0) return { esito: "nessuno" };
+  if (candidati.length === 1) return { esito: "univoco", entita: candidati[0] };
+  return { esito: "ambiguo", candidati };
 }
 
 // categoriaProposta -> tipo di entità, solo per le 3 categorie del binario Manuale coinvolte
@@ -68,20 +83,30 @@ async function trovaPerThreadId(threadId: string): Promise<EntitaTrovata | null>
   return contestazione ? { tipo, id: contestazione.id, titolo: contestazione.oggetto } : null;
 }
 
+export type RisultatoContinuazioneForte =
+  | { esito: "nessuno" }
+  | { esito: "trovato"; entita: EntitaTrovata }
+  // Protocollo con più di una corrispondenza: MAI eseguito in automatico, va trattato come il
+  // match debole (conferma umana) — vedi commento su RisultatoProtocollo["ambiguo"] sopra.
+  | { esito: "ambiguo"; candidati: EntitaTrovata[] };
+
 /**
  * Livelli 1-2 della catena (sezione 6 evolutiva): protocollo, poi threadId. Match forte,
- * eseguibile in automatico — se trovato, la mail non crea una nuova entità ma si aggancia.
+ * eseguibile in automatico solo se univoco — se il protocollo è ambiguo, si ferma lì e ritorna
+ * "ambiguo" senza controllare il threadId (il protocollo è comunque il segnale più affidabile:
+ * se è ambiguo lui, non ha senso proseguire su un segnale più debole per zittire l'ambiguità).
  */
-export async function trovaContinuazioneForte(m: MailImport): Promise<EntitaTrovata | null> {
+export async function trovaContinuazioneForte(m: MailImport): Promise<RisultatoContinuazioneForte> {
   if (m.protocollo) {
     const perProtocollo = await trovaPerProtocollo(m.protocollo);
-    if (perProtocollo) return perProtocollo;
+    if (perProtocollo.esito === "univoco") return { esito: "trovato", entita: perProtocollo.entita };
+    if (perProtocollo.esito === "ambiguo") return { esito: "ambiguo", candidati: perProtocollo.candidati };
   }
   if (m.threadId) {
     const perThread = await trovaPerThreadId(m.threadId);
-    if (perThread) return perThread;
+    if (perThread) return { esito: "trovato", entita: perThread };
   }
-  return null;
+  return { esito: "nessuno" };
 }
 
 // Rimuove prefissi di risposta/inoltro, per confrontare l'oggetto "sostanziale" tra mail diverse

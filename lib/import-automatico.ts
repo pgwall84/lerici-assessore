@@ -236,9 +236,13 @@ export async function eseguiCollegamento(m: MailImport, tipo: TipoEntitaContinua
  * (Sessione C): i dati vivi restano la fonte di verità, non una stringa serializzata allo scan.
  */
 export async function eseguiContinuazione(m: MailImport): Promise<EsitoEsecuzione> {
-  const trovata = await trovaContinuazioneForte(m);
-  if (!trovata) {
-    return { esito: "ERRORE", errore: "Continuazione non più trovata (protocollo/thread non corrispondono più a un'entità esistente)" };
+  const risultato = await trovaContinuazioneForte(m);
+  if (risultato.esito !== "trovato") {
+    // "ambiguo" qui non dovrebbe mai capitare: una riga MailProcessata arriva a questo gestore
+    // solo se la classificazione l'aveva già marcata AUTOMATICO, cosa che non succede più per un
+    // protocollo ambiguo (va a PROPOSTA_CONTINUAZIONE). Trattato comunque come errore difensivo,
+    // mai come "scegli il primo e vai".
+    return { esito: "ERRORE", errore: "Continuazione non più trovata o diventata ambigua (protocollo/thread non corrispondono più in modo univoco)" };
   }
-  return eseguiCollegamento(m, trovata.tipo, trovata.id);
+  return eseguiCollegamento(m, risultato.entita.tipo, risultato.entita.id);
 }

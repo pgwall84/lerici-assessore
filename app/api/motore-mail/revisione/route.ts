@@ -32,9 +32,11 @@ export async function GET(req: NextRequest) {
     const mail = mails[i];
     if (!mail) return null;
 
-    // Match debole (sezione 6 evolutiva): l'entità candidata è già decisa in fase di scan
-    // (codificata in categoriaProposta) — qui si recupera solo il titolo aggiornato per mostrarla.
-    let entitaProposta: { tipo: string; id: string; titolo: string } | null = null;
+    // Match debole o protocollo ambiguo (sezione 6 evolutiva): l'entità candidata è già decisa
+    // in fase di scan (codificata in categoriaProposta) — qui si recupera solo il titolo
+    // aggiornato per mostrarla. `ambiguo: true` = il protocollo corrispondeva a più di
+    // un'entità, questa è solo la prima trovata: mai da dare per buona senza verificare.
+    let entitaProposta: { tipo: string; id: string; titolo: string; ambiguo: boolean } | null = null;
     if (r.binario === "PROPOSTA_CONTINUAZIONE") {
       const decodificata = decodificaEntita(r.categoriaProposta);
       if (decodificata) {
@@ -42,7 +44,7 @@ export async function GET(req: NextRequest) {
           decodificata.tipo === "pratica" ? (await prisma.pratica.findUnique({ where: { id: Number(decodificata.id) } }))?.titolo
           : decodificata.tipo === "progetto" ? (await prisma.progetto.findUnique({ where: { id: decodificata.id } }))?.titolo
           : (await prisma.contestazione.findUnique({ where: { id: decodificata.id } }))?.oggetto;
-        if (titolo) entitaProposta = { tipo: decodificata.tipo, id: decodificata.id, titolo };
+        if (titolo) entitaProposta = { tipo: decodificata.tipo, id: decodificata.id, titolo, ambiguo: decodificata.ambiguo };
       }
     }
 

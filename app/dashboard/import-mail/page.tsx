@@ -76,7 +76,7 @@ type Voce = {
   nAllegati: number;
   delegaSuggerita: string;
   gestoreSuggerito: string;
-  entitaProposta: { tipo: string; id: string; titolo: string } | null;
+  entitaProposta: { tipo: string; id: string; titolo: string; ambiguo: boolean } | null;
   // stato locale di modifica
   categoria: Categoria | "";
   delega: string;
@@ -262,6 +262,11 @@ export default function ImportMailPage() {
                         {TIPO_ENTITA_LABEL[v.entitaProposta.tipo] ?? v.entitaProposta.tipo}: {v.entitaProposta.titolo.slice(0, 40)}
                       </span>
                     )}
+                    {v.entitaProposta?.ambiguo && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">
+                        ⚠️ protocollo ambiguo
+                      </span>
+                    )}
                     {v.confidenza !== null && v.confidenza < 1 && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-50 text-gray-400">
                         AI {Math.round(v.confidenza * 100)}%
@@ -314,6 +319,11 @@ export default function ImportMailPage() {
                     )
                   ) : v.binario === "PROPOSTA_CONTINUAZIONE" && v.modalitaProposta === "collega" ? (
                     <div className="space-y-2">
+                      {v.entitaProposta?.ambiguo && (
+                        <div className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 text-xs text-orange-800">
+                          ⚠️ Il protocollo di questa mail corrisponde a <strong>più di un elemento</strong> — questa è solo la prima corrispondenza trovata, non necessariamente quella giusta. Verifica bene prima di collegare.
+                        </div>
+                      )}
                       <p className="text-xs text-gray-600">
                         Verrà aggiunta una nota (+ eventuali allegati) a{" "}
                         <strong>
