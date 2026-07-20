@@ -32,6 +32,7 @@ export default function Navbar() {
   const [incertoBadge, setIncertoBadge] = useState(0);
   const [altroOpen, setAltroOpen] = useState(false);
   const altroRef = useRef<HTMLDivElement>(null);
+  const altroMobileRef = useRef<HTMLDivElement>(null);
   const badgeTotale = bandiBadge + giustificheBadge;
 
   useEffect(() => {
@@ -56,8 +57,15 @@ export default function Navbar() {
   useEffect(() => { setAltroOpen(false); }, [pathname]);
 
   useEffect(() => {
+    // Il foglio "Altro" mobile è un albero DOM separato dal dropdown desktop (non è annidato
+    // dentro altroRef, che sta dentro il <nav> nascosto su mobile) — va escluso esplicitamente,
+    // altrimenti ogni tap su un link al suo interno viene letto come "click fuori" e chiude il
+    // foglio (smontando il Link) prima che la navigazione parta.
     function onClickFuori(e: MouseEvent) {
-      if (altroRef.current && !altroRef.current.contains(e.target as Node)) setAltroOpen(false);
+      const target = e.target as Node;
+      const dentroDesktop = altroRef.current?.contains(target) ?? false;
+      const dentroMobile = altroMobileRef.current?.contains(target) ?? false;
+      if (!dentroDesktop && !dentroMobile) setAltroOpen(false);
     }
     document.addEventListener("mousedown", onClickFuori);
     return () => document.removeEventListener("mousedown", onClickFuori);
@@ -199,6 +207,7 @@ export default function Navbar() {
         <div className="fixed inset-0 z-40 md:hidden" onClick={() => setAltroOpen(false)}>
           <div className="absolute inset-0 bg-black/30" />
           <div
+            ref={altroMobileRef}
             className="absolute bottom-16 left-0 right-0 bg-white rounded-t-xl border-t border-gray-200 shadow-xl py-2"
             onClick={e => e.stopPropagation()}
           >
