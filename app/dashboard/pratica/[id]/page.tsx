@@ -59,6 +59,18 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
   }, [id]);
 
   async function cambiaStato(stato: StatoPratica) {
+    // "Promossa a progetto" non è mai uno stato persistito di per sé: apre solo il popup di
+    // creazione progetto — il PATCH reale (stato ARCHIVIATA) avviene solo a promozione
+    // completata, in creaProgettoDaIdea(). Persisterlo subito lascerebbe l'idea bloccata per
+    // sempre in questo stato se l'utente annulla il popup ("Non ora") o se la creazione fallisce
+    // — bug reale osservato su una Pratica MIA_IDEA rimasta in stato PROMOSSA senza che nessun
+    // progetto fosse mai stato creato.
+    if (stato === "PROMOSSA" && pratica?.tipo === "MIA_IDEA") {
+      setFormProgetto({ titolo: pratica.titolo, descrizione: pratica.descrizione ?? "" });
+      setPromozionePopup(true);
+      return;
+    }
+
     const res = await fetch(`/api/pratiche/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -68,10 +80,6 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
       const aggiornata = await res.json();
       setPratica(p => p ? { ...p, stato: aggiornata.stato, chiusaAt: aggiornata.chiusaAt } : p);
       setNuovoStato("");
-      if (stato === "PROMOSSA" && pratica?.tipo === "MIA_IDEA") {
-        setFormProgetto({ titolo: pratica.titolo, descrizione: pratica.descrizione ?? "" });
-        setPromozionePopup(true);
-      }
     }
   }
 
@@ -134,34 +142,38 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
   }
 
   async function creaProgettoDaIdea() {
-    const res = await fetch("/api/pratiche", {
+    // Un Progetto vive nel modello Progetto dedicato (/api/progetti), non come Pratica con
+    // tipo:PROGETTO — quel vecchio percorso lasciava una riga invisibile in ogni vista senza mai
+    // creare un vero Progetto (vedi NOTE-TECNICHE.md).
+    const res = await fetch("/api/progetti", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        tipo: "PROGETTO",
         delega: pratica!.delega,
         titolo: formProgetto.titolo,
         descrizione: formProgetto.descrizione || undefined,
-        priorita: pratica!.priorita,
-        personaId: pratica!.persona?.id,
+        responsabileId: pratica!.persona?.id,
       }),
     });
-    if (res.ok) {
-      const nuovo = await res.json();
-      // Archivia l'idea con nota
-      await fetch(`/api/pratiche/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stato: "ARCHIVIATA" }),
-      });
-      await fetch(`/api/pratiche/${id}/note`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ testo: `Promossa a progetto #${nuovo.id}: ${formProgetto.titolo}` }),
-      });
-      setPromozionePopup(false);
-      router.push(`/dashboard/pratica/${nuovo.id}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.error ? JSON.stringify(err.error) : "Errore nella creazione del progetto");
+      return;
     }
+    const nuovo = await res.json();
+    // Archivia l'idea con nota di collegamento
+    await fetch(`/api/pratiche/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stato: "ARCHIVIATA" }),
+    });
+    await fetch(`/api/pratiche/${id}/note`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ testo: `Promossa a progetto: ${formProgetto.titolo}` }),
+    });
+    setPromozionePopup(false);
+    router.push(`/dashboard/progetti/${nuovo.id}`);
   }
 
   async function aggiungiNota() {
@@ -611,7 +623,11 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
                   }}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
                 >
-                  {(["SEGNALAZIONE","MIA_IDEA","PROGETTO"] as TipoPratica[]).map(t => (
+                  {/* PROGETTO deliberatamente escluso: si promuove con il bottone dedicato
+                      (creaProgettoDaIdea), che crea una vera riga Progetto — non un semplice
+                      cambio di tipo, che lascerebbe la pratica invisibile in ogni vista senza
+                      creare nulla nel modello Progetto. */}
+                  {(["SEGNALAZIONE","MIA_IDEA"] as TipoPratica[]).map(t => (
                     <option key={t} value={t}>{TIPO_LABEL[t]}</option>
                   ))}
                 </select>
@@ -623,7 +639,11 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
                   onChange={e => setFormModifica(f => ({ ...f, stato: e.target.value }))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
                 >
-                  {STATI_PER_TIPO[formModifica.tipo as TipoPratica]?.map(s => (
+                  {/* PROMOSSA esclusa qui: non è un vero stato selezionabile a mano, solo un
+                      innesco per il popup dedicato "Cambia stato" → creaProgettoDaIdea(), che
+                      crea davvero il progetto prima di archiviare l'idea. Selezionarla da questo
+                      form generico la persisterebbe senza mai creare nulla (bug reale osservato). */}
+                  {STATI_PER_TIPO[formModifica.tipo as TipoPratica]?.filter(s => s !== "PROMOSSA").map(s => (
                     <option key={s} value={s}>{STATO_LABEL[s]}</option>
                   ))}
                 </select>

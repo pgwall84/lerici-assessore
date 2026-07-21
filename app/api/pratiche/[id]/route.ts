@@ -6,7 +6,11 @@ import { z } from "zod";
 const updateSchema = z.object({
   stato: z.enum(["APERTA","IN_CORSO","CHIUSA","SOSPESA","APPUNTO","IN_VALUTAZIONE","PROMOSSA","ARCHIVIATA"]).optional(),
   priorita: z.enum(["BASSA","MEDIA","ALTA"]).optional(),
-  tipo: z.enum(["SEGNALAZIONE","MIA_IDEA","PROGETTO"]).optional(),
+  // PROGETTO deliberatamente escluso: un Progetto vive nel modello Progetto dedicato, non come
+  // Pratica con questo tipo — quel valore esisteva solo per compatibilità con un vecchio flusso
+  // di importazione mail ormai rimosso, e permetteva di trasformare in silenzio una Pratica
+  // (Segnalazione/Idea) in una riga invisibile in ogni vista, senza mai creare un vero Progetto.
+  tipo: z.enum(["SEGNALAZIONE","MIA_IDEA"]).optional(),
   titolo: z.string().min(1).max(200).optional(),
   descrizione: z.string().nullable().optional(),
   luogo: z.string().nullable().optional(),
