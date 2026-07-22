@@ -207,7 +207,6 @@ model ArgomentoRiunione {
 
 enum StatoRiunione {
   IN_PREPARAZIONE
-  PRONTA
   IN_CORSO
   CONCLUSA
 }

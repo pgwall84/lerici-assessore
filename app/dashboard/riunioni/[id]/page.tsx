@@ -31,18 +31,10 @@ export default function RiunionePage({ params }: { params: Promise<{ id: string 
   useEffect(() => {
     fetch(`/api/riunioni/${id}`)
       .then(r => r.json())
-      .then(async (data: RiunioneFull) => {
+      .then((data: RiunioneFull) => {
         if (data.stato === "IN_PREPARAZIONE") {
           router.replace(`/dashboard/riunioni/${id}/revisione`);
           return;
-        }
-        if (data.stato === "PRONTA") {
-          const res = await fetch(`/api/riunioni/${id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ stato: "IN_CORSO" }),
-          });
-          if (res.ok) data = await res.json();
         }
         setRiunione(data);
         setLoading(false);
@@ -77,16 +69,16 @@ export default function RiunionePage({ params }: { params: Promise<{ id: string 
     }
   }
 
+  // Riapre in IN_PREPARAZIONE, non più direttamente in IN_CORSO: riaprire dovrebbe permettere di
+  // rivedere tutto (argomenti, titolo, data, persona/progetto, priorità), non solo rispuntare le
+  // caselle. Il redirect già presente sopra (stato IN_PREPARAZIONE → /revisione) fa il resto.
   async function riapriRiunione() {
     const res = await fetch(`/api/riunioni/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stato: "IN_CORSO" }),
+      body: JSON.stringify({ stato: "IN_PREPARAZIONE" }),
     });
-    if (res.ok) {
-      const aggiornata = await res.json();
-      setRiunione(r => r ? { ...r, stato: aggiornata.stato } : r);
-    }
+    if (res.ok) router.push(`/dashboard/riunioni/${id}/revisione`);
   }
 
   function apriModifica() {

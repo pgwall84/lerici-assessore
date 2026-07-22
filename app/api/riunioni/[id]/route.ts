@@ -5,7 +5,7 @@ import { z } from "zod";
 
 const updateSchema = z.object({
   titolo: z.string().min(1).max(200).optional(),
-  stato: z.enum(["IN_PREPARAZIONE", "PRONTA", "IN_CORSO", "CONCLUSA"]).optional(),
+  stato: z.enum(["IN_PREPARAZIONE", "IN_CORSO", "CONCLUSA"]).optional(),
   dataOra: z.string().datetime().nullable().optional(),
   trascrizioneGrezza: z.string().optional(),
   priorita: z.enum(["BASSA", "MEDIA", "ALTA"]).nullable().optional(),

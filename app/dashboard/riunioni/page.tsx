@@ -63,6 +63,20 @@ export default function RiunioniPage() {
     window.open(`/api/riunioni/export?${params}`, "_blank");
   }
 
+  async function iniziaRiunione(id: string, e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const res = await fetch(`/api/riunioni/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stato: "IN_CORSO" }),
+    });
+    if (res.ok) {
+      const aggiornata = await res.json();
+      setRiunioni(rs => rs.map(r => r.id === id ? { ...r, stato: aggiornata.stato } : r));
+    }
+  }
+
   return (
     <div className="space-y-4 pb-8">
       <div className="flex items-center justify-between">
@@ -161,6 +175,14 @@ export default function RiunioniPage() {
                 <span className={`shrink-0 text-xs px-2 py-0.5 rounded font-medium ${STATO_RIUNIONE_COLORE[r.stato]}`}>
                   {STATO_RIUNIONE_LABEL[r.stato]}
                 </span>
+                {r.stato === "IN_PREPARAZIONE" && (
+                  <button
+                    onClick={e => iniziaRiunione(r.id, e)}
+                    className="shrink-0 text-xs px-2 py-0.5 rounded bg-blue-600 text-white font-medium hover:bg-blue-700"
+                  >
+                    ▶ Inizia
+                  </button>
+                )}
               </Link>
             );
           })}
@@ -187,6 +209,14 @@ export default function RiunioniPage() {
                   {r.progetto && <span>📁 {r.progetto.titolo}</span>}
                   {r.argomenti.length > 0 && <span>{trattati}/{r.argomenti.length} trattati</span>}
                 </div>
+                {r.stato === "IN_PREPARAZIONE" && (
+                  <button
+                    onClick={e => iniziaRiunione(r.id, e)}
+                    className="mt-2 w-full text-xs bg-blue-600 text-white rounded-lg py-1.5 font-medium hover:bg-blue-700"
+                  >
+                    ▶ Inizia riunione
+                  </button>
+                )}
               </Link>
             );
           })}

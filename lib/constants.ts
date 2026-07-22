@@ -225,19 +225,17 @@ export const STATI_ATTO_ARCHIVIO: StatoAtto[] = ["ARCHIVIATO", "RISPOSTO"];
 
 export const STATO_RIUNIONE_LABEL: Record<StatoRiunione, string> = {
   IN_PREPARAZIONE: "In preparazione",
-  PRONTA: "Pronta",
   IN_CORSO: "In corso",
   CONCLUSA: "Conclusa",
 };
 
 export const STATO_RIUNIONE_COLORE: Record<StatoRiunione, string> = {
   IN_PREPARAZIONE: "bg-gray-100 text-gray-600",
-  PRONTA: "bg-blue-100 text-blue-700",
   IN_CORSO: "bg-yellow-100 text-yellow-800",
   CONCLUSA: "bg-green-100 text-green-800",
 };
 
-export const STATI_RIUNIONE_OPERATIVA: StatoRiunione[] = ["IN_PREPARAZIONE", "PRONTA", "IN_CORSO"];
+export const STATI_RIUNIONE_OPERATIVA: StatoRiunione[] = ["IN_PREPARAZIONE", "IN_CORSO"];
 export const STATI_RIUNIONE_ARCHIVIO: StatoRiunione[] = ["CONCLUSA"];
 
 // --- Progetti ---
