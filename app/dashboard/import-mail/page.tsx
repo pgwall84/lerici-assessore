@@ -386,7 +386,7 @@ export default function ImportMailPage() {
                           ← Torna a &quot;Collega a {v.entitaProposta?.titolo}&quot;
                         </button>
                       )}
-                      {(v.binario === "INCERTO" || v.binario === "PROPOSTA_CONTINUAZIONE") && (
+                      {(v.binario === "MANUALE" || v.binario === "INCERTO" || v.binario === "PROPOSTA_CONTINUAZIONE") && (
                         <div>
                           <label className="text-xs text-gray-500">Categoria</label>
                           <select
@@ -481,7 +481,7 @@ export default function ImportMailPage() {
                     disabled={
                       confermando === v.mailProcessataId ||
                       (v.candidatiOdg !== null && v.indiceOdgScelto === null) ||
-                      ((v.binario === "INCERTO" || (v.binario === "PROPOSTA_CONTINUAZIONE" && v.modalitaProposta === "nuova")) && !v.categoria)
+                      ((v.binario === "MANUALE" || v.binario === "INCERTO" || (v.binario === "PROPOSTA_CONTINUAZIONE" && v.modalitaProposta === "nuova")) && !v.categoria)
                     }
                     className={`w-full text-white rounded-lg py-2 text-sm font-medium disabled:opacity-50 ${
                       v.binario === "PROPOSTA_CONTINUAZIONE" && v.modalitaProposta === "collega" ? "bg-purple-600 hover:bg-purple-700" : "bg-blue-600 hover:bg-blue-700"

@@ -285,7 +285,13 @@ export const TASSONOMIA_MAIL: Record<string, VoceTassonomiaMail> = {
   "Giunta/Delibere": { fuoriScope: true },
   "Giunta/Determine": { fuoriScope: true },
   "Giustifica": { binario: "AUTOMATICO", categoria: "GIUSTIFICA" },
-  "Segnalazioni": { binario: "MANUALE", categoria: "segnalazione" },
+  // "Segnalazioni" deliberatamente ESCLUSA da qui (rimossa 2026-07-22): un filtro Gmail
+  // dell'utente la applica troppo largamente, catturando mail che non sono segnalazioni. A
+  // differenza delle altre etichette di questa tassonomia (confermate affidabili), non va più
+  // trattata come segnale ad alta confidenza che salta la classificazione — una mail con questa
+  // etichetta passa dal normale flusso regole+AI, come se non avesse etichetta. La direzione
+  // inversa (etichettaPerCategoria("segnalazione") -> "Segnalazioni", per riscrivere l'etichetta
+  // a conferma avvenuta) resta invariata: qui sotto si tratta solo della lettura in ingresso.
   "Segnalazioni/Chiusa": { fuoriScope: true },
   "Segnalazioni/In corso": { fuoriScope: true },
   "Contestazioni": { binario: "MANUALE", categoria: "contestazione" },
