@@ -295,6 +295,9 @@ model AttoPoliticoAmministrativo {
   dataSeduta           DateTime?
   oggetto              String
   odgTestoEstratto     String?                      @db.Text
+  // Fallback per Mozioni/Interrogazioni senza PDF/DOCX allegato: il testo del corpo mail (ripulito
+  // da tag/entità HTML), quando nessun documento consultabile sarebbe altrimenti disponibile.
+  corpoTestoEstratto   String?                      @db.Text
   scadenzaRisposta     DateTime?
   consiglioCollegatoId String?
   consiglioCollegato   AttoPoliticoAmministrativo?  @relation("RispostaInConsiglio", fields: [consiglioCollegatoId], references: [id])

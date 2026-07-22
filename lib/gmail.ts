@@ -50,6 +50,12 @@ async function parseMessaggioPerId(
 
   let titolo = pulisciOggetto(oggettoOriginale);
   let descrizione = "";
+  // Stesso testo di descrizione ma senza il taglio a 1500 caratteri (che tronca a metà frase un
+  // corpo mail lungo, es. una mozione formale) — usato dove serve il contenuto per intero, non
+  // solo un'anteprima (vedi eseguiMozioneOInterrogazione in lib/import-automatico.ts). Un tetto
+  // comunque generoso (20000, stesso ordine di grandezza usato altrove per il testo da PDF/DOCX)
+  // evita casi patologici senza tagliare un corpo mail normale.
+  let corpoCompleto = "";
   let nomeMittente = estraiNomeMittente(mittenteOriginale);
   let emailMittente = estraiEmailMittente(mittenteOriginale);
   let protocollo = "";
@@ -122,11 +128,14 @@ async function parseMessaggioPerId(
       const html = iconv.encodingExists(cs)
         ? iconv.decode(htmlAllegato.content as Buffer, cs)
         : htmlAllegato.content.toString("utf-8");
-      descrizione = stripHtml(html).slice(0, 1500);
+      corpoCompleto = stripHtml(html).slice(0, 20000);
+      descrizione = corpoCompleto.slice(0, 1500);
     } else if (parsed.text) {
-      descrizione = parsed.text.trim().slice(0, 1500);
+      corpoCompleto = parsed.text.trim().slice(0, 20000);
+      descrizione = corpoCompleto.slice(0, 1500);
     } else if (parsed.html) {
-      descrizione = stripHtml(parsed.html).slice(0, 1500);
+      corpoCompleto = stripHtml(parsed.html).slice(0, 20000);
+      descrizione = corpoCompleto.slice(0, 1500);
     }
 
     // Foto e PDF allegati
@@ -141,7 +150,8 @@ async function parseMessaggioPerId(
       }));
   } else {
     // Nessun postacert.eml — usa corpo principale
-    descrizione = estraiCorpoPrincipale(data.payload).slice(0, 1500);
+    corpoCompleto = estraiCorpoPrincipale(data.payload).slice(0, 20000);
+    descrizione = corpoCompleto.slice(0, 1500);
   }
 
   return {
@@ -152,6 +162,7 @@ async function parseMessaggioPerId(
     data: dataMail,
     titolo,
     descrizione,
+    corpoCompleto,
     nomeMittente,
     emailMittente,
     protocollo,
@@ -499,6 +510,7 @@ export type MailImport = {
   data: string;
   titolo: string;
   descrizione: string;
+  corpoCompleto: string;
   nomeMittente: string;
   emailMittente: string;
   protocollo: string;

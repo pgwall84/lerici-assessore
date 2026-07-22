@@ -104,7 +104,19 @@ export async function eseguiConvocazione(m: MailImport, tipo: TipoAtto, indiceOd
   }
 }
 
-/** Mozioni/Interrogazioni: PDF singolo, nessuna estrazione ODG, tentativo di collegamento al Consiglio successivo. */
+// Soglia minima per considerare il corpo mail "sostanziale" e non solo firma/disclaimer — una
+// mail di sola firma (nome, ruolo, contatti, una riga di riservatezza) è tipicamente ben sotto
+// questa lunghezza; un vero testo di mozione/interrogazione (documento formale strutturato) è
+// sempre ben oltre.
+const SOGLIA_CORPO_SOSTANZIALE = 300;
+
+/** Mozioni/Interrogazioni: PDF singolo, nessuna estrazione ODG, tentativo di collegamento al Consiglio successivo.
+ *
+ * Fallback quando manca un allegato PDF/DOCX: il testo della mozione/interrogazione può stare
+ * solo nel corpo HTML della mail (caso reale: "Presentazione mozione Rifacimento del campo da
+ * calcio a 7 in località Bagnara" — Atto creato ma senza nessun documento consultabile). Se il
+ * corpo è sostanziale, lo si salva ripulito come `corpoTestoEstratto` — l'Atto resta leggibile in
+ * app anche senza un file scaricabile. */
 export async function eseguiMozioneOInterrogazione(m: MailImport, tipo: TipoAtto): Promise<EsitoEsecuzione> {
   try {
     const consiglioCollegato = await trovaProssimoConsiglio(new Date());
@@ -117,6 +129,17 @@ export async function eseguiMozioneOInterrogazione(m: MailImport, tipo: TipoAtto
         data: { attoId: atto.id, nomeFile: a.filename, storageUrl: url, ruolo: "PRATICA_ALLEGATA" },
       });
     }
+
+    if (m.allegati.length === 0) {
+      const corpoPulito = m.corpoCompleto.replace(/\n{3,}/g, "\n\n").trim();
+      if (corpoPulito.length >= SOGLIA_CORPO_SOSTANZIALE) {
+        await prisma.attoPoliticoAmministrativo.update({
+          where: { id: atto.id },
+          data: { corpoTestoEstratto: corpoPulito },
+        });
+      }
+    }
+
     return { esito: "COMPLETATO", entitaId: atto.id };
   } catch (e) {
     return { esito: "ERRORE", errore: e instanceof Error ? e.message : String(e) };

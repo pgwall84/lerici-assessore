@@ -31,6 +31,8 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
   const [ruoloUpload, setRuoloUpload] = useState<RuoloDocumento>("ORDINE_GIORNO");
   const [odgTesto, setOdgTesto] = useState("");
   const [salvandoOdg, setSalvandoOdg] = useState(false);
+  const [corpoTesto, setCorpoTesto] = useState("");
+  const [salvandoCorpo, setSalvandoCorpo] = useState(false);
   const [riEstraendoId, setRiEstraendoId] = useState<string | null>(null);
   const [consigli, setConsigli] = useState<{ id: string; oggetto: string }[]>([]);
   const [modificaMode, setModificaMode] = useState(false);
@@ -42,6 +44,7 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
       .then(async (data: AttoFull) => {
         setAtto(data);
         setOdgTesto(data.odgTestoEstratto ?? "");
+        setCorpoTesto(data.corpoTestoEstratto ?? "");
         setLoading(false);
         if (!data.visualizzato) {
           const res = await fetch(`/api/atti/${id}`, {
@@ -192,6 +195,20 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
     }
   }
 
+  async function salvaCorpo() {
+    setSalvandoCorpo(true);
+    const res = await fetch(`/api/atti/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ corpoTestoEstratto: corpoTesto || null }),
+    });
+    setSalvandoCorpo(false);
+    if (res.ok) {
+      const aggiornato = await res.json();
+      setAtto(a => a ? { ...a, corpoTestoEstratto: aggiornato.corpoTestoEstratto } : a);
+    }
+  }
+
   if (loading) return <div className="text-center py-12 text-gray-400">Caricamento…</div>;
   if (!atto) return <div className="text-center py-12 text-gray-400">Atto non trovato</div>;
 
@@ -302,6 +319,28 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
           </div>
         )}
       </div>
+
+      {/* Testo estratto dal corpo mail — fallback per Mozioni/Interrogazioni senza PDF/DOCX
+          allegato, unico posto dove il testo esiste quando non c'è un documento scaricabile */}
+      {(atto.tipo === "MOZIONE" || atto.tipo === "INTERROGAZIONE") && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="font-medium text-gray-700 mb-2 text-sm">📄 Testo (dal corpo della mail)</p>
+          <textarea
+            value={corpoTesto}
+            onChange={e => setCorpoTesto(e.target.value)}
+            rows={10}
+            placeholder="Vuoto — nessun documento allegato e il corpo della mail non conteneva testo sostanziale, oppure scrivilo qui a mano."
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize"
+          />
+          <button
+            onClick={salvaCorpo}
+            disabled={salvandoCorpo}
+            className="mt-2 text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg disabled:opacity-50 hover:bg-blue-700"
+          >
+            {salvandoCorpo ? "Salvataggio…" : "Salva"}
+          </button>
+        </div>
+      )}
 
       {/* ODG estratto */}
       <div className="bg-white rounded-xl border border-gray-200 p-4">

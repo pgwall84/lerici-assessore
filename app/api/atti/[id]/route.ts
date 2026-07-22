@@ -9,6 +9,7 @@ const updateSchema = z.object({
   scadenzaRisposta: z.string().datetime().nullable().optional(),
   stato: z.enum(["DA_ESAMINARE", "ESAMINATO", "RISPOSTO", "ARCHIVIATO"]).optional(),
   odgTestoEstratto: z.string().nullable().optional(),
+  corpoTestoEstratto: z.string().nullable().optional(),
   consiglioCollegatoId: z.string().nullable().optional(),
   priorita: z.enum(["BASSA", "MEDIA", "ALTA"]).nullable().optional(),
   visualizzato: z.boolean().optional(),
