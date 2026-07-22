@@ -136,6 +136,7 @@ model Progetto {
   titolo             String
   delega             Delega
   stato              StatoProgetto       @default(IN_CORSO)
+  priorita           Priorita?
   responsabileId     Int?
   responsabile       Persona?            @relation(fields: [responsabileId], references: [id])
   fonteFinanziamento String?

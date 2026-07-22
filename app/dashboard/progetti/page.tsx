@@ -6,7 +6,9 @@ import {
   DELEGHE_LABEL, STATO_PROGETTO_LABEL, STATO_PROGETTO_COLORE,
   STATI_PROGETTO_OPERATIVA, STATI_PROGETTO_ARCHIVIO,
 } from "@/lib/constants";
-import type { Delega, DocumentoProgetto, NotaProgetto, Progetto, StatoProgetto } from "@prisma/client";
+import { ordinaPerPriorita } from "@/lib/ordinamento";
+import { PrioritaBadge, PrioritaDot } from "@/components/PrioritaBadge";
+import type { Delega, DocumentoProgetto, NotaProgetto, Priorita, Progetto, StatoProgetto } from "@prisma/client";
 
 const STATO_LABEL = STATO_PROGETTO_LABEL;
 const STATO_COLORE = STATO_PROGETTO_COLORE;
@@ -25,6 +27,7 @@ export default function ProgettiPage() {
   const [vista, setVista] = useState<"operativa" | "archivio">("operativa");
   const [filtroDelega, setFiltroDelega] = useState<Delega | "">("");
   const [filtroStato, setFiltroStato] = useState<StatoProgetto | "">("");
+  const [filtroPriorita, setFiltroPriorita] = useState<Priorita | "">("");
   const [vistaCompatta, setVistaCompatta] = useState(() => {
     if (typeof window !== "undefined") return localStorage.getItem("vistaCompattaProgetti") === "1";
     return false;
@@ -58,15 +61,20 @@ export default function ProgettiPage() {
   const totaleOperativa = progetti.filter(p => STATI_OPERATIVA.includes(p.stato)).length;
   const totaleArchivio = progetti.filter(p => STATI_ARCHIVIO.includes(p.stato)).length;
 
-  const progettiFiltrati = progettiVista.filter(p =>
-    (!filtroDelega || p.delega === filtroDelega) &&
-    (!filtroStato || p.stato === filtroStato)
-  );
+  const progettiFiltrati = useMemo(() => {
+    const filtrati = progettiVista.filter(p =>
+      (!filtroDelega || p.delega === filtroDelega) &&
+      (!filtroStato || p.stato === filtroStato) &&
+      (!filtroPriorita || p.priorita === filtroPriorita)
+    );
+    return ordinaPerPriorita(filtrati, p => p.priorita, p => p.createdAt);
+  }, [progettiVista, filtroDelega, filtroStato, filtroPriorita]);
 
   function esporta(formato: "xlsx" | "pdf") {
     const params = new URLSearchParams({ vista, formato });
     if (filtroDelega) params.set("delega", filtroDelega);
     if (filtroStato) params.set("stato", filtroStato);
+    if (filtroPriorita) params.set("priorita", filtroPriorita);
     window.open(`/api/progetti/export?${params}`, "_blank");
   }
 
@@ -178,6 +186,16 @@ export default function ProgettiPage() {
                 <option key={s} value={s}>{STATO_LABEL[s]}</option>
               ))}
             </select>
+            <select
+              value={filtroPriorita}
+              onChange={e => setFiltroPriorita(e.target.value as Priorita | "")}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+            >
+              <option value="">Tutte le priorità</option>
+              <option value="ALTA">Alta</option>
+              <option value="MEDIA">Media</option>
+              <option value="BASSA">Bassa</option>
+            </select>
             <div className="ml-auto flex gap-1.5">
               <button onClick={toggleVista} className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${vistaCompatta ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"}`}>
                 ☰
@@ -208,6 +226,7 @@ export default function ProgettiPage() {
                 href={`/dashboard/progetti/${p.id}`}
                 className="flex items-center gap-2 px-3 py-2 hover:bg-blue-50 transition-colors"
               >
+                <PrioritaDot priorita={p.priorita} />
                 <span className="font-medium text-gray-900 text-sm truncate flex-1">{p.titolo}</span>
                 <span className="text-xs text-gray-400 truncate hidden sm:block max-w-xs shrink-0">
                   {DELEGHE_LABEL[p.delega]}
@@ -233,6 +252,7 @@ export default function ProgettiPage() {
                   <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
                     {DELEGHE_LABEL[p.delega]}
                   </span>
+                  <PrioritaBadge priorita={p.priorita} />
                 </div>
                 <p className="text-sm font-medium text-gray-900 leading-snug">{p.titolo}</p>
                 {p.responsabile && (

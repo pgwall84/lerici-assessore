@@ -10,6 +10,7 @@ const updateSchema = z.object({
     "ACCESSIBILITA","CIMITERI","POLITICHE_ABITATIVE","DIGITALIZZAZIONE","MANUTENZIONE_PATRIMONIO",
   ]).optional(),
   stato: z.enum(["IN_CORSO", "SOSPESO", "CONCLUSO", "ARCHIVIATO"]).optional(),
+  priorita: z.enum(["BASSA", "MEDIA", "ALTA"]).nullable().optional(),
   descrizione: z.string().nullable().optional(),
   responsabileId: z.number().int().nullable().optional(),
   fonteFinanziamento: z.string().nullable().optional(),

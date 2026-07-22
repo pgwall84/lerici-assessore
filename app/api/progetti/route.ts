@@ -12,6 +12,7 @@ const schema = z.object({
   descrizione: z.string().optional(),
   responsabileId: z.number().int().optional(),
   fonteFinanziamento: z.string().optional(),
+  priorita: z.enum(["BASSA", "MEDIA", "ALTA"]).optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -21,12 +22,14 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const stato = searchParams.get("stato");
   const delega = searchParams.get("delega");
+  const priorita = searchParams.get("priorita");
   const q = searchParams.get("q");
 
   const progetti = await prisma.progetto.findMany({
     where: {
       ...(stato ? { stato: stato as never } : {}),
       ...(delega ? { delega: delega as never } : {}),
+      ...(priorita ? { priorita: priorita as never } : {}),
       ...(q ? { OR: [
         { titolo: { contains: q, mode: "insensitive" } },
         { descrizione: { contains: q, mode: "insensitive" } },

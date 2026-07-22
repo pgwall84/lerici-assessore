@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { DELEGHE_LABEL } from "@/lib/constants";
-import type { Delega } from "@prisma/client";
+import { DELEGHE_LABEL, PRIORITA_LABEL } from "@/lib/constants";
+import type { Delega, Priorita } from "@prisma/client";
 
 type Persona = { id: number; nome: string; cognome: string; ruolo: string | null };
 
@@ -17,6 +17,7 @@ export default function NuovoProgettoPage() {
     descrizione: "",
     responsabileId: "" as string,
     fonteFinanziamento: "",
+    priorita: "" as Priorita | "",
   });
 
   useEffect(() => {
@@ -36,6 +37,7 @@ export default function NuovoProgettoPage() {
         descrizione: form.descrizione || undefined,
         responsabileId: form.responsabileId ? Number(form.responsabileId) : undefined,
         fonteFinanziamento: form.fonteFinanziamento || undefined,
+        priorita: form.priorita || undefined,
       }),
     });
     setSaving(false);
@@ -114,6 +116,20 @@ export default function NuovoProgettoPage() {
             onChange={e => setForm(f => ({ ...f, fonteFinanziamento: e.target.value }))}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
+        </div>
+
+        <div>
+          <label className="text-xs text-gray-500">Priorità (facoltativa)</label>
+          <select
+            value={form.priorita}
+            onChange={e => setForm(f => ({ ...f, priorita: e.target.value as Priorita | "" }))}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Non specificata</option>
+            {(Object.keys(PRIORITA_LABEL) as Priorita[]).map(p => (
+              <option key={p} value={p}>{PRIORITA_LABEL[p]}</option>
+            ))}
+          </select>
         </div>
 
         <button

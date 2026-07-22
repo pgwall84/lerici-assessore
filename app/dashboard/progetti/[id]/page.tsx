@@ -3,8 +3,9 @@
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { DELEGHE_LABEL, STATO_RIUNIONE_LABEL, STATO_RIUNIONE_COLORE, STATO_PROGETTO_LABEL, STATO_PROGETTO_COLORE } from "@/lib/constants";
-import type { ArgomentoRiunione, Delega, DocumentoProgetto, NotaProgetto, Progetto, Riunione, StatoProgetto } from "@prisma/client";
+import { DELEGHE_LABEL, PRIORITA_LABEL, STATO_RIUNIONE_LABEL, STATO_RIUNIONE_COLORE, STATO_PROGETTO_LABEL, STATO_PROGETTO_COLORE } from "@/lib/constants";
+import { PrioritaBadge } from "@/components/PrioritaBadge";
+import type { ArgomentoRiunione, Delega, DocumentoProgetto, NotaProgetto, Priorita, Progetto, Riunione, StatoProgetto } from "@prisma/client";
 
 type RiunioneCard = Riunione & { argomenti: ArgomentoRiunione[] };
 
@@ -31,8 +32,11 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
   const [assegnaMode, setAssegnaMode] = useState(false);
   const [selectedPersonaId, setSelectedPersonaId] = useState<string>("");
   const [modificaMode, setModificaMode] = useState(false);
-  const [formModifica, setFormModifica] = useState({ titolo: "", descrizione: "", delega: "" as Delega | "", fonteFinanziamento: "" });
+  const [formModifica, setFormModifica] = useState({ titolo: "", descrizione: "", delega: "" as Delega | "", fonteFinanziamento: "", priorita: "" as Priorita | "" });
   const [riunioni, setRiunioni] = useState<RiunioneCard[]>([]);
+  const [inviando, setInviando] = useState<string | null>(null);
+  const [emailPopup, setEmailPopup] = useState(false);
+  const [emailDest, setEmailDest] = useState("");
 
   useEffect(() => {
     fetch(`/api/progetti/${id}`)
@@ -62,6 +66,7 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
       descrizione: progetto.descrizione ?? "",
       delega: progetto.delega,
       fonteFinanziamento: progetto.fonteFinanziamento ?? "",
+      priorita: progetto.priorita ?? "",
     });
     setModificaMode(true);
   }
@@ -75,6 +80,7 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
         descrizione: formModifica.descrizione || null,
         delega: formModifica.delega || undefined,
         fonteFinanziamento: formModifica.fonteFinanziamento || null,
+        priorita: formModifica.priorita || null,
       }),
     });
     if (res.ok) {
@@ -82,6 +88,64 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
       setProgetto(p => p ? { ...p, ...aggiornato } : p);
       setModificaMode(false);
     }
+  }
+
+  function apriEmailPopup() {
+    setEmailDest(progetto?.responsabile?.email ?? "");
+    setEmailPopup(true);
+  }
+
+  async function inviaEmail() {
+    if (!emailDest.trim()) return;
+    setInviando("email");
+    setEmailPopup(false);
+    const res = await fetch(`/api/progetti/${id}/notifica`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ canale: "email", destinatario: emailDest.trim() }),
+    });
+    setInviando(null);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(`Errore invio email: ${err.error ?? res.status}`);
+    }
+  }
+
+  async function inviaNotifica(canale: "telegram") {
+    setInviando(canale);
+    const res = await fetch(`/api/progetti/${id}/notifica`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ canale }),
+    });
+    setInviando(null);
+    if (!res.ok) alert("Errore invio");
+  }
+
+  function apriWhatsApp() {
+    if (!progetto) return;
+    const righe = [
+      `📁 ${progetto.titolo}`,
+      ``,
+      `🏷 ${DELEGHE_LABEL[progetto.delega]}`,
+      `📊 Stato: ${STATO_LABEL[progetto.stato]}`,
+    ];
+    if (progetto.descrizione) righe.push(``, progetto.descrizione);
+    if (progetto.responsabile) {
+      righe.push(``, `📌 Responsabile: ${progetto.responsabile.nome} ${progetto.responsabile.cognome}`);
+      if (progetto.responsabile.ruolo) righe.push(`   ${progetto.responsabile.ruolo}`);
+      if (progetto.responsabile.telefono) righe.push(`   📞 ${progetto.responsabile.telefono}`);
+    }
+    if (progetto.note.length > 0) righe.push(``, `📝 ${progetto.note[progetto.note.length - 1].testo}`);
+    righe.push(``, `🔗 Progetto #${progetto.id}`);
+
+    const testo = righe.join("\n");
+    const numero = progetto.responsabile?.telefono?.replace(/\D/g, "") ?? "";
+    const encoded = encodeURIComponent(testo);
+    const url = numero
+      ? `whatsapp://send?phone=${numero}&text=${encoded}`
+      : `whatsapp://send?text=${encoded}`;
+    window.location.href = url;
   }
 
   async function eliminaProgetto() {
@@ -171,6 +235,7 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
         <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">
           {DELEGHE_LABEL[progetto.delega]}
         </span>
+        <PrioritaBadge priorita={progetto.priorita} />
       </div>
 
       {/* Info base */}
@@ -225,6 +290,30 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
             </button>
           </div>
         )}
+
+        {/* Pulsanti condivisione — sempre visibili */}
+        <div className="flex gap-2 pt-1 border-t border-gray-100">
+          <button
+            onClick={() => inviaNotifica("telegram")}
+            disabled={inviando === "telegram"}
+            className="flex-1 text-xs bg-sky-50 text-sky-700 border border-sky-200 rounded-lg py-2 hover:bg-sky-100 disabled:opacity-50 transition-colors"
+          >
+            {inviando === "telegram" ? "…" : "✈️ Telegram"}
+          </button>
+          <button
+            onClick={apriEmailPopup}
+            disabled={inviando === "email"}
+            className="flex-1 text-xs bg-gray-50 text-gray-700 border border-gray-200 rounded-lg py-2 hover:bg-gray-100 disabled:opacity-50 transition-colors"
+          >
+            {inviando === "email" ? "…" : "📧 Email"}
+          </button>
+          <button
+            onClick={apriWhatsApp}
+            className="flex-1 text-xs bg-green-50 text-green-700 border border-green-200 rounded-lg py-2 hover:bg-green-100 transition-colors"
+          >
+            💬 WhatsApp
+          </button>
+        </div>
       </div>
 
       {/* Cambio stato */}
@@ -356,12 +445,57 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            <div>
+              <label className="text-xs text-gray-500">Priorità</label>
+              <select
+                value={formModifica.priorita}
+                onChange={e => setFormModifica(f => ({ ...f, priorita: e.target.value as Priorita | "" }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Non specificata</option>
+                {(Object.keys(PRIORITA_LABEL) as Priorita[]).map(p => (
+                  <option key={p} value={p}>{PRIORITA_LABEL[p]}</option>
+                ))}
+              </select>
+            </div>
             <div className="flex gap-2 pt-2">
               <button onClick={() => setModificaMode(false)} className="flex-1 border border-gray-300 rounded-lg py-2 text-sm text-gray-600">
                 Annulla
               </button>
               <button onClick={salvaModifica} className="flex-1 bg-blue-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-blue-700">
                 Salva
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Popup email */}
+      {emailPopup && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl p-5 w-full max-w-sm space-y-4 shadow-xl">
+            <p className="font-medium text-gray-800">📧 Invia via email</p>
+            <input
+              type="email"
+              value={emailDest}
+              onChange={e => setEmailDest(e.target.value)}
+              placeholder="destinatario@esempio.it"
+              autoFocus
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => setEmailPopup(false)}
+                className="flex-1 border border-gray-300 rounded-lg py-2 text-sm text-gray-600 hover:bg-gray-50"
+              >
+                Annulla
+              </button>
+              <button
+                onClick={inviaEmail}
+                disabled={!emailDest.trim()}
+                className="flex-1 bg-blue-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                Invia
               </button>
             </div>
           </div>

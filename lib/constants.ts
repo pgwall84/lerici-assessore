@@ -83,7 +83,10 @@ export const PRIORITA_COLORE: Record<Priorita, string> = {
   BASSA: "bg-gray-100 text-gray-500",
 };
 
-export const STATI_OPERATIVA: StatoPratica[] = ["APERTA", "IN_CORSO", "IN_VALUTAZIONE", "PROMOSSA"];
+// APPUNTO incluso qui (trovato in Sessione 3 come stato orfano — non coperto né da Operativa né
+// da Archivio, sparirebbe da ogni vista se mai assegnato a una Pratica): coerente trattarlo come
+// una nota ancora aperta, non archiviata.
+export const STATI_OPERATIVA: StatoPratica[] = ["APERTA", "IN_CORSO", "IN_VALUTAZIONE", "PROMOSSA", "APPUNTO"];
 export const STATI_ARCHIVIO: StatoPratica[] = ["CHIUSA", "SOSPESA", "ARCHIVIATA"];
 
 export const TIPO_COLORE: Record<TipoPratica, string> = {
