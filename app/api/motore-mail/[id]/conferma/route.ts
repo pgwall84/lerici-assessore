@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
-import { getMailPerId, marcaImportata, applicaEtichetta, caricaAllegatiMail } from "@/lib/gmail";
+import { getMailPerId, marcaImportata, applicaEtichettaEArchivia, caricaAllegatiMail } from "@/lib/gmail";
 import { contentTypeDaNomeFile } from "@/lib/estrazione-documenti";
 import { etichettaPerCategoria } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
@@ -60,10 +60,18 @@ async function caricaFile(cartella: string, buffer: Buffer, nomeFile: string): P
 // era già presente su Gmail all'origine (la riscrive, idempotente) sia quando è stata dedotta
 // da zero (AI o scelta manuale su Incerto/Proposta) e su Gmail non esiste ancora. Un fallimento
 // qui non deve mai retrocedere l'esito: l'entità è comunque creata.
-async function applicaEtichetteFinali(messageId: string, nomeEtichetta: string | null) {
+// Solo dopo che l'etichetta di categoria è stata applicata con successo (mai prima), la mail
+// esce anche da INBOX (e non è più UNREAD) — vedi applicaEtichettaEArchivia. Se l'etichetta
+// fallisce, l'archiviazione non viene nemmeno tentata: la mail resta in INBOX, ritrovabile.
+async function applicaEtichetteFinali(rigaId: string, messageId: string, nomeEtichetta: string | null) {
   try { await marcaImportata(messageId); } catch { /* etichetta di comodo, non blocca l'esito */ }
   if (nomeEtichetta) {
-    try { await applicaEtichetta(messageId, nomeEtichetta); } catch { /* etichetta di comodo, non blocca l'esito */ }
+    try {
+      await applicaEtichettaEArchivia(messageId, nomeEtichetta);
+    } catch {
+      // Reso visibile, non solo tollerato: stesso principio dei contatori Bandi.
+      await prisma.mailProcessata.update({ where: { id: rigaId }, data: { archiviazioneFallita: true } }).catch(() => {});
+    }
   }
 }
 
@@ -111,7 +119,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: esito.entitaId } });
-    await applicaEtichetteFinali(riga.messageId, esito.etichetta ?? (riga.categoriaProposta ? etichettaPerCategoria(riga.categoriaProposta) : null));
+    await applicaEtichetteFinali(id, riga.messageId, esito.etichetta ?? (riga.categoriaProposta ? etichettaPerCategoria(riga.categoriaProposta) : null));
     return NextResponse.json({ completato: true, entitaId: esito.entitaId });
   }
 
@@ -126,7 +134,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     if (esito.esito === "COMPLETATO") {
       await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: esito.entitaId } });
-      await applicaEtichetteFinali(riga.messageId, esito.etichetta ?? null);
+      await applicaEtichetteFinali(id, riga.messageId, esito.etichetta ?? null);
       return NextResponse.json({ completato: true, entitaId: esito.entitaId });
     }
     // "AMBIGUO" non è previsto per eseguiCollegamento — trattato come errore difensivo.
@@ -201,6 +209,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: entitaId } });
-  await applicaEtichetteFinali(riga.messageId, etichettaPerCategoria(d.categoria, d.delega as Delega | undefined));
+  await applicaEtichetteFinali(id, riga.messageId, etichettaPerCategoria(d.categoria, d.delega as Delega | undefined));
   return NextResponse.json({ completato: true, entitaId });
 }

@@ -294,6 +294,33 @@ export async function applicaEtichetta(messageId: string, nomeEtichetta: string)
   });
 }
 
+/** Rimuove la mail da INBOX e toglie UNREAD se presente — resta visibile solo tramite l'etichetta
+ * di categoria già applicata. Va chiamata solo DOPO che quell'etichetta è stata applicata con
+ * successo (vedi applicaEtichettaEArchivia): mai prima, altrimenti una mail archiviata senza una
+ * categoria applicata diventerebbe difficile da ritrovare. */
+export async function archiviaMail(messageId: string): Promise<void> {
+  const gmail = google.gmail({ version: "v1", auth: getAuth() });
+  await gmail.users.messages.modify({
+    userId: "me",
+    id: messageId,
+    requestBody: { removeLabelIds: ["INBOX", "UNREAD"] },
+  });
+}
+
+/** Applica l'etichetta di categoria e, solo se riesce, archivia la mail — se l'etichetta fallisce
+ * l'archiviazione non viene nemmeno tentata, la mail resta in INBOX. Sostituisce l'uso diretto di
+ * applicaEtichetta() in tutti i punti che completano una riga MailProcessata con successo. */
+export async function applicaEtichettaEArchivia(messageId: string, nomeEtichetta: string): Promise<void> {
+  await applicaEtichetta(messageId, nomeEtichetta);
+  await archiviaMail(messageId);
+}
+
+/** Sposta la mail nel Cestino di Gmail — reversibile per 30 giorni (non cancellazione immediata). */
+export async function spostaNelCestino(messageId: string): Promise<void> {
+  const gmail = google.gmail({ version: "v1", auth: getAuth() });
+  await gmail.users.messages.trash({ userId: "me", id: messageId });
+}
+
 /** Rimuove un'etichetta qualunque, se esiste. Nessun errore se l'etichetta non è mai esistita. */
 export async function rimuoviEtichetta(messageId: string, nomeEtichetta: string): Promise<void> {
   const gmail = google.gmail({ version: "v1", auth: getAuth() });

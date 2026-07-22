@@ -354,6 +354,12 @@ model MailProcessata {
   binario           BinarioMail
   esito             EsitoMailProcessata @default(IN_ATTESA)
   entitaCreataId    String?
+  // true se, dopo un esito COMPLETATO, l'etichetta di categoria e/o l'archiviazione fuori INBOX
+  // sono fallite lato Gmail (mai l'inverso: l'entità è comunque stata creata/collegata con
+  // successo, l'esito resta COMPLETATO). Solo informativo — reso visibile invece di tollerato in
+  // silenzio, così un aumento nel tempo emerge invece di restare un mistero su perché l'INBOX
+  // non si svuota come previsto.
+  archiviazioneFallita Boolean          @default(false)
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
 }

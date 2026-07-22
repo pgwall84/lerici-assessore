@@ -163,6 +163,26 @@ export default function ImportMailPage() {
     caricaConteggi();
   }
 
+  async function elimina(v: Voce) {
+    if (!confirm(`Spostare nel Cestino Gmail "${v.titolo}"?`)) return;
+    setConfermando(v.mailProcessataId);
+    const res = await fetch(`/api/motore-mail/${v.mailProcessataId}`, { method: "DELETE" });
+    setConfermando(null);
+    if (res.ok) { rimuovi(v.mailProcessataId); return; }
+    const err = await res.json().catch(() => ({}));
+    alert(`Errore: ${JSON.stringify(err.error ?? res.status)}`);
+  }
+
+  async function nonRilevante(v: Voce) {
+    if (!confirm(`Segnare "${v.titolo}" come non rilevante?`)) return;
+    setConfermando(v.mailProcessataId);
+    const res = await fetch(`/api/motore-mail/${v.mailProcessataId}/non-rilevante`, { method: "POST" });
+    setConfermando(null);
+    if (res.ok) { rimuovi(v.mailProcessataId); return; }
+    const err = await res.json().catch(() => ({}));
+    alert(`Errore: ${JSON.stringify(err.error ?? res.status)}`);
+  }
+
   async function conferma(v: Voce) {
     setConfermando(v.mailProcessataId);
 
@@ -280,12 +300,30 @@ export default function ImportMailPage() {
                     {v.hasAllegati && <p className="text-xs text-blue-500">📎 {v.nAllegati} allegati</p>}
                   </div>
                 </div>
-                <button
-                  onClick={() => setEspansa(espansa === v.mailProcessataId ? null : v.mailProcessataId)}
-                  className="text-xs text-blue-600 shrink-0"
-                >
-                  {espansa === v.mailProcessataId ? "▲ Chiudi" : "▼ Dettagli"}
-                </button>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => nonRilevante(v)}
+                      disabled={confermando === v.mailProcessataId}
+                      className="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                    >
+                      🚫 Non rilevante
+                    </button>
+                    <button
+                      onClick={() => elimina(v)}
+                      disabled={confermando === v.mailProcessataId}
+                      className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
+                    >
+                      🗑️ Elimina
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setEspansa(espansa === v.mailProcessataId ? null : v.mailProcessataId)}
+                    className="text-xs text-blue-600"
+                  >
+                    {espansa === v.mailProcessataId ? "▲ Chiudi" : "▼ Dettagli"}
+                  </button>
+                </div>
               </div>
 
               {espansa === v.mailProcessataId && (

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getMailsPaginato, getMappaEtichette, getMailPerId, marcaImportata, marcaIncerto, marcaNonRilevante, applicaEtichetta, type MailImport } from "@/lib/gmail";
+import { getMailsPaginato, getMappaEtichette, getMailPerId, marcaImportata, marcaIncerto, marcaNonRilevante, applicaEtichettaEArchivia, archiviaMail, type MailImport } from "@/lib/gmail";
 import { classificaMail } from "@/lib/claude";
 import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria } from "@/lib/constants";
 import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, type EsitoEsecuzione } from "@/lib/import-automatico";
@@ -111,7 +111,7 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
       // accumulare in Incerto insieme ai casi genuinamente ambigui. Nota: questo esito
       // COMPLETATO salta di proposito il gate primaEsecuzione() (vedi commento su quella
       // funzione più sotto) — non è un'azione reale su cui serva prima una conferma umana.
-      await prisma.mailProcessata.create({
+      const rigaCreata = await prisma.mailProcessata.create({
         data: {
           messageId: m.messageId,
           threadId: m.threadId || null,
@@ -125,8 +125,13 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
       });
       try {
         await marcaNonRilevante(m.messageId);
+        // Solo dopo l'etichetta con successo: fuori INBOX, non più da leggere (sessione 2, mail).
+        await archiviaMail(m.messageId);
       } catch {
-        // Etichetta informativa: un fallimento qui non blocca lo scan, la riga DB resta comunque la fonte di verità.
+        // Etichetta/archiviazione di comodo: un fallimento qui non blocca lo scan né retrocede
+        // l'esito (l'entità — qui: nessuna — è comunque "gestita" secondo il binario). Va però
+        // reso visibile, non solo tollerato: stesso principio dei contatori di estrazione Bandi.
+        await prisma.mailProcessata.update({ where: { id: rigaCreata.id }, data: { archiviazioneFallita: true } }).catch(() => {});
       }
       return "NON_RILEVANTE";
     }
@@ -323,7 +328,15 @@ export async function eseguiMotoreMail(maxPagineScan = 20, maxEsecuzioni = 15): 
         // una lookup generica sul categoriaProposta della riga.
         const nomeEtichetta = esito.etichetta ?? (riga.categoriaProposta ? etichettaPerCategoria(riga.categoriaProposta) : null);
         if (nomeEtichetta) {
-          try { await applicaEtichetta(riga.messageId, nomeEtichetta); } catch { /* idem sopra */ }
+          // Solo dopo l'etichetta con successo: fuori INBOX, non più da leggere (sessione 2,
+          // mail). Se l'etichetta fallisce, applicaEtichettaEArchivia non tenta nemmeno
+          // l'archiviazione — la mail resta in INBOX, ritrovabile.
+          try {
+            await applicaEtichettaEArchivia(riga.messageId, nomeEtichetta);
+          } catch {
+            // Reso visibile, non solo tollerato: stesso principio dei contatori Bandi.
+            await prisma.mailProcessata.update({ where: { id: riga.id }, data: { archiviazioneFallita: true } }).catch(() => {});
+          }
         }
         completati++;
       } else if (esito.esito === "AMBIGUO") {
