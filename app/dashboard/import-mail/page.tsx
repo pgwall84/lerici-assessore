@@ -231,7 +231,9 @@ export default function ImportMailPage() {
     const nodo = ALBERO_ETICHETTE_MAIL.find(n => n.etichetta === etichetta);
     const categoria = nodo?.categoria ?? "";
     aggiorna(v.mailProcessataId, "etichettaScelta", etichetta);
-    if (nodo?.delega) aggiorna(v.mailProcessataId, "delega", nodo.delega);
+    // La delega di un ramo Deleghe/* diverso non deve restare "appiccicata" a un'altra categoria
+    // (es. Segnalazioni) — meglio vuota e da scegliere che una delega di un altro ramo lasciata lì.
+    aggiorna(v.mailProcessataId, "delega", nodo?.delega ?? "");
     aggiorna(v.mailProcessataId, "stato", opzioniStato(categoria)?.[0]?.value ?? "");
     if (categoria === "progetto") {
       if (v.tipoProgettoSuggerito === null && !v.caricandoTipoProgetto) {
@@ -655,10 +657,14 @@ export default function ImportMailPage() {
                             onChange={e => aggiorna(v.mailProcessataId, "delega", e.target.value)}
                             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
                           >
+                            <option value="">— da specificare —</option>
                             {(Object.keys(DELEGHE_LABEL) as Delega[]).map(d => (
                               <option key={d} value={d}>{DELEGHE_LABEL[d]}</option>
                             ))}
                           </select>
+                          {!v.delega && (
+                            <p className="text-[11px] text-orange-600 mt-1">Nessuna ipotesi — scegli tu prima di confermare.</p>
+                          )}
                         </div>
                       )}
 
@@ -703,7 +709,7 @@ export default function ImportMailPage() {
                       (v.candidatiOdg !== null && v.indiceOdgScelto === null) ||
                       ((v.binario === "MANUALE" || v.binario === "INCERTO") && v.modalitaManuale === "collega_esistente"
                         ? !v.entitaSelezionata
-                        : !v.etichettaScelta)
+                        : !v.etichettaScelta || (categoriaRisolta === "segnalazione" && !v.delega))
                     }
                     className={`w-full text-white rounded-lg py-2 text-sm font-medium disabled:opacity-50 ${
                       (v.binario === "PROPOSTA_CONTINUAZIONE" && v.modalitaProposta === "collega") ||

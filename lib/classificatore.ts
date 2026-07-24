@@ -76,16 +76,20 @@ const KEYWORDS: { delega: string; parole: string[] }[] = [
   },
 ];
 
-export function classificaDelega(testo: string): string {
+// null quando nessuna parola chiave combacia — mai un default silenzioso (prima era VIABILITA
+// a prescindere, indistinguibile da un vero match): un'incertezza visibile è meglio di una falsa
+// certezza, stesso principio già applicato altrove in questa sessione. Il chiamante decide come
+// mostrarla (badge "da specificare", placeholder nel selettore, ecc.), non la nasconde.
+export function classificaDelega(testo: string): string | null {
   const lower = testo.toLowerCase();
-  let best = { delega: "VIABILITA", score: 0 };
+  let best = { delega: "", score: 0 };
 
   for (const { delega, parole } of KEYWORDS) {
     const score = parole.filter(p => lower.includes(p.toLowerCase())).length;
     if (score > best.score) best = { delega, score };
   }
 
-  return best.delega;
+  return best.score > 0 ? best.delega : null;
 }
 
 const GESTORE_KEYWORDS: [RegExp, "ACAM_ACQUE" | "ACAM_AMBIENTE" | "ATC"][] = [

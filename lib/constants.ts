@@ -363,6 +363,13 @@ export function etichettaPerCategoria(categoria: string, delega?: Delega): strin
 export const ETICHETTA_INCERTO = "Incerto/Da classificare";
 export const ETICHETTA_NON_RILEVANTE = "Bassa priorità/Non rilevante";
 
+// Badge esplicito quando la categoria risolta è "progetto" ma classificaDelega() non ha trovato
+// nessuna parola chiave (quindi nessuna delega attendibile da proporre) — mai un default silenzioso
+// che sembri una proposta sicura. Non è un nodo reale dell'albero (nessuna sotto-etichetta Gmail
+// "da specificare" esiste davvero): solo testo del badge, il tree-picker resta il modo per
+// scegliere una vera "Deleghe/X".
+export const ETICHETTA_DELEGA_DA_SPECIFICARE = "Deleghe/da specificare";
+
 export type NodoAlberoEtichette = { etichetta: string; categoria: string; delega?: Delega };
 
 // Albero completo per il selettore di categoria/etichetta nella revisione mail (sezione 6,

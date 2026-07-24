@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getMailsPaginato, getMappaEtichette, getMailPerId, marcaImportata, marcaIncerto, marcaNonRilevante, applicaEtichettaEArchivia, archiviaMail, type MailImport } from "@/lib/gmail";
 import { classificaMail } from "@/lib/claude";
-import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria, ETICHETTA_NON_RILEVANTE, type VoceTassonomiaMail } from "@/lib/constants";
+import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria, ETICHETTA_NON_RILEVANTE, ETICHETTA_DELEGA_DA_SPECIFICARE, type VoceTassonomiaMail } from "@/lib/constants";
 import { classificaDelega } from "@/lib/classificatore";
 import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiSoloArchiviazione, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { trovaContinuazioneForte, trovaContinuazioneDebole, codificaEntita } from "@/lib/continuazione";
@@ -44,7 +44,8 @@ export function trovaVoceTassonomia(nomiEtichette: string[]): { etichetta: strin
 export function calcolaEtichettaProposta(categoria: string | null, testoPerDelega: string): string | null {
   if (!categoria) return null;
   if (categoria === "progetto") {
-    return etichettaPerCategoria(categoria, classificaDelega(testoPerDelega) as Delega);
+    const delega = classificaDelega(testoPerDelega);
+    return delega ? etichettaPerCategoria(categoria, delega as Delega) : ETICHETTA_DELEGA_DA_SPECIFICARE;
   }
   return etichettaPerCategoria(categoria);
 }

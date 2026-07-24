@@ -50,9 +50,11 @@ export async function GET(req: NextRequest) {
 
     const nomiEtichette = mail.labelIds.map(lid => mappaEtichette.get(lid)).filter((n): n is string => !!n);
     const voceNota = trovaVoceTassonomia(nomiEtichette);
+    // "" (non null) quando nessuna euristica trova una delega attendibile — il client mostra un
+    // placeholder esplicito nel selettore invece di preselezionare una delega indovinata a caso.
     const delegaSuggerita = voceNota && "delega" in voceNota.voce
       ? voceNota.voce.delega
-      : classificaDelega(`${mail.titolo} ${mail.descrizione}`);
+      : classificaDelega(`${mail.titolo} ${mail.descrizione}`) ?? "";
 
     // Righe scansionate da Fase B in poi hanno già etichettaProposta persistita; per quelle più
     // vecchie si ricostruisce al volo — prima da un match di regola ancora valido su Gmail (più
