@@ -84,6 +84,9 @@ async function applicaEtichetteFinali(rigaId: string, messageId: string, nomeEti
 //   proposta e ricade nello stesso flusso di creazione di Manuale/Incerto qui sotto.
 // - MANUALE / INCERTO: crea l'entità scelta/confermata da Marco (stessa logica già collaudata
 //   nel vecchio POST di /api/import-mail, ora qui).
+// - "collega_esistente" (qualunque binario): collegamento manuale a un'entità già esistente,
+//   trovata da Marco con una ricerca libera (/api/motore-mail/cerca-entita) invece che dalla
+//   catena automatica — copre i falsi negativi della catena (vedi diagnosi 2026-07-24).
 // In tutti i casi: DB (esito COMPLETATO) sempre prima delle etichette Gmail.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const token = await getToken({ req });
@@ -138,6 +141,31 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ completato: true, entitaId: esito.entitaId });
     }
     // "AMBIGUO" non è previsto per eseguiCollegamento — trattato come errore difensivo.
+    return NextResponse.json({ error: "Esito inatteso" }, { status: 500 });
+  }
+
+  // Collegamento manuale (sezione 6, oltre la catena automatica): Marco ha cercato e scelto lui
+  // stesso l'entità, per una riga Manuale/Incerto (o anche Proposta continuazione, se preferisce
+  // ignorare il suggerimento e sceglierne un'altra). Stessa esecuzione di eseguiCollegamento usata
+  // sopra per il match automatico — nota nel diario + allegati + etichetta/archiviazione coerenti.
+  const schemaCollegaEsistente = z.object({
+    azione: z.literal("collega_esistente"),
+    tipo: z.enum(["pratica", "progetto", "contestazione"]),
+    entitaId: z.string().min(1),
+  });
+  const parsedCollegaEsistente = schemaCollegaEsistente.safeParse(body);
+  if (parsedCollegaEsistente.success) {
+    const { tipo, entitaId } = parsedCollegaEsistente.data;
+    const esito = await eseguiCollegamento(mail, tipo, entitaId);
+    if (esito.esito === "ERRORE") {
+      await prisma.mailProcessata.update({ where: { id }, data: { esito: "ERRORE" } });
+      return NextResponse.json({ error: esito.errore }, { status: 500 });
+    }
+    if (esito.esito === "COMPLETATO") {
+      await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: esito.entitaId } });
+      await applicaEtichetteFinali(id, riga.messageId, esito.etichetta ?? null);
+      return NextResponse.json({ completato: true, entitaId: esito.entitaId });
+    }
     return NextResponse.json({ error: "Esito inatteso" }, { status: 500 });
   }
 

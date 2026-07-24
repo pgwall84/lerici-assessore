@@ -87,6 +87,14 @@ type Voce = {
   indiceOdgScelto: number | null;
   // stato locale solo per Possibile continuazione: collegare o creare comunque una voce nuova
   modalitaProposta: "collega" | "nuova";
+  // stato locale solo per Manuale/Incerto: creare una voce nuova o cercare/collegare un'entità
+  // già esistente (collegamento manuale, oltre la catena automatica — vedi diagnosi 2026-07-24)
+  modalitaManuale: "nuova" | "collega_esistente";
+  tipoCollegamento: "pratica" | "progetto" | "contestazione" | "";
+  ricercaTesto: string;
+  risultatiRicerca: { id: string; titolo: string; stato: string }[];
+  cercandoEntita: boolean;
+  entitaSelezionata: { tipo: "pratica" | "progetto" | "contestazione"; id: string; titolo: string } | null;
 };
 
 const FILTRI: { value: Binario | ""; label: string }[] = [
@@ -97,7 +105,7 @@ const FILTRI: { value: Binario | ""; label: string }[] = [
   { value: "AUTOMATICO", label: "⚙️ Automatico" },
 ];
 
-function toVoce(r: Omit<Voce, "categoria" | "delega" | "gestore" | "luogo" | "candidatiOdg" | "indiceOdgScelto" | "modalitaProposta">): Voce {
+function toVoce(r: Omit<Voce, "categoria" | "delega" | "gestore" | "luogo" | "candidatiOdg" | "indiceOdgScelto" | "modalitaProposta" | "modalitaManuale" | "tipoCollegamento" | "ricercaTesto" | "risultatiRicerca" | "cercandoEntita" | "entitaSelezionata">): Voce {
   const categoriaIniziale = r.binario === "INCERTO" || r.binario === "PROPOSTA_CONTINUAZIONE"
     ? ""
     : (["segnalazione", "progetto", "contestazione"].includes(r.categoriaProposta ?? "") ? (r.categoriaProposta as Categoria) : "");
@@ -110,6 +118,12 @@ function toVoce(r: Omit<Voce, "categoria" | "delega" | "gestore" | "luogo" | "ca
     candidatiOdg: null,
     indiceOdgScelto: null,
     modalitaProposta: "collega",
+    modalitaManuale: "nuova",
+    tipoCollegamento: "",
+    ricercaTesto: "",
+    risultatiRicerca: [],
+    cercandoEntita: false,
+    entitaSelezionata: null,
   };
 }
 
@@ -154,8 +168,18 @@ export default function ImportMailPage() {
     setCaricandoAltre(false);
   }
 
-  function aggiorna(id: string, campo: keyof Voce, valore: string | number | null) {
+  function aggiorna<K extends keyof Voce>(id: string, campo: K, valore: Voce[K]) {
     setVoci(vs => vs.map(v => v.mailProcessataId === id ? { ...v, [campo]: valore } : v));
+  }
+
+  async function cercaEntita(v: Voce) {
+    if (!v.tipoCollegamento || v.ricercaTesto.trim().length < 2) return;
+    aggiorna(v.mailProcessataId, "cercandoEntita", true);
+    const params = new URLSearchParams({ tipo: v.tipoCollegamento, q: v.ricercaTesto.trim() });
+    const res = await fetch(`/api/motore-mail/cerca-entita?${params}`);
+    const data = await res.json().catch(() => ({ risultati: [] }));
+    aggiorna(v.mailProcessataId, "risultatiRicerca", data.risultati ?? []);
+    aggiorna(v.mailProcessataId, "cercandoEntita", false);
   }
 
   function rimuovi(id: string) {
@@ -190,6 +214,8 @@ export default function ImportMailPage() {
       ? (v.indiceOdgScelto !== null ? { indiceOdgForzato: v.indiceOdgScelto } : {})
       : v.binario === "PROPOSTA_CONTINUAZIONE" && v.modalitaProposta === "collega"
       ? { azione: "collega" }
+      : (v.binario === "MANUALE" || v.binario === "INCERTO") && v.modalitaManuale === "collega_esistente" && v.entitaSelezionata
+      ? { azione: "collega_esistente", tipo: v.entitaSelezionata.tipo, entitaId: v.entitaSelezionata.id }
       : {
           azione: "nuova",
           categoria: v.categoria,
@@ -386,91 +412,188 @@ export default function ImportMailPage() {
                           ← Torna a &quot;Collega a {v.entitaProposta?.titolo}&quot;
                         </button>
                       )}
-                      {(v.binario === "MANUALE" || v.binario === "INCERTO" || v.binario === "PROPOSTA_CONTINUAZIONE") && (
-                        <div>
-                          <label className="text-xs text-gray-500">Categoria</label>
-                          <select
-                            value={v.categoria}
-                            onChange={e => aggiorna(v.mailProcessataId, "categoria", e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
+
+                      {(v.binario === "MANUALE" || v.binario === "INCERTO") && (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => aggiorna(v.mailProcessataId, "modalitaManuale", "nuova")}
+                            className={`flex-1 text-xs py-1.5 rounded-lg border ${
+                              v.modalitaManuale !== "collega_esistente" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300"
+                            }`}
                           >
-                            <option value="">Seleziona…</option>
-                            {(Object.keys(CATEGORIA_LABEL) as Categoria[]).map(c => (
-                              <option key={c} value={c}>{CATEGORIA_LABEL[c]}</option>
+                            ✏️ Crea nuova
+                          </button>
+                          <button
+                            onClick={() => aggiorna(v.mailProcessataId, "modalitaManuale", "collega_esistente")}
+                            className={`flex-1 text-xs py-1.5 rounded-lg border ${
+                              v.modalitaManuale === "collega_esistente" ? "bg-purple-600 text-white border-purple-600" : "bg-white text-gray-600 border-gray-300"
+                            }`}
+                          >
+                            🔗 Collega a esistente
+                          </button>
+                        </div>
+                      )}
+
+                      {(v.binario === "MANUALE" || v.binario === "INCERTO") && v.modalitaManuale === "collega_esistente" ? (
+                        <div className="space-y-2 bg-purple-50 border border-purple-100 rounded-lg p-2">
+                          <div className="flex gap-1.5">
+                            {(["pratica", "progetto", "contestazione"] as const).map(t => (
+                              <button
+                                key={t}
+                                onClick={() => {
+                                  aggiorna(v.mailProcessataId, "tipoCollegamento", t);
+                                  aggiorna(v.mailProcessataId, "risultatiRicerca", []);
+                                  aggiorna(v.mailProcessataId, "entitaSelezionata", null);
+                                }}
+                                className={`text-[11px] px-2 py-1 rounded-full border ${
+                                  v.tipoCollegamento === t ? "bg-purple-600 text-white border-purple-600" : "bg-white text-gray-600 border-gray-300"
+                                }`}
+                              >
+                                {TIPO_ENTITA_LABEL[t]}
+                              </button>
                             ))}
-                          </select>
-                          <p className="text-[11px] text-gray-400 mt-1">
-                            Se è una convocazione Consiglio/Giunta o una giustifica, meglio applicare l&apos;etichetta giusta su Gmail: verrà classificata da sola al prossimo giro.
+                          </div>
+
+                          {v.entitaSelezionata ? (
+                            <div className="flex items-center justify-between bg-white border border-purple-200 rounded-lg px-2 py-1.5">
+                              <p className="text-xs text-gray-700 truncate">
+                                {TIPO_ENTITA_LABEL[v.entitaSelezionata.tipo]}: {v.entitaSelezionata.titolo}
+                              </p>
+                              <button
+                                onClick={() => aggiorna(v.mailProcessataId, "entitaSelezionata", null)}
+                                className="text-xs text-gray-400 hover:text-gray-600 shrink-0 ml-2"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ) : v.tipoCollegamento && (
+                            <>
+                              <div className="flex gap-1.5">
+                                <input
+                                  value={v.ricercaTesto}
+                                  onChange={e => aggiorna(v.mailProcessataId, "ricercaTesto", e.target.value)}
+                                  onKeyDown={e => { if (e.key === "Enter") cercaEntita(v); }}
+                                  placeholder="Cerca per titolo…"
+                                  className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-400"
+                                />
+                                <button
+                                  onClick={() => cercaEntita(v)}
+                                  disabled={v.cercandoEntita || v.ricercaTesto.trim().length < 2}
+                                  className="text-xs px-3 py-1.5 rounded-lg bg-purple-600 text-white disabled:opacity-50"
+                                >
+                                  {v.cercandoEntita ? "…" : "Cerca"}
+                                </button>
+                              </div>
+                              {v.risultatiRicerca.length > 0 && (
+                                <div className="space-y-1 max-h-40 overflow-y-auto">
+                                  {v.risultatiRicerca.map(r => (
+                                    <button
+                                      key={r.id}
+                                      onClick={() => aggiorna(v.mailProcessataId, "entitaSelezionata", { tipo: v.tipoCollegamento as "pratica" | "progetto" | "contestazione", id: r.id, titolo: r.titolo })}
+                                      className="w-full text-left text-xs bg-white border border-gray-200 rounded-lg px-2 py-1.5 hover:border-purple-300"
+                                    >
+                                      <span className="text-gray-700">{r.titolo}</span>
+                                      <span className="text-gray-400 ml-1">({r.stato})</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          )}
+
+                          <p className="text-[11px] text-gray-500">
+                            Verrà aggiunta una nota (+ eventuali allegati) all&apos;entità scelta, senza creare nulla di nuovo.
                           </p>
                         </div>
-                      )}
-
-                      <div>
-                        <label className="text-xs text-gray-500">Titolo / Oggetto</label>
-                        <input
-                          value={v.titolo}
-                          onChange={e => aggiorna(v.mailProcessataId, "titolo", e.target.value)}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-
-                      {v.categoria === "contestazione" ? (
-                        <div>
-                          <label className="text-xs text-gray-500">Gestore</label>
-                          <select
-                            value={v.gestore}
-                            onChange={e => aggiorna(v.mailProcessataId, "gestore", e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
-                          >
-                            {Object.keys(GESTORE_LABEL).map(g => (
-                              <option key={g} value={g}>{GESTORE_LABEL[g]}</option>
-                            ))}
-                          </select>
-                        </div>
-                      ) : (v.categoria === "segnalazione" || v.categoria === "progetto") && (
-                        <div>
-                          <label className="text-xs text-gray-500">Delega</label>
-                          <select
-                            value={v.delega}
-                            onChange={e => aggiorna(v.mailProcessataId, "delega", e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
-                          >
-                            {(Object.keys(DELEGHE_LABEL) as Delega[]).map(d => (
-                              <option key={d} value={d}>{DELEGHE_LABEL[d]}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-
-                      {v.categoria === "segnalazione" && (
+                      ) : (
                         <>
+                          {(v.binario === "MANUALE" || v.binario === "INCERTO" || v.binario === "PROPOSTA_CONTINUAZIONE") && (
+                            <div>
+                              <label className="text-xs text-gray-500">Categoria</label>
+                              <select
+                                value={v.categoria}
+                                onChange={e => aggiorna(v.mailProcessataId, "categoria", e.target.value as Categoria | "")}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
+                              >
+                                <option value="">Seleziona…</option>
+                                {(Object.keys(CATEGORIA_LABEL) as Categoria[]).map(c => (
+                                  <option key={c} value={c}>{CATEGORIA_LABEL[c]}</option>
+                                ))}
+                              </select>
+                              <p className="text-[11px] text-gray-400 mt-1">
+                                Se è una convocazione Consiglio/Giunta o una giustifica, meglio applicare l&apos;etichetta giusta su Gmail: verrà classificata da sola al prossimo giro.
+                              </p>
+                            </div>
+                          )}
+
                           <div>
-                            <label className="text-xs text-gray-500">Luogo</label>
+                            <label className="text-xs text-gray-500">Titolo / Oggetto</label>
                             <input
-                              value={v.luogo}
-                              onChange={e => aggiorna(v.mailProcessataId, "luogo", e.target.value)}
-                              placeholder="Es. Via Roma, Lerici"
+                              value={v.titolo}
+                              onChange={e => aggiorna(v.mailProcessataId, "titolo", e.target.value)}
                               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
+
+                          {v.categoria === "contestazione" ? (
                             <div>
-                              <label className="text-xs text-gray-500">Nome segnalante</label>
-                              <input
-                                value={v.nomeMittente}
-                                onChange={e => aggiorna(v.mailProcessataId, "nomeMittente", e.target.value)}
-                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              />
+                              <label className="text-xs text-gray-500">Gestore</label>
+                              <select
+                                value={v.gestore}
+                                onChange={e => aggiorna(v.mailProcessataId, "gestore", e.target.value)}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
+                              >
+                                {Object.keys(GESTORE_LABEL).map(g => (
+                                  <option key={g} value={g}>{GESTORE_LABEL[g]}</option>
+                                ))}
+                              </select>
                             </div>
+                          ) : (v.categoria === "segnalazione" || v.categoria === "progetto") && (
                             <div>
-                              <label className="text-xs text-gray-500">Email segnalante</label>
-                              <input
-                                value={v.emailMittente}
-                                onChange={e => aggiorna(v.mailProcessataId, "emailMittente", e.target.value)}
-                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              />
+                              <label className="text-xs text-gray-500">Delega</label>
+                              <select
+                                value={v.delega}
+                                onChange={e => aggiorna(v.mailProcessataId, "delega", e.target.value)}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
+                              >
+                                {(Object.keys(DELEGHE_LABEL) as Delega[]).map(d => (
+                                  <option key={d} value={d}>{DELEGHE_LABEL[d]}</option>
+                                ))}
+                              </select>
                             </div>
-                          </div>
+                          )}
+
+                          {v.categoria === "segnalazione" && (
+                            <>
+                              <div>
+                                <label className="text-xs text-gray-500">Luogo</label>
+                                <input
+                                  value={v.luogo}
+                                  onChange={e => aggiorna(v.mailProcessataId, "luogo", e.target.value)}
+                                  placeholder="Es. Via Roma, Lerici"
+                                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-xs text-gray-500">Nome segnalante</label>
+                                  <input
+                                    value={v.nomeMittente}
+                                    onChange={e => aggiorna(v.mailProcessataId, "nomeMittente", e.target.value)}
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-xs text-gray-500">Email segnalante</label>
+                                  <input
+                                    value={v.emailMittente}
+                                    onChange={e => aggiorna(v.mailProcessataId, "emailMittente", e.target.value)}
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  />
+                                </div>
+                              </div>
+                            </>
+                          )}
                         </>
                       )}
                     </div>
@@ -481,17 +604,22 @@ export default function ImportMailPage() {
                     disabled={
                       confermando === v.mailProcessataId ||
                       (v.candidatiOdg !== null && v.indiceOdgScelto === null) ||
-                      ((v.binario === "MANUALE" || v.binario === "INCERTO" || (v.binario === "PROPOSTA_CONTINUAZIONE" && v.modalitaProposta === "nuova")) && !v.categoria)
+                      ((v.binario === "MANUALE" || v.binario === "INCERTO") && v.modalitaManuale === "collega_esistente"
+                        ? !v.entitaSelezionata
+                        : (v.binario === "MANUALE" || v.binario === "INCERTO" || (v.binario === "PROPOSTA_CONTINUAZIONE" && v.modalitaProposta === "nuova")) && !v.categoria)
                     }
                     className={`w-full text-white rounded-lg py-2 text-sm font-medium disabled:opacity-50 ${
-                      v.binario === "PROPOSTA_CONTINUAZIONE" && v.modalitaProposta === "collega" ? "bg-purple-600 hover:bg-purple-700" : "bg-blue-600 hover:bg-blue-700"
+                      (v.binario === "PROPOSTA_CONTINUAZIONE" && v.modalitaProposta === "collega") ||
+                      ((v.binario === "MANUALE" || v.binario === "INCERTO") && v.modalitaManuale === "collega_esistente")
+                        ? "bg-purple-600 hover:bg-purple-700" : "bg-blue-600 hover:bg-blue-700"
                     }`}
                   >
                     {confermando === v.mailProcessataId
                       ? "Conferma…"
                       : v.candidatiOdg
                       ? "✓ Conferma con questo file"
-                      : v.binario === "PROPOSTA_CONTINUAZIONE" && v.modalitaProposta === "collega"
+                      : (v.binario === "PROPOSTA_CONTINUAZIONE" && v.modalitaProposta === "collega") ||
+                        ((v.binario === "MANUALE" || v.binario === "INCERTO") && v.modalitaManuale === "collega_esistente")
                       ? "🔗 Collega"
                       : "✓ Conferma"}
                   </button>
