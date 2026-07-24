@@ -75,6 +75,9 @@ export async function GET(req: NextRequest) {
       nomeMittente: mail.nomeMittente,
       emailMittente: mail.emailMittente,
       titolo: mail.titolo,
+      // Non troncato a 1500 come descrizione (che resta così solo per le chiamate AI) — la
+      // preview in UI mostrava un corpo tagliato a metà frase, vedi diagnosi 2026-07-25.
+      corpoCompleto: mail.corpoCompleto,
       descrizione: mail.descrizione,
       protocollo: mail.protocollo,
       dataProtocollo: mail.dataProtocollo,

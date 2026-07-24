@@ -89,6 +89,7 @@ type Voce = {
   emailMittente: string;
   titolo: string;
   descrizione: string;
+  corpoCompleto: string;
   protocollo: string;
   dataProtocollo: string;
   hasAllegati: boolean;
@@ -433,7 +434,7 @@ export default function ImportMailPage() {
               {espansa === v.mailProcessataId && (
                 <div className="border-t border-gray-100 p-3 space-y-3">
                   <div className="bg-gray-50 rounded-lg p-2 text-xs text-gray-600 max-h-32 overflow-y-auto whitespace-pre-wrap">
-                    {v.descrizione || "(corpo vuoto)"}
+                    {v.corpoCompleto || "(corpo vuoto)"}
                   </div>
 
                   {v.candidatiOdg ? (
