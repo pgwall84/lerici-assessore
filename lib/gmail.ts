@@ -242,6 +242,15 @@ export async function getMailsPaginato(
   };
 }
 
+/** Elenca gli id di tutti i messaggi di un thread Gmail (livello 2 della catena di continuazione,
+ * lib/continuazione.ts) — usato per ritrovare entità create prima che il motore-mail esistesse,
+ * il cui messaggio d'origine non ha mai una riga MailProcessata a cui agganciarsi. */
+export async function elencaMessaggiThread(threadId: string): Promise<string[]> {
+  const gmail = google.gmail({ version: "v1", auth: getAuth() });
+  const res = await gmail.users.threads.get({ userId: "me", id: threadId, format: "minimal" });
+  return (res.data.messages ?? []).map(m => m.id!).filter(Boolean);
+}
+
 /** Mappa labelId -> nome etichetta, per tradurre MailImport.labelIds in nomi da confrontare con la tassonomia. */
 export async function getMappaEtichette(): Promise<Map<string, string>> {
   const gmail = google.gmail({ version: "v1", auth: getAuth() });

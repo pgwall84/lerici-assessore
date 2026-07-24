@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getMailPerId, type MailImport } from "@/lib/gmail";
+import { getMailPerId, elencaMessaggiThread, type MailImport } from "@/lib/gmail";
 
 export type TipoEntitaContinuazione = "pratica" | "progetto" | "contestazione";
 
@@ -61,7 +61,7 @@ function tipoPerCategoriaProposta(categoria: string | null): TipoEntitaContinuaz
   return null;
 }
 
-async function trovaPerThreadId(threadId: string): Promise<EntitaTrovata | null> {
+async function trovaPerThreadIdDaMailProcessata(threadId: string): Promise<EntitaTrovata | null> {
   const precedente = await prisma.mailProcessata.findFirst({
     where: { threadId, esito: "COMPLETATO", entitaCreataId: { not: null } },
     orderBy: { createdAt: "desc" },
@@ -81,6 +81,43 @@ async function trovaPerThreadId(threadId: string): Promise<EntitaTrovata | null>
   }
   const contestazione = await prisma.contestazione.findUnique({ where: { id: precedente.entitaCreataId } });
   return contestazione ? { tipo, id: contestazione.id, titolo: contestazione.oggetto } : null;
+}
+
+/** Entità la cui messageId diretto (non una riga MailProcessata) appartiene allo stesso thread Gmail
+ * — copre le entità create prima che il motore-mail esistesse, il cui messaggio d'origine non ha mai
+ * avuto una riga MailProcessata (quindi invisibili a trovaPerThreadIdDaMailProcessata). Se più di
+ * un'entità (anche di tipo diverso) ha il proprio messageId nello stesso thread, non si indovina:
+ * si tratta come "nessun match" (mai come il primo trovato) e si logga il caso — raro ma da tenere
+ * d'occhio nel tempo, stessa disciplina già in uso per archiviazioneFallita. */
+async function trovaPerThreadIdDaMessageIdDiretto(threadId: string): Promise<EntitaTrovata | null> {
+  const idMessaggi = await elencaMessaggiThread(threadId);
+  if (idMessaggi.length < 2) return null; // thread di un solo messaggio: nulla da ritrovare
+
+  const [pratiche, progetti, contestazioni] = await Promise.all([
+    prisma.pratica.findMany({ where: { messageId: { in: idMessaggi } } }),
+    prisma.progetto.findMany({ where: { messageId: { in: idMessaggi } } }),
+    prisma.contestazione.findMany({ where: { messageId: { in: idMessaggi } } }),
+  ]);
+
+  const candidati: EntitaTrovata[] = [
+    ...pratiche.map(p => ({ tipo: "pratica" as const, id: String(p.id), titolo: p.titolo })),
+    ...progetti.map(p => ({ tipo: "progetto" as const, id: p.id, titolo: p.titolo })),
+    ...contestazioni.map(c => ({ tipo: "contestazione" as const, id: c.id, titolo: c.oggetto })),
+  ];
+
+  if (candidati.length === 0) return null;
+  if (candidati.length === 1) return candidati[0];
+
+  console.error(
+    `[continuazione] thread ${threadId}: più di un'entità (${candidati.map(c => `${c.tipo}:${c.id}`).join(", ")}) ha il proprio messageId in questo thread — match scartato, nessun aggancio automatico.`,
+  );
+  return null;
+}
+
+async function trovaPerThreadId(threadId: string): Promise<EntitaTrovata | null> {
+  const daMailProcessata = await trovaPerThreadIdDaMailProcessata(threadId);
+  if (daMailProcessata) return daMailProcessata;
+  return trovaPerThreadIdDaMessageIdDiretto(threadId);
 }
 
 export type RisultatoContinuazioneForte =
