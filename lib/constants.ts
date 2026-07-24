@@ -280,6 +280,16 @@ export const TIPO_PROGETTO_LABEL: Record<TipoProgetto, string> = {
   ATTIVITA: "Attività",
 };
 
+export const TIPO_PROGETTO_COLORE: Record<TipoProgetto, string> = {
+  PROGETTO: "bg-blue-100 text-blue-700",
+  ATTIVITA: "bg-teal-100 text-teal-700",
+};
+
+export const TIPO_PROGETTO_ICONA: Record<TipoProgetto, string> = {
+  PROGETTO: "📁",
+  ATTIVITA: "🔧",
+};
+
 // --- Motore di scansione mail (sezione 6 spec) ---
 
 // Etichetta Gmail -> regola di classificazione. Copre esattamente le stesse etichette già

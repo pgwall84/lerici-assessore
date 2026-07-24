@@ -3,9 +3,12 @@
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { DELEGHE_LABEL, PRIORITA_LABEL, STATO_RIUNIONE_LABEL, STATO_RIUNIONE_COLORE, STATO_PROGETTO_LABEL, STATO_PROGETTO_COLORE } from "@/lib/constants";
+import {
+  DELEGHE_LABEL, PRIORITA_LABEL, STATO_RIUNIONE_LABEL, STATO_RIUNIONE_COLORE,
+  STATO_PROGETTO_LABEL, STATO_PROGETTO_COLORE, TIPO_PROGETTO_LABEL, TIPO_PROGETTO_COLORE, TIPO_PROGETTO_ICONA,
+} from "@/lib/constants";
 import { PrioritaBadge } from "@/components/PrioritaBadge";
-import type { ArgomentoRiunione, Delega, DocumentoProgetto, NotaProgetto, Priorita, Progetto, Riunione, StatoProgetto } from "@prisma/client";
+import type { ArgomentoRiunione, Delega, DocumentoProgetto, NotaProgetto, Priorita, Progetto, Riunione, StatoProgetto, TipoProgetto } from "@prisma/client";
 
 type RiunioneCard = Riunione & { argomenti: ArgomentoRiunione[] };
 
@@ -32,7 +35,7 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
   const [assegnaMode, setAssegnaMode] = useState(false);
   const [selectedPersonaId, setSelectedPersonaId] = useState<string>("");
   const [modificaMode, setModificaMode] = useState(false);
-  const [formModifica, setFormModifica] = useState({ titolo: "", descrizione: "", delega: "" as Delega | "", fonteFinanziamento: "", priorita: "" as Priorita | "" });
+  const [formModifica, setFormModifica] = useState({ titolo: "", descrizione: "", delega: "" as Delega | "", fonteFinanziamento: "", priorita: "" as Priorita | "", tipo: "PROGETTO" as TipoProgetto });
   const [riunioni, setRiunioni] = useState<RiunioneCard[]>([]);
   const [inviando, setInviando] = useState<string | null>(null);
   const [emailPopup, setEmailPopup] = useState(false);
@@ -67,6 +70,7 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
       delega: progetto.delega,
       fonteFinanziamento: progetto.fonteFinanziamento ?? "",
       priorita: progetto.priorita ?? "",
+      tipo: progetto.tipo,
     });
     setModificaMode(true);
   }
@@ -81,6 +85,7 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
         delega: formModifica.delega || undefined,
         fonteFinanziamento: formModifica.fonteFinanziamento || null,
         priorita: formModifica.priorita || null,
+        tipo: formModifica.tipo,
       }),
     });
     if (res.ok) {
@@ -229,6 +234,9 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
 
       {/* Badge */}
       <div className="flex flex-wrap gap-2">
+        <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${TIPO_PROGETTO_COLORE[progetto.tipo]}`}>
+          {TIPO_PROGETTO_ICONA[progetto.tipo]} {TIPO_PROGETTO_LABEL[progetto.tipo]}
+        </span>
         <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${STATO_COLORE[progetto.stato]}`}>
           {STATO_LABEL[progetto.stato]}
         </span>
@@ -434,6 +442,18 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
               >
                 {(Object.keys(DELEGHE_LABEL) as Delega[]).map(d => (
                   <option key={d} value={d}>{DELEGHE_LABEL[d]}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">Tipo</label>
+              <select
+                value={formModifica.tipo}
+                onChange={e => setFormModifica(f => ({ ...f, tipo: e.target.value as TipoProgetto }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {(Object.keys(TIPO_PROGETTO_LABEL) as TipoProgetto[]).map(t => (
+                  <option key={t} value={t}>{TIPO_PROGETTO_ICONA[t]} {TIPO_PROGETTO_LABEL[t]}</option>
                 ))}
               </select>
             </div>

@@ -5,10 +5,11 @@ import Link from "next/link";
 import {
   DELEGHE_LABEL, STATO_PROGETTO_LABEL, STATO_PROGETTO_COLORE,
   STATI_PROGETTO_OPERATIVA, STATI_PROGETTO_ARCHIVIO,
+  TIPO_PROGETTO_LABEL, TIPO_PROGETTO_COLORE, TIPO_PROGETTO_ICONA,
 } from "@/lib/constants";
 import { ordinaPerPriorita } from "@/lib/ordinamento";
 import { PrioritaBadge, PrioritaDot } from "@/components/PrioritaBadge";
-import type { Delega, DocumentoProgetto, NotaProgetto, Priorita, Progetto, StatoProgetto } from "@prisma/client";
+import type { Delega, DocumentoProgetto, NotaProgetto, Priorita, Progetto, StatoProgetto, TipoProgetto } from "@prisma/client";
 
 const STATO_LABEL = STATO_PROGETTO_LABEL;
 const STATO_COLORE = STATO_PROGETTO_COLORE;
@@ -28,6 +29,7 @@ export default function ProgettiPage() {
   const [filtroDelega, setFiltroDelega] = useState<Delega | "">("");
   const [filtroStato, setFiltroStato] = useState<StatoProgetto | "">("");
   const [filtroPriorita, setFiltroPriorita] = useState<Priorita | "">("");
+  const [filtroTipo, setFiltroTipo] = useState<TipoProgetto | "">("");
   const [vistaCompatta, setVistaCompatta] = useState(() => {
     if (typeof window !== "undefined") return localStorage.getItem("vistaCompattaProgetti") === "1";
     return false;
@@ -65,16 +67,18 @@ export default function ProgettiPage() {
     const filtrati = progettiVista.filter(p =>
       (!filtroDelega || p.delega === filtroDelega) &&
       (!filtroStato || p.stato === filtroStato) &&
-      (!filtroPriorita || p.priorita === filtroPriorita)
+      (!filtroPriorita || p.priorita === filtroPriorita) &&
+      (!filtroTipo || p.tipo === filtroTipo)
     );
     return ordinaPerPriorita(filtrati, p => p.priorita, p => p.createdAt);
-  }, [progettiVista, filtroDelega, filtroStato, filtroPriorita]);
+  }, [progettiVista, filtroDelega, filtroStato, filtroPriorita, filtroTipo]);
 
   function esporta(formato: "xlsx" | "pdf") {
     const params = new URLSearchParams({ vista, formato });
     if (filtroDelega) params.set("delega", filtroDelega);
     if (filtroStato) params.set("stato", filtroStato);
     if (filtroPriorita) params.set("priorita", filtroPriorita);
+    if (filtroTipo) params.set("tipo", filtroTipo);
     window.open(`/api/progetti/export?${params}`, "_blank");
   }
 
@@ -196,6 +200,16 @@ export default function ProgettiPage() {
               <option value="MEDIA">Media</option>
               <option value="BASSA">Bassa</option>
             </select>
+            <select
+              value={filtroTipo}
+              onChange={e => setFiltroTipo(e.target.value as TipoProgetto | "")}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+            >
+              <option value="">Progetti e Attività</option>
+              {(Object.keys(TIPO_PROGETTO_LABEL) as TipoProgetto[]).map(t => (
+                <option key={t} value={t}>{TIPO_PROGETTO_ICONA[t]} {TIPO_PROGETTO_LABEL[t]}</option>
+              ))}
+            </select>
             <div className="ml-auto flex gap-1.5">
               <button onClick={toggleVista} className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${vistaCompatta ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"}`}>
                 ☰
@@ -227,6 +241,9 @@ export default function ProgettiPage() {
                 className="flex items-center gap-2 px-3 py-2 hover:bg-blue-50 transition-colors"
               >
                 <PrioritaDot priorita={p.priorita} />
+                <span className={`shrink-0 text-xs px-1.5 py-0.5 rounded font-medium ${TIPO_PROGETTO_COLORE[p.tipo]}`}>
+                  {TIPO_PROGETTO_ICONA[p.tipo]}
+                </span>
                 <span className="font-medium text-gray-900 text-sm truncate flex-1">{p.titolo}</span>
                 <span className="text-xs text-gray-400 truncate hidden sm:block max-w-xs shrink-0">
                   {DELEGHE_LABEL[p.delega]}
@@ -246,6 +263,9 @@ export default function ProgettiPage() {
                 className="block bg-white rounded-xl border border-gray-200 p-4 hover:border-gray-300 transition-colors"
               >
                 <div className="flex flex-wrap gap-1.5 mb-1.5">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIPO_PROGETTO_COLORE[p.tipo]}`}>
+                    {TIPO_PROGETTO_ICONA[p.tipo]} {TIPO_PROGETTO_LABEL[p.tipo]}
+                  </span>
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATO_COLORE[p.stato]}`}>
                     {STATO_LABEL[p.stato]}
                   </span>

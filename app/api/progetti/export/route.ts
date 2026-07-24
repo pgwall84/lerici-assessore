@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { esportaTabella } from "@/lib/export-tabella";
 import { ordinaPerPriorita } from "@/lib/ordinamento";
 import {
-  DELEGHE_LABEL, PRIORITA_LABEL, STATO_PROGETTO_LABEL,
+  DELEGHE_LABEL, PRIORITA_LABEL, STATO_PROGETTO_LABEL, TIPO_PROGETTO_LABEL,
   STATI_PROGETTO_OPERATIVA, STATI_PROGETTO_ARCHIVIO,
 } from "@/lib/constants";
 
@@ -17,12 +17,14 @@ export async function GET(req: NextRequest) {
   const delega = searchParams.get("delega");
   const stato = searchParams.get("stato");
   const priorita = searchParams.get("priorita");
+  const tipo = searchParams.get("tipo");
   const vista = searchParams.get("vista");
 
   const progetti = await prisma.progetto.findMany({
     where: {
       ...(delega ? { delega: delega as never } : {}),
       ...(priorita ? { priorita: priorita as never } : {}),
+      ...(tipo ? { tipo: tipo as never } : {}),
       ...(stato
         ? { stato: stato as never }
         : vista === "operativa" ? { stato: { in: STATI_PROGETTO_OPERATIVA as never[] } }
@@ -37,6 +39,7 @@ export async function GET(req: NextRequest) {
   const righe = ordinati.map((p, i) => ({
     "#": i + 1,
     "Titolo": p.titolo,
+    "Tipo": TIPO_PROGETTO_LABEL[p.tipo],
     "Delega": DELEGHE_LABEL[p.delega],
     "Stato": STATO_PROGETTO_LABEL[p.stato],
     "Priorità": p.priorita ? PRIORITA_LABEL[p.priorita] : "",
@@ -48,6 +51,6 @@ export async function GET(req: NextRequest) {
   return esportaTabella(formato, righe, {
     titolo: "Progetti",
     nomeFile: "progetti",
-    colWidths: [4, 40, 22, 14, 10, 22, 22, 12],
+    colWidths: [4, 40, 12, 22, 14, 10, 22, 22, 12],
   });
 }

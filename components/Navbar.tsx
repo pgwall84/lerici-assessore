@@ -5,12 +5,13 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useEffect, useRef, useState } from "react";
 
-// Voci principali — sempre visibili.
+// Voci principali — sempre visibili. Rename solo UI (redesign 2026-07-24): "/dashboard"
+// (Segnalazioni) era "Dashboard", "/dashboard/progetti" era "Progetti" — nessun cambio di route.
 const links = [
-  { href: "/dashboard", label: "Dashboard", icon: "📋" },
+  { href: "/dashboard", label: "Segnalazioni", icon: "📋" },
   { href: "/dashboard/nuova", label: "Nuova", icon: "➕" },
   { href: "/dashboard/import-mail", label: "Mail", icon: "📨" },
-  { href: "/dashboard/progetti", label: "Progetti", icon: "📁" },
+  { href: "/dashboard/progetti", label: "Dashboard", icon: "📁" },
   { href: "/dashboard/politica", label: "Politica", icon: "🏛️" },
   { href: "/dashboard/riunioni", label: "Riunioni", icon: "🎙️" },
 ];
