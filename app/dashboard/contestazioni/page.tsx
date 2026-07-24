@@ -3,25 +3,12 @@
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import type { Contestazione, DocumentoContestazione, EsitoContestazione, Gestore } from "@prisma/client";
+import { ESITO_CONTESTAZIONE_LABEL as ESITO_LABEL, ESITO_CONTESTAZIONE_COLORE as ESITO_COLORE } from "@/lib/constants";
 
 const GESTORE_LABEL: Record<Gestore, string> = {
   ACAM_AMBIENTE: "ACAM Ambiente",
   ACAM_ACQUE: "ACAM Acque",
   ATC: "ATC",
-};
-
-const ESITO_LABEL: Record<EsitoContestazione, string> = {
-  IN_ATTESA: "In attesa",
-  RISOLTO: "Risolto",
-  RESPINTO: "Respinto",
-  SENZA_RISPOSTA: "Senza risposta",
-};
-
-const ESITO_COLORE: Record<EsitoContestazione, string> = {
-  IN_ATTESA: "bg-yellow-100 text-yellow-800",
-  RISOLTO: "bg-green-100 text-green-800",
-  RESPINTO: "bg-red-50 text-red-600",
-  SENZA_RISPOSTA: "bg-gray-100 text-gray-500",
 };
 
 const GESTORI: Gestore[] = ["ACAM_AMBIENTE", "ACAM_ACQUE", "ATC"];

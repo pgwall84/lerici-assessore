@@ -5,7 +5,7 @@ import { riformattaOdg } from "@/lib/claude";
 import { etichettaPerCategoria } from "@/lib/constants";
 import { trovaContinuazioneForte, type TipoEntitaContinuazione } from "@/lib/continuazione";
 import { supabase } from "@/lib/supabase";
-import type { TipoAtto } from "@prisma/client";
+import type { TipoAtto, StatoAtto } from "@prisma/client";
 
 const BUCKET = "foto";
 
@@ -17,7 +17,9 @@ export type EsitoEsecuzione =
   // `etichetta`: solo per i gestori (es. eseguiContinuazione) la cui entità di destinazione non
   // è ricavabile dal semplice categoriaProposta della riga — il chiamante la usa al posto del
   // lookup generico via etichettaPerCategoria(riga.categoriaProposta).
-  | { esito: "COMPLETATO"; entitaId: string; etichetta?: string }
+  // `entitaId` assente solo per eseguiSoloArchiviazione (Delibere/Determine Giunta): nessuna
+  // entità creata, solo etichetta + esito COMPLETATO — completamento legittimo, non un errore.
+  | { esito: "COMPLETATO"; entitaId?: string; etichetta?: string }
   // ODG ambiguo nello zip: il sistema si ferma SOLO per questa mail, nessuna entità creata.
   // Dal cron non è risolvibile (nessun umano a cui chiedere): la riga resta IN_ATTESA e il resto
   // del binario automatico prosegue senza interruzioni. Dalla schermata di revisione (Sessione C)
@@ -73,7 +75,7 @@ async function trovaProssimoConsiglio(daData: Date) {
  * senza zip) non c'è invece nulla da disambiguare: si crea comunque l'atto, il file resta
  * PRATICA_ALLEGATA se il nome non combacia con l'euristica ODG — nessun blocco, come già oggi.
  */
-export async function eseguiConvocazione(m: MailImport, tipo: TipoAtto, indiceOdgForzato?: number): Promise<EsitoEsecuzione> {
+export async function eseguiConvocazione(m: MailImport, tipo: TipoAtto, indiceOdgForzato?: number, statoIniziale?: StatoAtto): Promise<EsitoEsecuzione> {
   try {
     const voci = m.allegati.flatMap(a =>
       a.filename.toLowerCase().endsWith(".zip") ? estraiVociZip(a.buffer) : [{ nomeFile: a.filename, buffer: a.buffer }]
@@ -87,7 +89,7 @@ export async function eseguiConvocazione(m: MailImport, tipo: TipoAtto, indiceOd
     }
 
     const atto = await prisma.attoPoliticoAmministrativo.create({
-      data: { tipo, oggetto: m.titolo, messageId: m.messageId },
+      data: { tipo, oggetto: m.titolo, messageId: m.messageId, ...(statoIniziale ? { stato: statoIniziale } : {}) },
     });
 
     for (let i = 0; i < voci.length; i++) {
@@ -117,11 +119,11 @@ const SOGLIA_CORPO_SOSTANZIALE = 300;
  * calcio a 7 in località Bagnara" — Atto creato ma senza nessun documento consultabile). Se il
  * corpo è sostanziale, lo si salva ripulito come `corpoTestoEstratto` — l'Atto resta leggibile in
  * app anche senza un file scaricabile. */
-export async function eseguiMozioneOInterrogazione(m: MailImport, tipo: TipoAtto): Promise<EsitoEsecuzione> {
+export async function eseguiMozioneOInterrogazione(m: MailImport, tipo: TipoAtto, statoIniziale?: StatoAtto): Promise<EsitoEsecuzione> {
   try {
     const consiglioCollegato = await trovaProssimoConsiglio(new Date());
     const atto = await prisma.attoPoliticoAmministrativo.create({
-      data: { tipo, oggetto: m.titolo, messageId: m.messageId, consiglioCollegatoId: consiglioCollegato?.id },
+      data: { tipo, oggetto: m.titolo, messageId: m.messageId, consiglioCollegatoId: consiglioCollegato?.id, ...(statoIniziale ? { stato: statoIniziale } : {}) },
     });
     for (const a of m.allegati) {
       const url = await caricaFile(`atto-${atto.id}`, a.buffer, a.filename);
@@ -185,6 +187,16 @@ export async function eseguiVerbaleGiunta(m: MailImport): Promise<EsitoEsecuzion
   } catch (e) {
     return { esito: "ERRORE", errore: e instanceof Error ? e.message : String(e) };
   }
+}
+
+// Delibere/Determine di Giunta: nessuna entità da creare, solo l'etichetta Gmail + esito
+// COMPLETATO — "solo archiviazione" è un esito legittimo di pari dignità delle altre categorie
+// Automatico (Consiglio/Giunta/Giustifica), non un errore né un "non rilevante". A differenza di
+// NON_RILEVANTE (che completa subito allo scan, bypassando primaEsecuzione() di proposito perché
+// è spam/newsletter su cui non serve mai una conferma umana), questa passa dal normale gate
+// Automatico: la prima volta resta IN_ATTESA per la conferma di Marco, come le altre.
+export async function eseguiSoloArchiviazione(): Promise<EsitoEsecuzione> {
+  return { esito: "COMPLETATO" };
 }
 
 export async function eseguiGiustifica(m: MailImport): Promise<EsitoEsecuzione> {

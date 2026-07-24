@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getMailPerId, getMappaEtichette } from "@/lib/gmail";
-import { trovaVoceTassonomia } from "@/lib/motore-mail";
+import { trovaVoceTassonomia, calcolaEtichettaProposta } from "@/lib/motore-mail";
 import { classificaDelega, classificaGestore } from "@/lib/classificatore";
 import { decodificaEntita } from "@/lib/continuazione";
 
@@ -50,14 +50,22 @@ export async function GET(req: NextRequest) {
 
     const nomiEtichette = mail.labelIds.map(lid => mappaEtichette.get(lid)).filter((n): n is string => !!n);
     const voceNota = trovaVoceTassonomia(nomiEtichette);
-    const delegaSuggerita = voceNota && "delega" in voceNota
-      ? voceNota.delega
+    const delegaSuggerita = voceNota && "delega" in voceNota.voce
+      ? voceNota.voce.delega
       : classificaDelega(`${mail.titolo} ${mail.descrizione}`);
+
+    // Righe scansionate da Fase B in poi hanno già etichettaProposta persistita; per quelle più
+    // vecchie si ricostruisce al volo — prima da un match di regola ancora valido su Gmail (più
+    // affidabile), poi dalla categoria già salvata (nessuna nuova chiamata AI in ogni caso).
+    const etichettaProposta = r.etichettaProposta
+      ?? voceNota?.etichetta
+      ?? calcolaEtichettaProposta(r.categoriaProposta, `${mail.titolo} ${mail.descrizione}`);
 
     return {
       mailProcessataId: r.id,
       binario: r.binario,
       categoriaProposta: r.categoriaProposta,
+      etichettaProposta,
       confidenza: r.confidenza,
       messageId: mail.messageId,
       oggettoOriginale: mail.oggettoOriginale,

@@ -136,6 +136,9 @@ model Progetto {
   titolo             String
   delega             Delega
   stato              StatoProgetto       @default(IN_CORSO)
+  // Distingue un progetto strutturato/duraturo da un intervento tecnico puntuale (Attività) —
+  // stesso modello, stesso diario/documenti/responsabile, solo un badge/filtro diverso in UI.
+  tipo               TipoProgetto        @default(PROGETTO)
   priorita           Priorita?
   responsabileId     Int?
   responsabile       Persona?            @relation(fields: [responsabileId], references: [id])
@@ -149,6 +152,11 @@ model Progetto {
   messageId          String?
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
+}
+
+enum TipoProgetto {
+  PROGETTO
+  ATTIVITA
 }
 
 enum StatoProgetto {
@@ -353,6 +361,11 @@ model MailProcessata {
   mittente          String?
   oggetto           String?
   categoriaProposta String?
+  // Etichetta/sotto-etichetta Gmail specifica per esteso (es. "Deleghe/Viabilità",
+  // "Consiglio Comunale/Mozioni"), solo per la visualizzazione — categoriaProposta resta l'unica
+  // chiave funzionale usata dall'esecuzione (GESTORI_AUTOMATICO, decodificaEntita, etc.), mai
+  // toccata da questo campo. Assente sulle righe scansionate prima di questa modifica.
+  etichettaProposta String?
   confidenza        Float?
   binario           BinarioMail
   esito             EsitoMailProcessata @default(IN_ATTESA)

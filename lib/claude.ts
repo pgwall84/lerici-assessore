@@ -99,6 +99,44 @@ Estratto: "${estratto}"`;
 
 export type ClassificazioneMail = { categoria: typeof CATEGORIE_MAIL[number]; confidenza: number };
 
+const PROMPT_TIPO_PROGETTO = (oggetto: string, estratto: string) => `Sei un assistente che, per una mail già classificata come "progetto/attività" di un Comune, distingue due casi:
+- "PROGETTO": un'iniziativa strutturata e duratura (richiede più fasi, coinvolge finanziamenti/gare, si sviluppa nel tempo)
+- "ATTIVITA": un intervento tecnico puntuale (un singolo lavoro, sopralluogo, manutenzione, pratica circoscritta)
+
+Se il testo non permette di scegliere con sufficiente sicurezza, rispondi con tipo null.
+Rispondi SOLO con un oggetto JSON, nessun altro testo, nel formato esatto:
+{"tipo": "PROGETTO" | "ATTIVITA" | null}
+
+Oggetto: "${oggetto}"
+Estratto: "${estratto}"`;
+
+// Usata solo come suggerimento (mai vincolante) quando una mail risolve a Deleghe->Progetto,
+// sia da regola (etichetta Gmail) sia da classificaMail: propone se marcarlo come Progetto o
+// Attività, sempre sovrascrivibile a mano nella schermata di revisione.
+export async function classificaTipoProgetto(oggetto: string, estratto: string): Promise<"PROGETTO" | "ATTIVITA" | null> {
+  const testo = estratto.trim().slice(0, 3000);
+
+  const msg = await getClient().messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 128,
+    messages: [{ role: "user", content: PROMPT_TIPO_PROGETTO(oggetto.trim(), testo) }],
+  });
+
+  const blocco = msg.content.find(b => b.type === "text");
+  if (!blocco || blocco.type !== "text") return null;
+
+  const match = blocco.text.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+
+  try {
+    const parsed = JSON.parse(match[0]);
+    const tipo = parsed?.tipo;
+    return tipo === "PROGETTO" || tipo === "ATTIVITA" ? tipo : null;
+  } catch {
+    return null;
+  }
+}
+
 // Usata dal motore di scansione mail (sezione 6) solo per i casi che le regole (etichette Gmail
 // note) non risolvono. Nessun output = tier Incerto, mai una forzatura verso una categoria a caso.
 export async function classificaMail(mittente: string, oggetto: string, estratto: string): Promise<ClassificazioneMail | null> {

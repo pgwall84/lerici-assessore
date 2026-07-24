@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { getMailsPaginato, getMappaEtichette, getMailPerId, marcaImportata, marcaIncerto, marcaNonRilevante, applicaEtichettaEArchivia, archiviaMail, type MailImport } from "@/lib/gmail";
 import { classificaMail } from "@/lib/claude";
-import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria } from "@/lib/constants";
-import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, type EsitoEsecuzione } from "@/lib/import-automatico";
+import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria, ETICHETTA_NON_RILEVANTE, type VoceTassonomiaMail } from "@/lib/constants";
+import { classificaDelega } from "@/lib/classificatore";
+import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiSoloArchiviazione, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { trovaContinuazioneForte, trovaContinuazioneDebole, codificaEntita } from "@/lib/continuazione";
+import type { Delega } from "@prisma/client";
 
 const SOGLIA_CONFIDENZA = 0.6;
 // Più alta delle altre categorie di proposito: un falso positivo qui scompare subito senza mai
@@ -24,12 +26,27 @@ export type RisultatoScansione = {
   nextPageToken?: string;
 };
 
-export function trovaVoceTassonomia(nomiEtichette: string[]) {
+// Ritorna anche il nome dell'etichetta Gmail che ha determinato il match (non solo la regola),
+// per il badge "etichetta/sotto-etichetta" per esteso mostrato in UI (etichettaProposta).
+export function trovaVoceTassonomia(nomiEtichette: string[]): { etichetta: string; voce: VoceTassonomiaMail } | null {
   for (const nome of nomiEtichette) {
     const voce = TASSONOMIA_MAIL[nome];
-    if (voce) return voce;
+    if (voce) return { etichetta: nome, voce };
   }
   return null;
+}
+
+// Ricostruisce l'etichetta/sotto-etichetta per esteso a partire da una categoria già risolta
+// (dal ramo AI o da una riga già in MailProcessata) — usata quando non c'è un match di regola
+// diretto su cui appoggiarsi. Per "progetto" ricava anche la delega (stessa euristica per
+// parole chiave già in uso in /api/motore-mail/revisione), per le altre categorie basta il
+// lookup generico già esistente in etichettaPerCategoria().
+export function calcolaEtichettaProposta(categoria: string | null, testoPerDelega: string): string | null {
+  if (!categoria) return null;
+  if (categoria === "progetto") {
+    return etichettaPerCategoria(categoria, classificaDelega(testoPerDelega) as Delega);
+  }
+  return etichettaPerCategoria(categoria);
 }
 
 type Esito = "AUTOMATICO" | "MANUALE" | "INCERTO" | "NON_RILEVANTE" | "PROPOSTA_CONTINUAZIONE" | "FUORI_SCOPE";
@@ -76,24 +93,28 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
   }
 
   const voceNota = trovaVoceTassonomia(nomiEtichette);
+  const voce = voceNota?.voce;
 
-  if (voceNota && "fuoriScope" in voceNota) {
+  if (voce && "fuoriScope" in voce) {
     return "FUORI_SCOPE";
   }
 
-  if (voceNota) {
+  if (voceNota && voce) {
     await prisma.mailProcessata.create({
       data: {
         messageId: m.messageId,
         threadId: m.threadId || null,
         mittente: m.mittente,
         oggetto: m.oggettoOriginale,
-        categoriaProposta: categoriaProposta(voceNota),
+        categoriaProposta: categoriaProposta(voce),
+        // Il match di regola già È l'etichetta specifica (es. "Deleghe/Viabilità") — nessuna
+        // ricostruzione necessaria, a differenza dei rami AI qui sotto.
+        etichettaProposta: voceNota.etichetta,
         confidenza: 1,
-        binario: voceNota.binario,
+        binario: voce.binario,
       },
     });
-    return voceNota.binario;
+    return voce.binario;
   }
 
   // Nessuna etichetta nota sul messaggio: prova la classificazione AI prima di arrendersi a Incerto.
@@ -118,6 +139,8 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
           mittente: m.mittente,
           oggetto: m.oggettoOriginale,
           categoriaProposta: classificazione.categoria,
+          // Mai mostrata in UI (completa subito, mai in coda) — persistita solo per coerenza/audit.
+          etichettaProposta: ETICHETTA_NON_RILEVANTE,
           confidenza: classificazione.confidenza,
           binario: "NON_RILEVANTE",
           esito: "COMPLETATO",
@@ -149,6 +172,7 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
         mittente: m.mittente,
         oggetto: m.oggettoOriginale,
         categoriaProposta: classificazione.categoria,
+        etichettaProposta: calcolaEtichettaProposta(classificazione.categoria, `${m.titolo} ${m.descrizione}`),
         confidenza: classificazione.confidenza,
         binario: "MANUALE",
       },
@@ -182,6 +206,9 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
       mittente: m.mittente,
       oggetto: m.oggettoOriginale,
       categoriaProposta: classificazione?.categoria ?? null,
+      // Anche sotto soglia, un'ipotesi (per quanto debole) resta più utile di un badge vuoto —
+      // l'incertezza è già comunicata dal binario INCERTO stesso, non serve azzerare anche questo.
+      etichettaProposta: calcolaEtichettaProposta(classificazione?.categoria ?? null, `${m.titolo} ${m.descrizione}`),
       confidenza: classificazione?.confidenza ?? null,
       binario: "INCERTO",
     },
@@ -245,9 +272,8 @@ export async function primaEsecuzione(): Promise<boolean> {
   return completate === 0;
 }
 
-// categoriaProposta -> gestore. Solo le 8 combinazioni del binario Automatico (le 7 già note +
-// CONTINUAZIONE): Manuale/Incerto/Proposta continuazione restano sempre a conferma umana
-// (Sessione C), non hanno un gestore di esecuzione qui.
+// categoriaProposta -> gestore. Manuale/Incerto/Proposta continuazione restano sempre a conferma
+// umana (Sessione C), non hanno un gestore di esecuzione qui.
 const GESTORI_AUTOMATICO: Record<string, (m: MailImport) => Promise<EsitoEsecuzione>> = {
   CONVOCAZIONE_CONSIGLIO: m => eseguiConvocazione(m, "CONVOCAZIONE_CONSIGLIO"),
   CONVOCAZIONE_COMMISSIONE: m => eseguiConvocazione(m, "CONVOCAZIONE_COMMISSIONE"),
@@ -257,6 +283,8 @@ const GESTORI_AUTOMATICO: Record<string, (m: MailImport) => Promise<EsitoEsecuzi
   VERBALE_GIUNTA: eseguiVerbaleGiunta,
   GIUSTIFICA: eseguiGiustifica,
   CONTINUAZIONE: eseguiContinuazione,
+  DELIBERA_GIUNTA: eseguiSoloArchiviazione,
+  DETERMINA_GIUNTA: eseguiSoloArchiviazione,
 };
 
 export type RisultatoMotore = {
@@ -315,7 +343,7 @@ export async function eseguiMotoreMail(maxPagineScan = 20, maxEsecuzioni = 15): 
         // Regola non negoziabile: il DB prima, le etichette Gmail solo dopo.
         await prisma.mailProcessata.update({
           where: { id: riga.id },
-          data: { esito: "COMPLETATO", entitaCreataId: esito.entitaId },
+          data: { esito: "COMPLETATO", entitaCreataId: esito.entitaId ?? null },
         });
         try {
           await marcaImportata(riga.messageId);

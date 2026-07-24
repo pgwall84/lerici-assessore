@@ -1,4 +1,4 @@
-import { Delega, Priorita, StatoAtto, StatoPratica, StatoProgetto, StatoRiunione, TipoAtto, TipoPratica } from "@prisma/client";
+import { Delega, EsitoContestazione, Priorita, StatoAtto, StatoPratica, StatoProgetto, StatoRiunione, TipoAtto, TipoPratica, TipoProgetto } from "@prisma/client";
 
 export const DELEGHE_LABEL: Record<Delega, string> = {
   VIABILITA: "Viabilità",
@@ -257,6 +257,29 @@ export const STATO_PROGETTO_COLORE: Record<StatoProgetto, string> = {
 export const STATI_PROGETTO_OPERATIVA: StatoProgetto[] = ["IN_CORSO", "SOSPESO"];
 export const STATI_PROGETTO_ARCHIVIO: StatoProgetto[] = ["CONCLUSO", "ARCHIVIATO"];
 
+// --- Contestazioni ---
+
+export const ESITO_CONTESTAZIONE_LABEL: Record<EsitoContestazione, string> = {
+  IN_ATTESA: "In attesa",
+  RISOLTO: "Risolto",
+  RESPINTO: "Respinto",
+  SENZA_RISPOSTA: "Senza risposta",
+};
+
+export const ESITO_CONTESTAZIONE_COLORE: Record<EsitoContestazione, string> = {
+  IN_ATTESA: "bg-yellow-100 text-yellow-800",
+  RISOLTO: "bg-green-100 text-green-800",
+  RESPINTO: "bg-red-50 text-red-600",
+  SENZA_RISPOSTA: "bg-gray-100 text-gray-500",
+};
+
+// Progetto vs Attività: stesso modello, stesso diario/documenti/responsabile — solo un badge/filtro
+// diverso in UI. Progetto = strutturato/duraturo, Attività = intervento tecnico puntuale.
+export const TIPO_PROGETTO_LABEL: Record<TipoProgetto, string> = {
+  PROGETTO: "Progetto",
+  ATTIVITA: "Attività",
+};
+
 // --- Motore di scansione mail (sezione 6 spec) ---
 
 // Etichetta Gmail -> regola di classificazione. Copre esattamente le stesse etichette già
@@ -271,6 +294,13 @@ export type VoceTassonomiaMail =
   | { binario: "AUTOMATICO"; categoria: "atto"; tipo: TipoAtto }
   | { binario: "AUTOMATICO"; categoria: "VERBALE_GIUNTA" }
   | { binario: "AUTOMATICO"; categoria: "GIUSTIFICA" }
+  // Nessuna entità creata: solo etichetta + esito COMPLETATO ("solo archiviazione", non un
+  // errore né un "non rilevante" — vedi eseguiSoloArchiviazione in lib/import-automatico.ts).
+  // Stessa affidabilità di Consiglio/Giunta/Giustifica (etichetta Gmail dedicata), quindi stesso
+  // binario AUTOMATICO — passa dal gate primaEsecuzione() come le altre, non lo salta come
+  // NON_RILEVANTE.
+  | { binario: "AUTOMATICO"; categoria: "DELIBERA_GIUNTA" }
+  | { binario: "AUTOMATICO"; categoria: "DETERMINA_GIUNTA" }
   | { binario: "MANUALE"; categoria: "segnalazione" }
   | { binario: "MANUALE"; categoria: "progetto"; delega: Delega }
   | { binario: "MANUALE"; categoria: "contestazione" };
@@ -282,8 +312,8 @@ export const TASSONOMIA_MAIL: Record<string, VoceTassonomiaMail> = {
   "Consiglio Comunale/Mozioni": { binario: "AUTOMATICO", categoria: "atto", tipo: "MOZIONE" },
   "Giunta/Convocazioni": { binario: "AUTOMATICO", categoria: "atto", tipo: "CONVOCAZIONE_GIUNTA" },
   "Giunta/Verbali": { binario: "AUTOMATICO", categoria: "VERBALE_GIUNTA" },
-  "Giunta/Delibere": { fuoriScope: true },
-  "Giunta/Determine": { fuoriScope: true },
+  "Giunta/Delibere": { binario: "AUTOMATICO", categoria: "DELIBERA_GIUNTA" },
+  "Giunta/Determine": { binario: "AUTOMATICO", categoria: "DETERMINA_GIUNTA" },
   "Giustifica": { binario: "AUTOMATICO", categoria: "GIUSTIFICA" },
   // "Segnalazioni" deliberatamente ESCLUSA da qui (rimossa 2026-07-22): un filtro Gmail
   // dell'utente la applica troppo largamente, catturando mail che non sono segnalazioni. A
@@ -332,3 +362,22 @@ export function etichettaPerCategoria(categoria: string, delega?: Delega): strin
 
 export const ETICHETTA_INCERTO = "Incerto/Da classificare";
 export const ETICHETTA_NON_RILEVANTE = "Bassa priorità/Non rilevante";
+
+export type NodoAlberoEtichette = { etichetta: string; categoria: string; delega?: Delega };
+
+// Albero completo per il selettore di categoria/etichetta nella revisione mail (sezione 6,
+// redesign 2026-07-24) — deriva da TASSONOMIA_MAIL (unica fonte di verità, nessuna lista
+// parallela da tenere sincronizzata) + "Segnalazioni", assente da TASSONOMIA_MAIL di proposito
+// (non più un segnale automatico affidabile, vedi fix 2026-07-22) ma comunque una scelta manuale
+// valida, quindi presente qui. `categoria` è lo stesso valore usato ovunque nel motore (chiave di
+// GESTORI_AUTOMATICO per gli Automatico, o le 4 categorie del binario Manuale).
+export const ALBERO_ETICHETTE_MAIL: NodoAlberoEtichette[] = [
+  ...Object.entries(TASSONOMIA_MAIL)
+    .filter((v): v is [string, Exclude<VoceTassonomiaMail, { fuoriScope: true }>] => !("fuoriScope" in v[1]))
+    .map(([etichetta, voce]) => ({
+      etichetta,
+      categoria: categoriaProposta(voce),
+      delega: "delega" in voce ? voce.delega : undefined,
+    })),
+  { etichetta: "Segnalazioni", categoria: "segnalazione" },
+];

@@ -5,10 +5,10 @@ import { getMailPerId, marcaImportata, applicaEtichettaEArchivia, caricaAllegati
 import { contentTypeDaNomeFile } from "@/lib/estrazione-documenti";
 import { etichettaPerCategoria } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
-import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, type EsitoEsecuzione } from "@/lib/import-automatico";
+import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, eseguiSoloArchiviazione, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { decodificaEntita } from "@/lib/continuazione";
 import type { MailImport } from "@/lib/gmail";
-import type { Delega } from "@prisma/client";
+import type { Delega, StatoAtto, StatoPratica, StatoProgetto, EsitoContestazione, TipoProgetto } from "@prisma/client";
 import { z } from "zod";
 
 const DELEGHE = [
@@ -16,12 +16,18 @@ const DELEGHE = [
   "ACCESSIBILITA", "CIMITERI", "POLITICHE_ABITATIVE", "DIGITALIZZAZIONE", "MANUTENZIONE_PATRIMONIO",
 ] as const;
 
+const STATI_ATTO = ["DA_ESAMINARE", "ESAMINATO", "RISPOSTO", "ARCHIVIATO"] as const;
+
 const schemaAutomatico = z.object({
   indiceOdgForzato: z.number().int().min(0).optional(),
+  statoIniziale: z.enum(STATI_ATTO).optional(),
 });
 
 const schemaManuale = z.object({
-  categoria: z.enum(["segnalazione", "progetto", "contestazione", "giustifica"]),
+  // "giustifica" (minuscolo) rimossa (redesign 2026-07-24): la creazione di una Giustifica passa
+  // sempre dal gestore GESTORI_AUTOMATICO["GIUSTIFICA"] (via esegui_automatico), mai più da qui —
+  // il tree-picker in UI non propone più questo ramo come categoria "manuale".
+  categoria: z.enum(["segnalazione", "progetto", "contestazione"]),
   titolo: z.string().min(1).max(200),
   descrizione: z.string().optional(),
   delega: z.enum(DELEGHE).optional(),
@@ -31,17 +37,41 @@ const schemaManuale = z.object({
   emailMittente: z.string().optional(),
   protocollo: z.string().optional(),
   dataProtocollo: z.string().optional(),
+  // Stato iniziale (redesign 2026-07-24): enum pertinente al tipo risultante — StatoPratica per
+  // segnalazione, StatoProgetto per progetto, EsitoContestazione per contestazione (nome del
+  // selettore generico lato client, valore effettivo mappato sul campo giusto per entità qui
+  // sotto). Validato liberamente (stessa fiducia già riposta in delega/gestore poco sopra): unico
+  // utente autenticato, i valori arrivano sempre dai dropdown già filtrati lato UI.
+  stato: z.string().optional(),
+  // Solo per categoria "progetto": ipotesi Progetto/Attività, sempre sovrascrivibile a mano.
+  tipoProgetto: z.enum(["PROGETTO", "ATTIVITA"]).optional(),
 });
 
-const GESTORI_AUTOMATICO: Record<string, (m: MailImport, indiceOdgForzato?: number) => Promise<EsitoEsecuzione>> = {
-  CONVOCAZIONE_CONSIGLIO: (m, i) => eseguiConvocazione(m, "CONVOCAZIONE_CONSIGLIO", i),
-  CONVOCAZIONE_COMMISSIONE: (m, i) => eseguiConvocazione(m, "CONVOCAZIONE_COMMISSIONE", i),
-  CONVOCAZIONE_GIUNTA: (m, i) => eseguiConvocazione(m, "CONVOCAZIONE_GIUNTA", i),
-  MOZIONE: m => eseguiMozioneOInterrogazione(m, "MOZIONE"),
-  INTERROGAZIONE: m => eseguiMozioneOInterrogazione(m, "INTERROGAZIONE"),
+// Azione esplicita per eseguire un gestore Automatico indipendentemente dal binario originale
+// della riga (redesign 2026-07-24): il tree-picker in UI copre l'intero albero delle etichette,
+// non solo quelle compatibili col binario di partenza — una mail finita Manuale/Incerto perché
+// priva dell'etichetta Gmail nota (es. una Mozione arrivata senza etichetta) deve poter comunque
+// essere confermata come tale, con lo stesso gestore/stessa creazione Atto del percorso Automatico
+// "nativo" qui sotto. Additiva rispetto al ramo AUTOMATICO esistente, non lo sostituisce: quel
+// ramo resta il percorso di default, invariato, per le righe non toccate dal picker.
+const schemaEseguiAutomatico = z.object({
+  azione: z.literal("esegui_automatico"),
+  categoria: z.string(),
+  indiceOdgForzato: z.number().int().min(0).optional(),
+  statoIniziale: z.enum(STATI_ATTO).optional(),
+});
+
+const GESTORI_AUTOMATICO: Record<string, (m: MailImport, indiceOdgForzato?: number, statoIniziale?: StatoAtto) => Promise<EsitoEsecuzione>> = {
+  CONVOCAZIONE_CONSIGLIO: (m, i, s) => eseguiConvocazione(m, "CONVOCAZIONE_CONSIGLIO", i, s),
+  CONVOCAZIONE_COMMISSIONE: (m, i, s) => eseguiConvocazione(m, "CONVOCAZIONE_COMMISSIONE", i, s),
+  CONVOCAZIONE_GIUNTA: (m, i, s) => eseguiConvocazione(m, "CONVOCAZIONE_GIUNTA", i, s),
+  MOZIONE: (m, _i, s) => eseguiMozioneOInterrogazione(m, "MOZIONE", s),
+  INTERROGAZIONE: (m, _i, s) => eseguiMozioneOInterrogazione(m, "INTERROGAZIONE", s),
   VERBALE_GIUNTA: m => eseguiVerbaleGiunta(m),
   GIUSTIFICA: m => eseguiGiustifica(m),
   CONTINUAZIONE: m => eseguiContinuazione(m),
+  DELIBERA_GIUNTA: () => eseguiSoloArchiviazione(),
+  DETERMINA_GIUNTA: () => eseguiSoloArchiviazione(),
 };
 
 async function caricaFile(cartella: string, buffer: Buffer, nomeFile: string): Promise<string> {
@@ -104,14 +134,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // schema, quello Manuale/Incerto/"Crea nuova" più sotto riusa lo stesso oggetto già letto.
   const body = await req.json().catch(() => ({}));
 
-  if (riga.binario === "AUTOMATICO") {
-    const parsed = schemaAutomatico.safeParse(body);
-    if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  // Override esplicito da tree-picker: controllato PRIMA del ramo binario-implicito qui sotto,
+  // così una riga già Automatico ma corretta a mano a un'altra categoria Automatico passa di qui,
+  // non dal suo ramo "nativo" (che userebbe sempre riga.categoriaProposta, ignorando la scelta).
+  const parsedEseguiAutomatico = schemaEseguiAutomatico.safeParse(body);
+  if (parsedEseguiAutomatico.success) {
+    const { categoria, indiceOdgForzato, statoIniziale } = parsedEseguiAutomatico.data;
+    const gestore = GESTORI_AUTOMATICO[categoria];
+    if (!gestore) return NextResponse.json({ error: "Categoria non riconosciuta" }, { status: 400 });
 
-    const gestore = riga.categoriaProposta ? GESTORI_AUTOMATICO[riga.categoriaProposta] : undefined;
-    if (!gestore) return NextResponse.json({ error: "Categoria Automatico non riconosciuta" }, { status: 500 });
-
-    const esito = await gestore(mail, parsed.data.indiceOdgForzato);
+    const esito = await gestore(mail, indiceOdgForzato, statoIniziale);
 
     if (esito.esito === "AMBIGUO") {
       return NextResponse.json({ ambiguo: true, candidati: esito.candidati });
@@ -121,9 +153,31 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: esito.errore }, { status: 500 });
     }
 
-    await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: esito.entitaId } });
+    await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: esito.entitaId ?? null } });
+    await applicaEtichetteFinali(id, riga.messageId, esito.etichetta ?? etichettaPerCategoria(categoria));
+    return NextResponse.json({ completato: true, entitaId: esito.entitaId ?? null });
+  }
+
+  if (riga.binario === "AUTOMATICO") {
+    const parsed = schemaAutomatico.safeParse(body);
+    if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+
+    const gestore = riga.categoriaProposta ? GESTORI_AUTOMATICO[riga.categoriaProposta] : undefined;
+    if (!gestore) return NextResponse.json({ error: "Categoria Automatico non riconosciuta" }, { status: 500 });
+
+    const esito = await gestore(mail, parsed.data.indiceOdgForzato, parsed.data.statoIniziale);
+
+    if (esito.esito === "AMBIGUO") {
+      return NextResponse.json({ ambiguo: true, candidati: esito.candidati });
+    }
+    if (esito.esito === "ERRORE") {
+      await prisma.mailProcessata.update({ where: { id }, data: { esito: "ERRORE" } });
+      return NextResponse.json({ error: esito.errore }, { status: 500 });
+    }
+
+    await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: esito.entitaId ?? null } });
     await applicaEtichetteFinali(id, riga.messageId, esito.etichetta ?? (riga.categoriaProposta ? etichettaPerCategoria(riga.categoriaProposta) : null));
-    return NextResponse.json({ completato: true, entitaId: esito.entitaId });
+    return NextResponse.json({ completato: true, entitaId: esito.entitaId ?? null });
   }
 
   if (riga.binario === "PROPOSTA_CONTINUAZIONE" && (body as { azione?: string })?.azione === "collega") {
@@ -136,7 +190,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: esito.errore }, { status: 500 });
     }
     if (esito.esito === "COMPLETATO") {
-      await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: esito.entitaId } });
+      await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: esito.entitaId ?? null } });
       await applicaEtichetteFinali(id, riga.messageId, esito.etichetta ?? null);
       return NextResponse.json({ completato: true, entitaId: esito.entitaId });
     }
@@ -162,7 +216,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: esito.errore }, { status: 500 });
     }
     if (esito.esito === "COMPLETATO") {
-      await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: esito.entitaId } });
+      await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: esito.entitaId ?? null } });
       await applicaEtichetteFinali(id, riga.messageId, esito.etichetta ?? null);
       return NextResponse.json({ completato: true, entitaId: esito.entitaId });
     }
@@ -192,7 +246,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           protocollo: d.protocollo || null,
           dataProtocollo: d.dataProtocollo || null,
           tipo: "SEGNALAZIONE",
-          stato: "APERTA",
+          stato: (d.stato as StatoPratica) || "APERTA",
           priorita: "MEDIA",
           messageId: riga.messageId,
           delega: d.delega as never,
@@ -206,31 +260,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       entitaId = String(pratica.id);
     } else if (d.categoria === "progetto") {
       const progetto = await prisma.progetto.create({
-        data: { titolo: d.titolo, delega: d.delega as never, descrizione: d.descrizione || null, messageId: riga.messageId },
+        data: {
+          titolo: d.titolo,
+          delega: d.delega as never,
+          descrizione: d.descrizione || null,
+          messageId: riga.messageId,
+          ...(d.stato ? { stato: d.stato as StatoProgetto } : {}),
+          ...(d.tipoProgetto ? { tipo: d.tipoProgetto as TipoProgetto } : {}),
+        },
       });
       await Promise.all(mail.allegati.map(async a => {
         const url = await caricaFile(`progetto-${progetto.id}`, a.buffer, a.filename);
         await prisma.documentoProgetto.create({ data: { progettoId: progetto.id, nomeFile: a.filename, storageUrl: url } });
       }));
       entitaId = progetto.id;
-    } else if (d.categoria === "contestazione") {
+    } else {
       const contestazione = await prisma.contestazione.create({
-        data: { gestore: d.gestore as never, oggetto: d.titolo, descrizione: d.descrizione || null, messageId: riga.messageId },
+        data: {
+          gestore: d.gestore as never,
+          oggetto: d.titolo,
+          descrizione: d.descrizione || null,
+          messageId: riga.messageId,
+          // Il selettore "stato iniziale" generico lato client mappa qui sul campo esito
+          // (nome specifico di Contestazione, StatoPratica/StatoProgetto altrove).
+          ...(d.stato ? { esito: d.stato as EsitoContestazione } : {}),
+        },
       });
       await Promise.all(mail.allegati.map(async a => {
         const url = await caricaFile(`contestazione-${contestazione.id}`, a.buffer, a.filename);
         await prisma.documentoContestazione.create({ data: { contestazioneId: contestazione.id, nomeFile: a.filename, storageUrl: url } });
       }));
       entitaId = contestazione.id;
-    } else {
-      const giustifica = await prisma.giustifica.create({
-        data: { oggetto: d.titolo, ufficioMittente: d.nomeMittente || mail.nomeMittente || null, messageId: riga.messageId },
-      });
-      await Promise.all(mail.allegati.map(async a => {
-        const url = await caricaFile(`giustifica-${giustifica.id}`, a.buffer, a.filename);
-        await prisma.documentoGiustifica.create({ data: { giustificaId: giustifica.id, nomeFile: a.filename, storageUrl: url } });
-      }));
-      entitaId = giustifica.id;
     }
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
