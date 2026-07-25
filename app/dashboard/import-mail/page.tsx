@@ -103,6 +103,10 @@ type Voce = {
   // Messaggio precedente nello stesso thread, mai processato, trovato dal server — già usato per
   // titolo/descrizione/corpoCompleto sopra (redesign 2026-07-25). Solo per mostrare l'avviso.
   messaggioPrecedente: { messageId: string; oggetto: string; data: string } | null;
+  // Entità già esistente trovata nello stesso thread (redesign 2026-07-25, complementare a
+  // messaggioPrecedente sopra — mai valorizzati insieme): usata per pre-selezionare "Collega a
+  // esistente" invece di lasciare una ricerca manuale a vuoto.
+  entitaEsistenteThread: { tipo: "pratica" | "progetto" | "contestazione" | "atto"; id: string; titolo: string } | null;
   // stato locale: etichetta attualmente scelta nel picker (path completo, es. "Deleghe/Viabilità")
   etichettaScelta: string;
   delega: string;
@@ -166,12 +170,12 @@ function toVoce(r: CampiServer): Voce {
     candidatiOdg: null,
     indiceOdgScelto: null,
     modalitaProposta: "collega",
-    modalitaManuale: "nuova",
-    tipoCollegamento: "",
+    modalitaManuale: r.entitaEsistenteThread ? "collega_esistente" : "nuova",
+    tipoCollegamento: r.entitaEsistenteThread?.tipo ?? "",
     ricercaTesto: "",
     risultatiRicerca: [],
     cercandoEntita: false,
-    entitaSelezionata: null,
+    entitaSelezionata: r.entitaEsistenteThread,
   };
 }
 
@@ -455,6 +459,12 @@ export default function ImportMailPage() {
                   {v.messaggioPrecedente && (
                     <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
                       ℹ️ Trovato messaggio precedente non ancora processato nello stesso thread (del {v.messaggioPrecedente.data}, oggetto &quot;{v.messaggioPrecedente.oggetto}&quot;) — titolo e testo sopra sono già quelli di quel messaggio, verrà usato come origine. Il messaggio corrente diventerà una nota nel diario.
+                    </div>
+                  )}
+
+                  {v.entitaEsistenteThread && (
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 text-xs text-purple-800">
+                      🔗 Trovata nello stesso thread un&apos;entità già esistente: <strong>{TIPO_ENTITA_LABEL[v.entitaEsistenteThread.tipo] ?? v.entitaEsistenteThread.tipo}: {v.entitaEsistenteThread.titolo}</strong> — collegamento pre-selezionato qui sotto (&quot;Crea nuova&quot; per ignorarlo), verifica prima di confermare.
                     </div>
                   )}
 

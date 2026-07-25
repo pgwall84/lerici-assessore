@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getMailPerId, getMappaEtichette } from "@/lib/gmail";
 import { trovaVoceTassonomia, calcolaEtichettaProposta } from "@/lib/motore-mail";
 import { classificaDelega, classificaGestore } from "@/lib/classificatore";
-import { decodificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
+import { decodificaEntita, trovaMessaggioPrecedenteNonProcessato, trovaEntitaEsistenteNelThread } from "@/lib/continuazione";
 
 const TAKE = 10;
 
@@ -73,6 +73,15 @@ export async function GET(req: NextRequest) {
       : null;
     const mailBase = messaggioPrecedente ?? mail;
 
+    // Complementare allo swap sopra (diagnosi 2026-07-25): se il thread contiene già un'entità
+    // nota (anche creata prima che MailProcessata esistesse — vedi Pratica #16, caso reale),
+    // propone il collegamento diretto invece di lasciare la riga come "Manuale" generico da
+    // agganciare a mano con una ricerca per titolo che spesso non trova nulla. Mai insieme allo
+    // swap: se c'è uno swap, trovaMessaggioPrecedenteNonProcessato ha già escluso questo caso.
+    const entitaEsistenteThread = (!messaggioPrecedente && (r.binario === "MANUALE" || r.binario === "INCERTO"))
+      ? await trovaEntitaEsistenteNelThread(mail)
+      : null;
+
     return {
       mailProcessataId: r.id,
       binario: r.binario,
@@ -99,6 +108,7 @@ export async function GET(req: NextRequest) {
       messaggioPrecedente: messaggioPrecedente
         ? { messageId: messaggioPrecedente.messageId, oggetto: messaggioPrecedente.titolo, data: messaggioPrecedente.data }
         : null,
+      entitaEsistenteThread,
     };
   }));
   const risultatoFiltrato = risultato.filter((r): r is NonNullable<typeof r> => r !== null);

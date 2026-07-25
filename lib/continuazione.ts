@@ -12,6 +12,19 @@ export type TipoEntitaContinuazione = "pratica" | "progetto" | "contestazione";
  * corrente diventa una nota. Se il più vecchio ha già una riga MailProcessata (di qualunque
  * esito — già un'entità, in attesa, non rilevante...), non è questo il caso: si procede
  * normalmente, senza indovinare (diagnosi 2026-07-25).
+ *
+ * Caso reale emerso il 2026-07-25: il messaggio più vecchio del thread era già l'origine di una
+ * Pratica creata PRIMA che il tracciamento MailProcessata esistesse (quindi senza riga propria)
+ * — "nessuna riga" non equivale a "mai processato". Prima di proporlo come origine libera,
+ * verifica anche se è già il messageId diretto di un'entità esistente — su TUTTE le entità che
+ * hanno un campo messageId (non solo le 3 di trovaPerThreadIdDaMessageIdDiretto, che è invece
+ * scoperta apposta alle sole pratica/progetto/contestazione perché alimenta l'esecuzione
+ * automatica di CONTINUAZIONE, che sa agganciare solo quelle tre — qui serve invece la copertura
+ * più ampia, verificata dal vivo il 2026-07-25 su un caso reale di due Giustifiche nello stesso
+ * thread, sfuggito alla versione più stretta). Se già preso, niente swap — vedi
+ * trovaEntitaEsistenteNelThread per il percorso complementare che invece propone quel
+ * collegamento invece di lasciarlo un vicolo cieco (limitato ai tipi che "Collega a esistente"
+ * sa effettivamente gestire).
  */
 export async function trovaMessaggioPrecedenteNonProcessato(m: MailImport): Promise<MailImport | null> {
   if (!m.threadId) return null;
@@ -24,7 +37,60 @@ export async function trovaMessaggioPrecedenteNonProcessato(m: MailImport): Prom
   const esistente = await prisma.mailProcessata.findUnique({ where: { messageId: piuVecchio } });
   if (esistente) return null;
 
+  if (await messageIdGiaDiUnEntita(piuVecchio)) return null;
+
   return getMailPerId(piuVecchio);
+}
+
+// Vero se messageId è già il campo messageId di una qualunque entità (a prescindere dal tipo) —
+// usato solo per la verifica di sicurezza sopra, non per proporre un collegamento (per quello
+// serve sapere tipo/titolo, vedi trovaEntitaEsistenteNelThread sotto).
+async function messageIdGiaDiUnEntita(messageId: string): Promise<boolean> {
+  const [p, pr, c, g, a] = await Promise.all([
+    prisma.pratica.findFirst({ where: { messageId }, select: { id: true } }),
+    prisma.progetto.findFirst({ where: { messageId }, select: { id: true } }),
+    prisma.contestazione.findFirst({ where: { messageId }, select: { id: true } }),
+    prisma.giustifica.findFirst({ where: { messageId }, select: { id: true } }),
+    prisma.attoPoliticoAmministrativo.findFirst({ where: { messageId }, select: { id: true } }),
+  ]);
+  return !!(p || pr || c || g || a);
+}
+
+/**
+ * Complementare a trovaMessaggioPrecedenteNonProcessato (sopra): quando il thread contiene già
+ * un'entità nota (a prescindere da MailProcessata — copre lo stesso caso legacy), la propone
+ * come collegamento diretto invece di lasciare la riga come "Manuale" generico, da agganciare a
+ * mano con una ricerca per titolo che spesso non trova nulla (il titolo può essere stato
+ * riscritto rispetto all'oggetto originale della mail, come nel caso reale del 2026-07-25).
+ * Limitata ai tipi che "Collega a esistente" sa effettivamente gestire (pratica/progetto/
+ * contestazione/atto — non giustifica, che non ha un percorso di collegamento manuale in UI).
+ */
+export async function trovaEntitaEsistenteNelThread(m: MailImport): Promise<{ tipo: TipoEntitaContinuazione | "atto"; id: string; titolo: string } | null> {
+  if (!m.threadId) return null;
+  const idMessaggi = (await elencaMessaggiThread(m.threadId)).filter(id => id !== m.messageId);
+  if (idMessaggi.length === 0) return null;
+
+  const [pratiche, progetti, contestazioni, atti] = await Promise.all([
+    prisma.pratica.findMany({ where: { messageId: { in: idMessaggi } } }),
+    prisma.progetto.findMany({ where: { messageId: { in: idMessaggi } } }),
+    prisma.contestazione.findMany({ where: { messageId: { in: idMessaggi } } }),
+    prisma.attoPoliticoAmministrativo.findMany({ where: { messageId: { in: idMessaggi } } }),
+  ]);
+
+  const candidati: { tipo: TipoEntitaContinuazione | "atto"; id: string; titolo: string }[] = [
+    ...pratiche.map(p => ({ tipo: "pratica" as const, id: String(p.id), titolo: p.titolo })),
+    ...progetti.map(p => ({ tipo: "progetto" as const, id: p.id, titolo: p.titolo })),
+    ...contestazioni.map(c => ({ tipo: "contestazione" as const, id: c.id, titolo: c.oggetto })),
+    ...atti.map(a => ({ tipo: "atto" as const, id: a.id, titolo: a.oggetto })),
+  ];
+
+  if (candidati.length === 0) return null;
+  if (candidati.length === 1) return candidati[0];
+
+  console.error(
+    `[continuazione] thread ${m.threadId}: più di un'entità (${candidati.map(c => `${c.tipo}:${c.id}`).join(", ")}) ha il proprio messageId in questo thread — nessun collegamento proposto, va scelto a mano.`,
+  );
+  return null;
 }
 
 export type EntitaTrovata = {
