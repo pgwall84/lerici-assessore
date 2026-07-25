@@ -7,6 +7,7 @@ import {
   TIPO_COLORE, TIPO_LABEL
 } from "@/lib/constants";
 import type { Appuntamento, Delega, Foto, MailInviata, Nota, Pratica, StatoPratica, StoricoStato, TipoPratica } from "@prisma/client";
+import { MailOriginaleButton } from "@/components/MailOriginaleButton";
 
 type PraticaFull = Pratica & {
   persona: { id: number; nome: string; cognome: string; ruolo: string | null; telefono: string | null; email: string | null } | null;
@@ -408,6 +409,7 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
           Creata il {new Date(pratica.createdAt).toLocaleDateString("it-IT")}
           {pratica.chiusaAt && ` · Chiusa il ${new Date(pratica.chiusaAt).toLocaleDateString("it-IT")}`}
         </p>
+        <MailOriginaleButton messageId={pratica.messageId} />
       </div>
 
       {/* Segnalante */}

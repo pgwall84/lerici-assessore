@@ -4,6 +4,7 @@ import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { TIPO_ATTO_LABEL, STATO_ATTO_LABEL, STATO_ATTO_COLORE, PRIORITA_LABEL } from "@/lib/constants";
 import { PrioritaBadge } from "@/components/PrioritaBadge";
+import { MailOriginaleButton } from "@/components/MailOriginaleButton";
 import type { AttoPoliticoAmministrativo, DocumentoAtto, Priorita, RuoloDocumento, StatoAtto } from "@prisma/client";
 
 const TIPO_LABEL = TIPO_ATTO_LABEL;
@@ -237,6 +238,7 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
         {atto.dataSeduta && <p className="text-gray-700">📅 Seduta il {new Date(atto.dataSeduta).toLocaleDateString("it-IT")}</p>}
         {atto.scadenzaRisposta && <p className="text-gray-700">⏰ Risposta entro il {new Date(atto.scadenzaRisposta).toLocaleDateString("it-IT")}</p>}
         <p className="text-gray-400 text-xs">Creato il {new Date(atto.createdAt).toLocaleDateString("it-IT")}</p>
+        <MailOriginaleButton messageId={atto.messageId} />
       </div>
 
       {/* Collegamento al Consiglio (Mozioni/Interrogazioni) */}

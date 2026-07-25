@@ -8,6 +8,7 @@ import {
   STATO_PROGETTO_LABEL, STATO_PROGETTO_COLORE, TIPO_PROGETTO_LABEL, TIPO_PROGETTO_COLORE, TIPO_PROGETTO_ICONA,
 } from "@/lib/constants";
 import { PrioritaBadge } from "@/components/PrioritaBadge";
+import { MailOriginaleButton } from "@/components/MailOriginaleButton";
 import type { ArgomentoRiunione, Delega, DocumentoProgetto, NotaProgetto, Priorita, Progetto, Riunione, StatoProgetto, TipoProgetto } from "@prisma/client";
 
 type RiunioneCard = Riunione & { argomenti: ArgomentoRiunione[] };
@@ -253,6 +254,7 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
         <p className="text-gray-400 text-xs">
           Creato il {new Date(progetto.createdAt).toLocaleDateString("it-IT")}
         </p>
+        <MailOriginaleButton messageId={progetto.messageId} />
       </div>
 
       {/* Responsabile */}

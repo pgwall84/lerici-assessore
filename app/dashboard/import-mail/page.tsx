@@ -98,6 +98,9 @@ type Voce = {
   delegaSuggerita: string;
   gestoreSuggerito: string;
   entitaProposta: { tipo: string; id: string; titolo: string; ambiguo: boolean } | null;
+  // Messaggio precedente nello stesso thread, mai processato, trovato dal server — già usato per
+  // titolo/descrizione/corpoCompleto sopra (redesign 2026-07-25). Solo per mostrare l'avviso.
+  messaggioPrecedente: { messageId: string; oggetto: string; data: string } | null;
   // stato locale: etichetta attualmente scelta nel picker (path completo, es. "Deleghe/Viabilità")
   etichettaScelta: string;
   delega: string;
@@ -437,6 +440,12 @@ export default function ImportMailPage() {
                   <div className="bg-gray-50 rounded-lg p-2 text-xs text-gray-600 max-h-32 overflow-y-auto whitespace-pre-wrap">
                     {v.corpoCompleto || "(corpo vuoto)"}
                   </div>
+
+                  {v.messaggioPrecedente && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+                      ℹ️ Trovato messaggio precedente non ancora processato nello stesso thread (del {v.messaggioPrecedente.data}, oggetto &quot;{v.messaggioPrecedente.oggetto}&quot;) — titolo e testo sopra sono già quelli di quel messaggio, verrà usato come origine. Il messaggio corrente diventerà una nota nel diario.
+                    </div>
+                  )}
 
                   {v.candidatiOdg ? (
                     <div className="space-y-2">

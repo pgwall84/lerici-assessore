@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getMailPerId, getMappaEtichette } from "@/lib/gmail";
 import { trovaVoceTassonomia, calcolaEtichettaProposta } from "@/lib/motore-mail";
 import { classificaDelega, classificaGestore } from "@/lib/classificatore";
-import { decodificaEntita } from "@/lib/continuazione";
+import { decodificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
 
 const TAKE = 10;
 
@@ -63,6 +63,16 @@ export async function GET(req: NextRequest) {
       ?? voceNota?.etichetta
       ?? calcolaEtichettaProposta(r.categoriaProposta, `${mail.titolo} ${mail.descrizione}`);
 
+    // Prima di mostrare la mail come base per una nuova entità (Manuale/Incerto — Automatico
+    // segue invece un trattamento diverso, vedi endpoint di conferma): verifica se un messaggio
+    // precedente nello stesso thread, mai processato, ha probabilmente il contesto pieno.
+    // Mostrato in chiaro qui, PRIMA della conferma finale — resta sotto controllo umano anche se
+    // lo scambio è automatico (diagnosi 2026-07-25).
+    const messaggioPrecedente = (r.binario === "MANUALE" || r.binario === "INCERTO")
+      ? await trovaMessaggioPrecedenteNonProcessato(mail)
+      : null;
+    const mailBase = messaggioPrecedente ?? mail;
+
     return {
       mailProcessataId: r.id,
       binario: r.binario,
@@ -74,11 +84,11 @@ export async function GET(req: NextRequest) {
       mittente: mail.mittente,
       nomeMittente: mail.nomeMittente,
       emailMittente: mail.emailMittente,
-      titolo: mail.titolo,
+      titolo: mailBase.titolo,
       // Non troncato a 1500 come descrizione (che resta così solo per le chiamate AI) — la
       // preview in UI mostrava un corpo tagliato a metà frase, vedi diagnosi 2026-07-25.
-      corpoCompleto: mail.corpoCompleto,
-      descrizione: mail.descrizione,
+      corpoCompleto: mailBase.corpoCompleto,
+      descrizione: mailBase.descrizione,
       protocollo: mail.protocollo,
       dataProtocollo: mail.dataProtocollo,
       hasAllegati: mail.allegati.length > 0,
@@ -86,6 +96,9 @@ export async function GET(req: NextRequest) {
       delegaSuggerita,
       gestoreSuggerito: classificaGestore(`${mail.mittente} ${mail.oggettoOriginale}`),
       entitaProposta,
+      messaggioPrecedente: messaggioPrecedente
+        ? { messageId: messaggioPrecedente.messageId, oggetto: messaggioPrecedente.titolo, data: messaggioPrecedente.data }
+        : null,
     };
   }));
   const risultatoFiltrato = risultato.filter((r): r is NonNullable<typeof r> => r !== null);

@@ -3,6 +3,30 @@ import { getMailPerId, elencaMessaggiThread, type MailImport } from "@/lib/gmail
 
 export type TipoEntitaContinuazione = "pratica" | "progetto" | "contestazione";
 
+/**
+ * Prima di creare una NUOVA entità (non quando si aggancia a una già esistente — quello è il
+ * flusso di continuazione sopra): verifica se il messaggio fa parte di un thread Gmail con un
+ * messaggio precedente MAI processato dal tool (nessuna riga MailProcessata per lui). Se sì,
+ * quel messaggio più vecchio ha probabilmente il contesto pieno (es. la richiesta originale con
+ * i dettagli, non solo una risposta di follow-up) — va usato come vera origine, il messaggio
+ * corrente diventa una nota. Se il più vecchio ha già una riga MailProcessata (di qualunque
+ * esito — già un'entità, in attesa, non rilevante...), non è questo il caso: si procede
+ * normalmente, senza indovinare (diagnosi 2026-07-25).
+ */
+export async function trovaMessaggioPrecedenteNonProcessato(m: MailImport): Promise<MailImport | null> {
+  if (!m.threadId) return null;
+  const messaggi = await elencaMessaggiThread(m.threadId);
+  if (messaggi.length <= 1) return null;
+
+  const piuVecchio = messaggi[0];
+  if (piuVecchio === m.messageId) return null;
+
+  const esistente = await prisma.mailProcessata.findUnique({ where: { messageId: piuVecchio } });
+  if (esistente) return null;
+
+  return getMailPerId(piuVecchio);
+}
+
 export type EntitaTrovata = {
   tipo: TipoEntitaContinuazione;
   id: string;

@@ -6,7 +6,7 @@ import { contentTypeDaNomeFile } from "@/lib/estrazione-documenti";
 import { etichettaPerCategoria, ALBERO_ETICHETTE_MAIL } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
 import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, eseguiCollegamentoAtto, eseguiSoloArchiviazione, type EsitoEsecuzione } from "@/lib/import-automatico";
-import { decodificaEntita } from "@/lib/continuazione";
+import { decodificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
 import type { MailImport } from "@/lib/gmail";
 import type { Delega, StatoAtto, StatoPratica, StatoProgetto, EsitoContestazione, TipoProgetto } from "@prisma/client";
 import { z } from "zod";
@@ -160,6 +160,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const gestore = GESTORI_AUTOMATICO[categoria];
     if (!gestore) return NextResponse.json({ error: "Categoria non riconosciuta" }, { status: 400 });
 
+    // Atti/Giustifica non hanno un diario dove far confluire il messaggio corrente come nota —
+    // a differenza di Manuale (segnalazione/progetto/contestazione, più sotto), qui non si
+    // swappa l'origine: si blocca con un messaggio chiaro, stesso principio del declassamento
+    // nel cron (diagnosi 2026-07-25). Una volta che il messaggio precedente verrà scansionato
+    // per conto suo, questo si potrà agganciare con "Collega a esistente".
+    const messaggioPrecedenteAuto = await trovaMessaggioPrecedenteNonProcessato(mail);
+    if (messaggioPrecedenteAuto) {
+      return NextResponse.json({
+        error: `Trovato un messaggio precedente non ancora processato nello stesso thread (del ${messaggioPrecedenteAuto.data}, oggetto "${messaggioPrecedenteAuto.titolo}"). Attendi che venga scansionato separatamente, poi usa "Collega a esistente" per agganciare questa mail all'entità che verrà creata da quello.`,
+      }, { status: 409 });
+    }
+
     const esito = await gestore(mail, indiceOdgForzato, statoIniziale);
 
     if (esito.esito === "AMBIGUO") {
@@ -181,6 +193,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const gestore = riga.categoriaProposta ? GESTORI_AUTOMATICO[riga.categoriaProposta] : undefined;
     if (!gestore) return NextResponse.json({ error: "Categoria Automatico non riconosciuta" }, { status: 500 });
+
+    // CONTINUAZIONE esclusa: lì ci si aggancia a un'entità già esistente, non se ne crea una
+    // nuova — il caso qui sotto non si applica (diagnosi 2026-07-25).
+    if (riga.categoriaProposta !== "CONTINUAZIONE") {
+      const messaggioPrecedenteAuto = await trovaMessaggioPrecedenteNonProcessato(mail);
+      if (messaggioPrecedenteAuto) {
+        return NextResponse.json({
+          error: `Trovato un messaggio precedente non ancora processato nello stesso thread (del ${messaggioPrecedenteAuto.data}, oggetto "${messaggioPrecedenteAuto.titolo}"). Attendi che venga scansionato separatamente, poi usa "Collega a esistente" per agganciare questa mail all'entità che verrà creata da quello.`,
+        }, { status: 409 });
+      }
+    }
 
     const esito = await gestore(mail, parsed.data.indiceOdgForzato, parsed.data.statoIniziale);
 
@@ -255,6 +278,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Gestore obbligatorio" }, { status: 400 });
   }
 
+  // Prima di creare una nuova entità (umano presente su questa schermata): verifica dal vivo —
+  // dati vivi, non fidarsi di quanto mostrato in precedenza — se esiste un messaggio precedente
+  // nello stesso thread mai processato. Se sì, ha probabilmente il contesto pieno (la richiesta
+  // originale, non solo una risposta di follow-up): diventa la vera origine (messageId +
+  // allegati), il messaggio corrente (quello originariamente proposto) diventa una nota nel
+  // diario invece del contenuto iniziale (diagnosi 2026-07-25).
+  const messaggioPrecedente = await trovaMessaggioPrecedenteNonProcessato(mail);
+  const mailOrigine = messaggioPrecedente ?? mail;
+  const testoNotaOrigineSpostata = mail.descrizione.trim() || mail.titolo;
+
   let entitaId: string;
   try {
     if (d.categoria === "segnalazione") {
@@ -268,14 +301,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           tipo: "SEGNALAZIONE",
           stato: (d.stato as StatoPratica) || "APERTA",
           priorita: "MEDIA",
-          messageId: riga.messageId,
+          messageId: mailOrigine.messageId,
           delega: d.delega as never,
           ...(d.nomeMittente ? { segnalante: { create: { nome: d.nomeMittente, email: d.emailMittente || null } } } : {}),
         },
       });
-      if (mail.allegati.length) {
-        const urls = await caricaAllegatiMail(mail.allegati, pratica.id);
+      if (mailOrigine.allegati.length) {
+        const urls = await caricaAllegatiMail(mailOrigine.allegati, pratica.id);
         await Promise.all(urls.map(url => prisma.foto.create({ data: { praticaId: pratica.id, path: url } })));
+      }
+      if (messaggioPrecedente) {
+        await prisma.nota.create({ data: { praticaId: pratica.id, testo: testoNotaOrigineSpostata } });
+        if (mail.allegati.length) {
+          const urls = await caricaAllegatiMail(mail.allegati, pratica.id);
+          await Promise.all(urls.map(url => prisma.foto.create({ data: { praticaId: pratica.id, path: url } })));
+        }
       }
       entitaId = String(pratica.id);
     } else if (d.categoria === "progetto") {
@@ -284,15 +324,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           titolo: d.titolo,
           delega: d.delega as never,
           descrizione: d.descrizione || null,
-          messageId: riga.messageId,
+          messageId: mailOrigine.messageId,
           ...(d.stato ? { stato: d.stato as StatoProgetto } : {}),
           ...(d.tipoProgetto ? { tipo: d.tipoProgetto as TipoProgetto } : {}),
         },
       });
-      await Promise.all(mail.allegati.map(async a => {
+      await Promise.all(mailOrigine.allegati.map(async a => {
         const url = await caricaFile(`progetto-${progetto.id}`, a.buffer, a.filename);
         await prisma.documentoProgetto.create({ data: { progettoId: progetto.id, nomeFile: a.filename, storageUrl: url } });
       }));
+      if (messaggioPrecedente) {
+        await prisma.notaProgetto.create({ data: { progettoId: progetto.id, testo: testoNotaOrigineSpostata } });
+        await Promise.all(mail.allegati.map(async a => {
+          const url = await caricaFile(`progetto-${progetto.id}`, a.buffer, a.filename);
+          await prisma.documentoProgetto.create({ data: { progettoId: progetto.id, nomeFile: a.filename, storageUrl: url } });
+        }));
+      }
       entitaId = progetto.id;
     } else {
       const contestazione = await prisma.contestazione.create({
@@ -300,23 +347,54 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           gestore: d.gestore as never,
           oggetto: d.titolo,
           descrizione: d.descrizione || null,
-          messageId: riga.messageId,
+          messageId: mailOrigine.messageId,
           // Il selettore "stato iniziale" generico lato client mappa qui sul campo esito
           // (nome specifico di Contestazione, StatoPratica/StatoProgetto altrove).
           ...(d.stato ? { esito: d.stato as EsitoContestazione } : {}),
         },
       });
-      await Promise.all(mail.allegati.map(async a => {
+      await Promise.all(mailOrigine.allegati.map(async a => {
         const url = await caricaFile(`contestazione-${contestazione.id}`, a.buffer, a.filename);
         await prisma.documentoContestazione.create({ data: { contestazioneId: contestazione.id, nomeFile: a.filename, storageUrl: url } });
       }));
+      if (messaggioPrecedente) {
+        await prisma.notaContestazione.create({ data: { contestazioneId: contestazione.id, testo: testoNotaOrigineSpostata } });
+        await Promise.all(mail.allegati.map(async a => {
+          const url = await caricaFile(`contestazione-${contestazione.id}`, a.buffer, a.filename);
+          await prisma.documentoContestazione.create({ data: { contestazioneId: contestazione.id, nomeFile: a.filename, storageUrl: url } });
+        }));
+      }
       entitaId = contestazione.id;
     }
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 
+  const etichettaScelta = etichettaPerCategoria(d.categoria, d.delega as Delega | undefined);
   await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: entitaId } });
-  await applicaEtichetteFinali(id, riga.messageId, etichettaPerCategoria(d.categoria, d.delega as Delega | undefined), nomiEtichetteAttuali);
+  await applicaEtichetteFinali(id, riga.messageId, etichettaScelta, nomiEtichetteAttuali);
+
+  // Il messaggio precedente usato come origine va marcato come già gestito — nuova riga
+  // MailProcessata COMPLETATO, per evitare che un futuro scan lo ritratti come nuovo — ed
+  // etichettato/archiviato a sua volta, stesso trattamento del messaggio corrente.
+  if (messaggioPrecedente) {
+    await prisma.mailProcessata.create({
+      data: {
+        messageId: messaggioPrecedente.messageId,
+        threadId: messaggioPrecedente.threadId || null,
+        mittente: messaggioPrecedente.mittente,
+        oggetto: messaggioPrecedente.oggettoOriginale,
+        categoriaProposta: d.categoria,
+        confidenza: 1,
+        binario: "MANUALE",
+        esito: "COMPLETATO",
+        entitaCreataId: entitaId,
+      },
+    });
+    if (etichettaScelta) {
+      try { await applicaEtichettaEArchivia(messaggioPrecedente.messageId, etichettaScelta); } catch { /* comodo, non blocca l'esito */ }
+    }
+  }
+
   return NextResponse.json({ completato: true, entitaId });
 }

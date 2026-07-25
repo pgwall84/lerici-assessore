@@ -3,6 +3,7 @@
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import type { Contestazione, DocumentoContestazione, EsitoContestazione, Gestore } from "@prisma/client";
+import { MailOriginaleButton } from "@/components/MailOriginaleButton";
 
 const GESTORE_LABEL: Record<Gestore, string> = {
   ACAM_AMBIENTE: "ACAM Ambiente",
@@ -151,6 +152,7 @@ export default function ContestazionePage({ params }: { params: Promise<{ id: st
         <p className="text-gray-400 text-xs">
           Creata il {new Date(contestazione.createdAt).toLocaleDateString("it-IT")}
         </p>
+        <MailOriginaleButton messageId={contestazione.messageId} />
       </div>
 
       {/* Cambio esito */}

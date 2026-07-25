@@ -4,7 +4,7 @@ import { classificaMail } from "@/lib/claude";
 import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria, ETICHETTA_NON_RILEVANTE, ETICHETTA_DELEGA_DA_SPECIFICARE, ALBERO_ETICHETTE_MAIL, type VoceTassonomiaMail } from "@/lib/constants";
 import { classificaDelega } from "@/lib/classificatore";
 import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiSoloArchiviazione, type EsitoEsecuzione } from "@/lib/import-automatico";
-import { trovaContinuazioneForte, trovaContinuazioneDebole, codificaEntita } from "@/lib/continuazione";
+import { trovaContinuazioneForte, trovaContinuazioneDebole, codificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
 import type { Delega } from "@prisma/client";
 
 const SOGLIA_CONFIDENZA = 0.6;
@@ -344,6 +344,19 @@ export async function eseguiMotoreMail(maxPagineScan = 20, maxEsecuzioni = 15): 
         errori.push(`${riga.messageId}: mail non trovata su Gmail`);
         await prisma.mailProcessata.update({ where: { id: riga.id }, data: { esito: "ERRORE" } });
         continue;
+      }
+
+      // Prima di creare una nuova entità senza supervisione diretta: se il messaggio fa parte di
+      // un thread con un precedente mai processato, non swappare l'origine in silenzio — si
+      // ferma solo questa riga (stesso trattamento già riservato al caso ODG ambiguo nello zip),
+      // il resto del ciclo prosegue. CONTINUAZIONE è esclusa: lì ci si aggancia a un'entità già
+      // esistente, non se ne crea una nuova — il caso descritto non si applica (diagnosi 2026-07-25).
+      if (riga.categoriaProposta !== "CONTINUAZIONE") {
+        const messaggioPrecedente = await trovaMessaggioPrecedenteNonProcessato(mail);
+        if (messaggioPrecedente) {
+          inAttesa++;
+          continue;
+        }
       }
 
       const esito = await gestore(mail);
