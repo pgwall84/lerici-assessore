@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
-import { getMailPerId, marcaImportata, applicaEtichettaEArchivia, caricaAllegatiMail } from "@/lib/gmail";
+import { getMailPerId, marcaImportata, applicaEtichettaEArchivia, rimuoviEtichetta, getMappaEtichette, caricaAllegatiMail } from "@/lib/gmail";
 import { contentTypeDaNomeFile } from "@/lib/estrazione-documenti";
-import { etichettaPerCategoria } from "@/lib/constants";
+import { etichettaPerCategoria, ALBERO_ETICHETTE_MAIL } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
 import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, eseguiSoloArchiviazione, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { decodificaEntita } from "@/lib/continuazione";
@@ -93,11 +93,23 @@ async function caricaFile(cartella: string, buffer: Buffer, nomeFile: string): P
 // Solo dopo che l'etichetta di categoria è stata applicata con successo (mai prima), la mail
 // esce anche da INBOX (e non è più UNREAD) — vedi applicaEtichettaEArchivia. Se l'etichetta
 // fallisce, l'archiviazione non viene nemmeno tentata: la mail resta in INBOX, ritrovabile.
-async function applicaEtichetteFinali(rigaId: string, messageId: string, nomeEtichetta: string | null) {
+async function applicaEtichetteFinali(rigaId: string, messageId: string, nomeEtichetta: string | null, etichetteAttuali: string[]) {
   try { await marcaImportata(messageId); } catch { /* etichetta di comodo, non blocca l'esito */ }
   if (nomeEtichetta) {
     try {
       await applicaEtichettaEArchivia(messageId, nomeEtichetta);
+      // Solo dopo che la nuova etichetta è stata applicata con successo (mai prima — se
+      // l'applicazione fosse fallita, meglio lasciare la mail con l'etichetta vecchia che senza
+      // nessuna): rimuove le altre etichette della tassonomia già presenti sul messaggio che non
+      // coincidono più con la scelta finale. Caso reale (diagnosi 2026-07-25): una mail arrivata
+      // con "Segnalazioni" (da un filtro Gmail) ricategorizzata a mano su "Deleghe/Viabilità" —
+      // senza questo, restava con entrambe le etichette contemporaneamente. Vale per qualunque
+      // cambio, non solo "Segnalazioni": confronta contro ALBERO_ETICHETTE_MAIL, la stessa lista
+      // di categorie mostrata nel tree-picker.
+      const daRimuovere = etichetteAttuali.filter(e => e !== nomeEtichetta && ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === e));
+      for (const e of daRimuovere) {
+        try { await rimuoviEtichetta(messageId, e); } catch { /* comodo, non blocca l'esito */ }
+      }
     } catch {
       // Reso visibile, non solo tollerato: stesso principio dei contatori Bandi.
       await prisma.mailProcessata.update({ where: { id: rigaId }, data: { archiviazioneFallita: true } }).catch(() => {});
@@ -130,6 +142,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const mail = await getMailPerId(riga.messageId);
   if (!mail) return NextResponse.json({ error: "Mail non trovata su Gmail" }, { status: 404 });
 
+  // Nomi delle etichette Gmail attualmente sul messaggio — usati da applicaEtichetteFinali per
+  // ripulire quelle della tassonomia in conflitto con la categoria scelta alla conferma.
+  const mappaEtichette = await getMappaEtichette();
+  const nomiEtichetteAttuali = mail.labelIds.map(lid => mappaEtichette.get(lid)).filter((n): n is string => !!n);
+
   // Letto una sola volta: il branch AUTOMATICO/PROPOSTA_CONTINUAZIONE lo valida col proprio
   // schema, quello Manuale/Incerto/"Crea nuova" più sotto riusa lo stesso oggetto già letto.
   const body = await req.json().catch(() => ({}));
@@ -154,7 +171,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: esito.entitaId ?? null } });
-    await applicaEtichetteFinali(id, riga.messageId, esito.etichetta ?? etichettaPerCategoria(categoria));
+    await applicaEtichetteFinali(id, riga.messageId, esito.etichetta ?? etichettaPerCategoria(categoria), nomiEtichetteAttuali);
     return NextResponse.json({ completato: true, entitaId: esito.entitaId ?? null });
   }
 
@@ -176,7 +193,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: esito.entitaId ?? null } });
-    await applicaEtichetteFinali(id, riga.messageId, esito.etichetta ?? (riga.categoriaProposta ? etichettaPerCategoria(riga.categoriaProposta) : null));
+    await applicaEtichetteFinali(id, riga.messageId, esito.etichetta ?? (riga.categoriaProposta ? etichettaPerCategoria(riga.categoriaProposta) : null), nomiEtichetteAttuali);
     return NextResponse.json({ completato: true, entitaId: esito.entitaId ?? null });
   }
 
@@ -191,7 +208,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     if (esito.esito === "COMPLETATO") {
       await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: esito.entitaId ?? null } });
-      await applicaEtichetteFinali(id, riga.messageId, esito.etichetta ?? null);
+      await applicaEtichetteFinali(id, riga.messageId, esito.etichetta ?? null, nomiEtichetteAttuali);
       return NextResponse.json({ completato: true, entitaId: esito.entitaId });
     }
     // "AMBIGUO" non è previsto per eseguiCollegamento — trattato come errore difensivo.
@@ -217,7 +234,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     if (esito.esito === "COMPLETATO") {
       await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: esito.entitaId ?? null } });
-      await applicaEtichetteFinali(id, riga.messageId, esito.etichetta ?? null);
+      await applicaEtichetteFinali(id, riga.messageId, esito.etichetta ?? null, nomiEtichetteAttuali);
       return NextResponse.json({ completato: true, entitaId: esito.entitaId });
     }
     return NextResponse.json({ error: "Esito inatteso" }, { status: 500 });
@@ -297,6 +314,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: entitaId } });
-  await applicaEtichetteFinali(id, riga.messageId, etichettaPerCategoria(d.categoria, d.delega as Delega | undefined));
+  await applicaEtichetteFinali(id, riga.messageId, etichettaPerCategoria(d.categoria, d.delega as Delega | undefined), nomiEtichetteAttuali);
   return NextResponse.json({ completato: true, entitaId });
 }

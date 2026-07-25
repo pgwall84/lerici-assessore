@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import { getMailsPaginato, getMappaEtichette, getMailPerId, marcaImportata, marcaIncerto, marcaNonRilevante, applicaEtichettaEArchivia, archiviaMail, type MailImport } from "@/lib/gmail";
+import { getMailsPaginato, getMappaEtichette, getMailPerId, marcaImportata, marcaIncerto, marcaNonRilevante, applicaEtichettaEArchivia, archiviaMail, rimuoviEtichetta, type MailImport } from "@/lib/gmail";
 import { classificaMail } from "@/lib/claude";
-import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria, ETICHETTA_NON_RILEVANTE, ETICHETTA_DELEGA_DA_SPECIFICARE, type VoceTassonomiaMail } from "@/lib/constants";
+import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria, ETICHETTA_NON_RILEVANTE, ETICHETTA_DELEGA_DA_SPECIFICARE, ALBERO_ETICHETTE_MAIL, type VoceTassonomiaMail } from "@/lib/constants";
 import { classificaDelega } from "@/lib/classificatore";
 import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiSoloArchiviazione, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { trovaContinuazioneForte, trovaContinuazioneDebole, codificaEntita } from "@/lib/continuazione";
@@ -149,6 +149,14 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
       });
       try {
         await marcaNonRilevante(m.messageId);
+        // Rimuove eventuali etichette di tassonomia già presenti (es. "Segnalazioni" da un
+        // filtro Gmail troppo largo) che l'AI ha giudicato non pertinenti — stesso principio del
+        // fix sul tree-picker (diagnosi 2026-07-25): mai lasciare due etichette di categoria in
+        // conflitto sullo stesso messaggio, qui come lì.
+        const daRimuovere = nomiEtichette.filter(e => ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === e));
+        for (const e of daRimuovere) {
+          try { await rimuoviEtichetta(m.messageId, e); } catch { /* comodo, non blocca l'esito */ }
+        }
         // Solo dopo l'etichetta con successo: fuori INBOX, non più da leggere (sessione 2, mail).
         await archiviaMail(m.messageId);
       } catch {
