@@ -8,7 +8,8 @@ const updateSchema = z.object({
   delega: z.enum([
     "VIABILITA","AMBIENTE","RIFIUTI","SISTEMA_IDRICO","ILLUMINAZIONE",
     "ACCESSIBILITA","CIMITERI","POLITICHE_ABITATIVE","DIGITALIZZAZIONE","MANUTENZIONE_PATRIMONIO",
-  ]).optional(),
+  ]).nullable().optional(),
+  categoriaVaria: z.enum(["COMUNICAZIONI", "ANCI", "REGIONE", "GOVERNO"]).nullable().optional(),
   stato: z.enum(["IN_CORSO", "SOSPESO", "CONCLUSO", "ARCHIVIATO"]).optional(),
   tipo: z.enum(["PROGETTO", "ATTIVITA"]).optional(),
   priorita: z.enum(["BASSA", "MEDIA", "ALTA"]).nullable().optional(),
@@ -47,9 +48,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const existing = await prisma.progetto.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Non trovato" }, { status: 404 });
 
+  const data = { ...parsed.data };
+  // "Varie": delega e categoriaVaria sono mutuamente esclusive — impostarne una azzera l'altra.
+  if (data.delega) data.categoriaVaria = null;
+  else if (data.categoriaVaria) data.delega = null;
+
   const progetto = await prisma.progetto.update({
     where: { id },
-    data: parsed.data,
+    data,
     include: { responsabile: true },
   });
 

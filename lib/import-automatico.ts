@@ -5,7 +5,7 @@ import { riformattaOdg } from "@/lib/claude";
 import { etichettaPerCategoria } from "@/lib/constants";
 import { trovaContinuazioneForte, type TipoEntitaContinuazione } from "@/lib/continuazione";
 import { supabase } from "@/lib/supabase";
-import type { TipoAtto, StatoAtto } from "@prisma/client";
+import type { TipoAtto, StatoAtto, CategoriaVaria } from "@prisma/client";
 
 const BUCKET = "foto";
 
@@ -217,6 +217,27 @@ export async function eseguiGiustifica(m: MailImport): Promise<EsitoEsecuzione> 
 }
 
 /**
+ * "Varie" (evolutiva 2026-07-25): Progetto senza vera delega, instradato per dominio mittente
+ * (ANCI/Regione/Governo — vedi categoriaVariaPerDominio in lib/classificatore.ts). Nasce con
+ * tipo: ATTIVITA di default, non PROGETTO — sono più spesso comunicazioni istituzionali che
+ * iniziative con inizio/fine definiti (resta comunque modificabile a mano come ogni altro campo).
+ */
+export async function eseguiProgettoVarie(m: MailImport, categoriaVaria: CategoriaVaria): Promise<EsitoEsecuzione> {
+  try {
+    const progetto = await prisma.progetto.create({
+      data: { titolo: m.titolo, categoriaVaria, tipo: "ATTIVITA", messageId: m.messageId },
+    });
+    await Promise.all(m.allegati.map(async a => {
+      const url = await caricaFile(`progetto-${progetto.id}`, a.buffer, a.filename);
+      await prisma.documentoProgetto.create({ data: { progettoId: progetto.id, nomeFile: a.filename, storageUrl: url } });
+    }));
+    return { esito: "COMPLETATO", entitaId: progetto.id };
+  } catch (e) {
+    return { esito: "ERRORE", errore: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
  * Aggancia una mail a un'entità già nota (tipo+id espliciti, non ri-derivata) con una nota nel
  * diario + eventuali allegati — nessuna nuova entità creata. Condivisa da:
  * - `eseguiContinuazione`, per i match forti (protocollo/threadId), che prima ri-trova l'entità
@@ -247,7 +268,7 @@ export async function eseguiCollegamento(m: MailImport, tipo: TipoEntitaContinua
         const url = await caricaFile(`progetto-${progetto.id}`, a.buffer, a.filename);
         await prisma.documentoProgetto.create({ data: { progettoId: progetto.id, nomeFile: a.filename, storageUrl: url } });
       }));
-      return { esito: "COMPLETATO", entitaId: progetto.id, etichetta: etichettaPerCategoria("progetto", progetto.delega) ?? undefined };
+      return { esito: "COMPLETATO", entitaId: progetto.id, etichetta: etichettaPerCategoria("progetto", progetto.delega ?? undefined, progetto.categoriaVaria ?? undefined) ?? undefined };
     }
 
     // contestazione

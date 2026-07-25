@@ -2,8 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { getMailsPaginato, getMappaEtichette, getMailPerId, marcaImportata, marcaIncerto, marcaNonRilevante, applicaEtichettaEArchivia, archiviaMail, rimuoviEtichetta, type MailImport } from "@/lib/gmail";
 import { classificaMail } from "@/lib/claude";
 import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria, ETICHETTA_NON_RILEVANTE, ETICHETTA_DELEGA_DA_SPECIFICARE, ALBERO_ETICHETTE_MAIL, type VoceTassonomiaMail } from "@/lib/constants";
-import { classificaDelega } from "@/lib/classificatore";
-import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiSoloArchiviazione, type EsitoEsecuzione } from "@/lib/import-automatico";
+import { classificaDelega, categoriaVariaPerDominio } from "@/lib/classificatore";
+import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiSoloArchiviazione, eseguiProgettoVarie, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { trovaContinuazioneForte, trovaContinuazioneDebole, codificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
 import type { Delega } from "@prisma/client";
 
@@ -116,6 +116,26 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
       },
     });
     return voce.binario;
+  }
+
+  // "Varie" (evolutiva 2026-07-25): instradamento per dominio mittente, regola scritta nel
+  // codice (categoriaVariaPerDominio) — non un'etichetta Gmail preesistente. Deterministico come
+  // le regole sopra: controllato prima della classificazione AI, nessuna chiamata sprecata.
+  const categoriaVariaDominio = categoriaVariaPerDominio(m.emailMittente);
+  if (categoriaVariaDominio) {
+    await prisma.mailProcessata.create({
+      data: {
+        messageId: m.messageId,
+        threadId: m.threadId || null,
+        mittente: m.mittente,
+        oggetto: m.oggettoOriginale,
+        categoriaProposta: categoriaVariaDominio,
+        etichettaProposta: etichettaPerCategoria(categoriaVariaDominio),
+        confidenza: 1,
+        binario: "AUTOMATICO",
+      },
+    });
+    return "AUTOMATICO";
   }
 
   // Nessuna etichetta nota sul messaggio: prova la classificazione AI prima di arrendersi a Incerto.
@@ -294,6 +314,9 @@ const GESTORI_AUTOMATICO: Record<string, (m: MailImport) => Promise<EsitoEsecuzi
   CONTINUAZIONE: eseguiContinuazione,
   DELIBERA_GIUNTA: eseguiSoloArchiviazione,
   DETERMINA_GIUNTA: eseguiSoloArchiviazione,
+  ANCI: m => eseguiProgettoVarie(m, "ANCI"),
+  REGIONE: m => eseguiProgettoVarie(m, "REGIONE"),
+  GOVERNO: m => eseguiProgettoVarie(m, "GOVERNO"),
 };
 
 export type RisultatoMotore = {

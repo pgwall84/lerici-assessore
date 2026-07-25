@@ -5,7 +5,7 @@ import { getMailPerId, marcaImportata, applicaEtichettaEArchivia, rimuoviEtichet
 import { contentTypeDaNomeFile } from "@/lib/estrazione-documenti";
 import { etichettaPerCategoria, ALBERO_ETICHETTE_MAIL } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
-import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, eseguiCollegamentoAtto, eseguiSoloArchiviazione, type EsitoEsecuzione } from "@/lib/import-automatico";
+import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, eseguiCollegamentoAtto, eseguiSoloArchiviazione, eseguiProgettoVarie, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { decodificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
 import type { MailImport } from "@/lib/gmail";
 import type { Delega, StatoAtto, StatoPratica, StatoProgetto, EsitoContestazione, TipoProgetto } from "@prisma/client";
@@ -31,7 +31,7 @@ const schemaManuale = z.object({
   titolo: z.string().min(1).max(200),
   descrizione: z.string().optional(),
   delega: z.enum(DELEGHE).optional(),
-  gestore: z.enum(["ACAM_AMBIENTE", "ACAM_ACQUE", "ATC"]).optional(),
+  gestore: z.enum(["ACAM_AMBIENTE", "ACAM_ACQUE", "ATC", "ENEL"]).optional(),
   luogo: z.string().optional(),
   nomeMittente: z.string().optional(),
   emailMittente: z.string().optional(),
@@ -45,6 +45,10 @@ const schemaManuale = z.object({
   stato: z.string().optional(),
   // Solo per categoria "progetto": ipotesi Progetto/Attività, sempre sovrascrivibile a mano.
   tipoProgetto: z.enum(["PROGETTO", "ATTIVITA"]).optional(),
+  // "Varie" (evolutiva 2026-07-25): alternativa alla delega per progetto, mai entrambe — scelta
+  // dal tree-picker ("Varie/Comunicazioni" è l'unica raggiungibile da qui, ANCI/Regione/Governo
+  // hanno un proprio gestore Automatico e non passano da questo schema).
+  categoriaVaria: z.enum(["COMUNICAZIONI", "ANCI", "REGIONE", "GOVERNO"]).optional(),
 });
 
 // Azione esplicita per eseguire un gestore Automatico indipendentemente dal binario originale
@@ -72,6 +76,9 @@ const GESTORI_AUTOMATICO: Record<string, (m: MailImport, indiceOdgForzato?: numb
   CONTINUAZIONE: m => eseguiContinuazione(m),
   DELIBERA_GIUNTA: () => eseguiSoloArchiviazione(),
   DETERMINA_GIUNTA: () => eseguiSoloArchiviazione(),
+  ANCI: m => eseguiProgettoVarie(m, "ANCI"),
+  REGIONE: m => eseguiProgettoVarie(m, "REGIONE"),
+  GOVERNO: m => eseguiProgettoVarie(m, "GOVERNO"),
 };
 
 async function caricaFile(cartella: string, buffer: Buffer, nomeFile: string): Promise<string> {
@@ -271,8 +278,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   const d = parsed.data;
 
-  if ((d.categoria === "segnalazione" || d.categoria === "progetto") && !d.delega) {
+  if (d.categoria === "segnalazione" && !d.delega) {
     return NextResponse.json({ error: "Delega obbligatoria" }, { status: 400 });
+  }
+  // "Varie" (evolutiva 2026-07-25): un progetto ha o una vera delega o una categoriaVaria, mai
+  // né entrambe né nessuna delle due.
+  if (d.categoria === "progetto" && !d.delega && !d.categoriaVaria) {
+    return NextResponse.json({ error: "Delega o categoria Varie obbligatoria" }, { status: 400 });
   }
   if (d.categoria === "contestazione" && !d.gestore) {
     return NextResponse.json({ error: "Gestore obbligatorio" }, { status: 400 });
@@ -322,9 +334,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const progetto = await prisma.progetto.create({
         data: {
           titolo: d.titolo,
-          delega: d.delega as never,
           descrizione: d.descrizione || null,
           messageId: mailOrigine.messageId,
+          ...(d.delega ? { delega: d.delega as never } : {}),
+          ...(d.categoriaVaria ? { categoriaVaria: d.categoriaVaria as never } : {}),
           ...(d.stato ? { stato: d.stato as StatoProgetto } : {}),
           ...(d.tipoProgetto ? { tipo: d.tipoProgetto as TipoProgetto } : {}),
         },
@@ -370,7 +383,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 
-  const etichettaScelta = etichettaPerCategoria(d.categoria, d.delega as Delega | undefined);
+  const etichettaScelta = etichettaPerCategoria(d.categoria, d.delega as Delega | undefined, d.categoriaVaria as never);
   await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: entitaId } });
   await applicaEtichetteFinali(id, riga.messageId, etichettaScelta, nomiEtichetteAttuali);
 

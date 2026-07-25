@@ -92,15 +92,29 @@ export function classificaDelega(testo: string): string | null {
   return best.score > 0 ? best.delega : null;
 }
 
-const GESTORE_KEYWORDS: [RegExp, "ACAM_ACQUE" | "ACAM_AMBIENTE" | "ATC"][] = [
+const GESTORE_KEYWORDS: [RegExp, "ACAM_ACQUE" | "ACAM_AMBIENTE" | "ATC" | "ENEL"][] = [
   [/acam.{0,3}acque/i, "ACAM_ACQUE"],
   [/acam.{0,3}ambiente/i, "ACAM_AMBIENTE"],
   [/\batc\b/i, "ATC"],
+  [/\benel\b/i, "ENEL"],
 ];
 
-export function classificaGestore(testo: string): "ACAM_ACQUE" | "ACAM_AMBIENTE" | "ATC" {
+export function classificaGestore(testo: string): "ACAM_ACQUE" | "ACAM_AMBIENTE" | "ATC" | "ENEL" {
   for (const [re, gestore] of GESTORE_KEYWORDS) if (re.test(testo)) return gestore;
   return "ACAM_AMBIENTE";
+}
+
+// Instradamento per dominio mittente (evolutiva "Varie" 2026-07-25): regola scritta nel codice,
+// non un'etichetta Gmail preesistente — verificabile e correggibile qui, non nascosta in un
+// filtro Gmail. REGIONE controllata prima di GOVERNO di proposito: un dominio già catturato da
+// REGIONE non deve mai finire genericamente in GOVERNO. "COMUNICAZIONI" non ha un dominio
+// affidabile — resta fuori da questa funzione, sempre a classificazione manuale.
+export function categoriaVariaPerDominio(emailMittente: string): "ANCI" | "REGIONE" | "GOVERNO" | null {
+  const email = emailMittente.toLowerCase().trim();
+  if (email.endsWith("@anci.it")) return "ANCI";
+  if (email.includes("regione.liguria.it")) return "REGIONE";
+  if (email.endsWith(".gov.it")) return "GOVERNO";
+  return null;
 }
 
 export function estraiTitolo(oggetto: string, corpo: string): string {

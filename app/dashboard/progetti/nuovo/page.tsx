@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { DELEGHE_LABEL, PRIORITA_LABEL } from "@/lib/constants";
-import type { Delega, Priorita } from "@prisma/client";
+import { DELEGHE_LABEL, PRIORITA_LABEL, CATEGORIA_VARIA_LABEL } from "@/lib/constants";
+import type { CategoriaVaria, Delega, Priorita } from "@prisma/client";
 
 type Persona = { id: number; nome: string; cognome: string; ruolo: string | null };
 
@@ -14,6 +14,7 @@ export default function NuovoProgettoPage() {
   const [form, setForm] = useState({
     titolo: "",
     delega: "" as Delega | "",
+    categoriaVaria: "" as CategoriaVaria | "",
     descrizione: "",
     responsabileId: "" as string,
     fonteFinanziamento: "",
@@ -26,14 +27,15 @@ export default function NuovoProgettoPage() {
 
   async function salva(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.titolo.trim() || !form.delega) return;
+    if (!form.titolo.trim() || (!form.delega && !form.categoriaVaria)) return;
     setSaving(true);
     const res = await fetch("/api/progetti", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         titolo: form.titolo.trim(),
-        delega: form.delega,
+        delega: form.delega || undefined,
+        categoriaVaria: form.categoriaVaria || undefined,
         descrizione: form.descrizione || undefined,
         responsabileId: form.responsabileId ? Number(form.responsabileId) : undefined,
         fonteFinanziamento: form.fonteFinanziamento || undefined,
@@ -69,17 +71,31 @@ export default function NuovoProgettoPage() {
         </div>
 
         <div>
-          <label className="text-xs text-gray-500">Delega *</label>
+          <label className="text-xs text-gray-500">Delega / Categoria *</label>
           <select
-            value={form.delega}
-            onChange={e => setForm(f => ({ ...f, delega: e.target.value as Delega | "" }))}
+            value={form.delega || (form.categoriaVaria ? `varia:${form.categoriaVaria}` : "")}
+            onChange={e => {
+              const v = e.target.value;
+              if (v.startsWith("varia:")) {
+                setForm(f => ({ ...f, delega: "", categoriaVaria: v.slice(6) as CategoriaVaria }));
+              } else {
+                setForm(f => ({ ...f, delega: v as Delega | "", categoriaVaria: "" }));
+              }
+            }}
             required
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">Seleziona…</option>
-            {(Object.keys(DELEGHE_LABEL) as Delega[]).map(d => (
-              <option key={d} value={d}>{DELEGHE_LABEL[d]}</option>
-            ))}
+            <optgroup label="Delega">
+              {(Object.keys(DELEGHE_LABEL) as Delega[]).map(d => (
+                <option key={d} value={d}>{DELEGHE_LABEL[d]}</option>
+              ))}
+            </optgroup>
+            <optgroup label="Varie">
+              {(Object.keys(CATEGORIA_VARIA_LABEL) as CategoriaVaria[]).map(c => (
+                <option key={c} value={`varia:${c}`}>{CATEGORIA_VARIA_LABEL[c]}</option>
+              ))}
+            </optgroup>
           </select>
         </div>
 
@@ -134,7 +150,7 @@ export default function NuovoProgettoPage() {
 
         <button
           type="submit"
-          disabled={saving || !form.titolo.trim() || !form.delega}
+          disabled={saving || !form.titolo.trim() || (!form.delega && !form.categoriaVaria)}
           className="w-full bg-blue-600 text-white rounded-lg py-2.5 text-sm font-medium disabled:opacity-50 hover:bg-blue-700"
         >
           {saving ? "Salvataggio…" : "Salva progetto"}

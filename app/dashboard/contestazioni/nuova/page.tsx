@@ -8,9 +8,10 @@ const GESTORE_LABEL: Record<Gestore, string> = {
   ACAM_AMBIENTE: "ACAM Ambiente",
   ACAM_ACQUE: "ACAM Acque",
   ATC: "ATC",
+  ENEL: "ENEL",
 };
 
-const GESTORI: Gestore[] = ["ACAM_AMBIENTE", "ACAM_ACQUE", "ATC"];
+const GESTORI: Gestore[] = ["ACAM_AMBIENTE", "ACAM_ACQUE", "ATC", "ENEL"];
 
 export default function NuovaContestazionePage() {
   const router = useRouter();

@@ -9,6 +9,7 @@ const GESTORE_LABEL: Record<Gestore, string> = {
   ACAM_AMBIENTE: "ACAM Ambiente",
   ACAM_ACQUE: "ACAM Acque",
   ATC: "ATC",
+  ENEL: "ENEL",
 };
 
 const ESITO_LABEL: Record<EsitoContestazione, string> = {

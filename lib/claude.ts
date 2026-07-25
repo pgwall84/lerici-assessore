@@ -86,7 +86,7 @@ const PROMPT_CLASSIFICA = (mittente: string, oggetto: string, estratto: string) 
 Categorie possibili, una sola:
 - "segnalazione": un cittadino segnala un problema/disservizio al Comune
 - "progetto": riguarda un progetto/iniziativa amministrativa in corso, legato a una delega specifica
-- "contestazione": il Comune contesta un mancato servizio a un gestore esterno (ACAM Ambiente, ACAM Acque, ATC)
+- "contestazione": il Comune contesta un mancato servizio a un gestore esterno (ACAM Ambiente, ACAM Acque, ATC, ENEL)
 - "non_rilevante": non è materia di nessuna delle categorie sopra — newsletter, bollettini informativi, inviti a eventi/convegni, comunicazioni generiche che non richiedono la creazione di una pratica
 
 Se il testo non permette di scegliere con sufficiente sicurezza una di queste categorie, rispondi con categoria null.

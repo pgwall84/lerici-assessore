@@ -8,7 +8,8 @@ const schema = z.object({
   delega: z.enum([
     "VIABILITA","AMBIENTE","RIFIUTI","SISTEMA_IDRICO","ILLUMINAZIONE",
     "ACCESSIBILITA","CIMITERI","POLITICHE_ABITATIVE","DIGITALIZZAZIONE","MANUTENZIONE_PATRIMONIO",
-  ]),
+  ]).optional(),
+  categoriaVaria: z.enum(["COMUNICAZIONI", "ANCI", "REGIONE", "GOVERNO"]).optional(),
   descrizione: z.string().optional(),
   responsabileId: z.number().int().optional(),
   fonteFinanziamento: z.string().optional(),
@@ -53,6 +54,9 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  if (!parsed.data.delega && !parsed.data.categoriaVaria) {
+    return NextResponse.json({ error: "Delega o categoria Varie obbligatoria" }, { status: 400 });
+  }
 
   const progetto = await prisma.progetto.create({
     data: parsed.data,

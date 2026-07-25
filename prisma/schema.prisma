@@ -134,7 +134,10 @@ model MailInviata {
 model Progetto {
   id                 String              @id @default(cuid())
   titolo             String
-  delega             Delega
+  // Opzionale (evolutiva "Varie" 2026-07-25): un Progetto ha o una vera delega o una
+  // categoriaVaria, mai entrambe — validato in app, non a livello di schema.
+  delega             Delega?
+  categoriaVaria     CategoriaVaria?
   stato              StatoProgetto       @default(IN_CORSO)
   // Distingue un progetto strutturato/duraturo da un intervento tecnico puntuale (Attività) —
   // stesso modello, stesso diario/documenti/responsabile, solo un badge/filtro diverso in UI.
@@ -157,6 +160,16 @@ model Progetto {
 enum TipoProgetto {
   PROGETTO
   ATTIVITA
+}
+
+// "Varie" (evolutiva 2026-07-25): usata quando un Progetto non ha una vera delega — comunicazioni
+// istituzionali/enti esterni instradati per dominio mittente (ANCI/Regione/Governo) o senza un
+// segnale di dominio affidabile (Comunicazioni, sempre a conferma manuale).
+enum CategoriaVaria {
+  COMUNICAZIONI
+  ANCI
+  REGIONE
+  GOVERNO
 }
 
 enum StatoProgetto {
@@ -250,6 +263,7 @@ enum Gestore {
   ACAM_AMBIENTE
   ACAM_ACQUE
   ATC
+  ENEL
 }
 
 enum EsitoContestazione {

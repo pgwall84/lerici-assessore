@@ -3,15 +3,19 @@
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import type { Contestazione, DocumentoContestazione, EsitoContestazione, Gestore } from "@prisma/client";
-import { ESITO_CONTESTAZIONE_LABEL as ESITO_LABEL, ESITO_CONTESTAZIONE_COLORE as ESITO_COLORE } from "@/lib/constants";
+import {
+  ESITO_CONTESTAZIONE_LABEL as ESITO_LABEL, ESITO_CONTESTAZIONE_COLORE as ESITO_COLORE,
+  ESITI_CONTESTAZIONE_OPERATIVA, ESITI_CONTESTAZIONE_ARCHIVIO,
+} from "@/lib/constants";
 
 const GESTORE_LABEL: Record<Gestore, string> = {
   ACAM_AMBIENTE: "ACAM Ambiente",
   ACAM_ACQUE: "ACAM Acque",
   ATC: "ATC",
+  ENEL: "ENEL",
 };
 
-const GESTORI: Gestore[] = ["ACAM_AMBIENTE", "ACAM_ACQUE", "ATC"];
+const GESTORI: Gestore[] = ["ACAM_AMBIENTE", "ACAM_ACQUE", "ATC", "ENEL"];
 
 type ContestazioneCard = Contestazione & { documenti: DocumentoContestazione[] };
 
@@ -23,6 +27,7 @@ export default function ContestazioniPage() {
   const [contestazioni, setContestazioni] = useState<ContestazioneCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [vista, setVista] = useState<"elenco" | "andamento">("elenco");
+  const [vistaGruppo, setVistaGruppo] = useState<"operativa" | "archivio">("operativa");
   const [filtroGestore, setFiltroGestore] = useState<Gestore | "">("");
   const [filtroEsito, setFiltroEsito] = useState<EsitoContestazione | "">("");
 
@@ -33,27 +38,32 @@ export default function ContestazioniPage() {
       .catch(() => setLoading(false));
   }, []);
 
-  const contestazioniFiltrate = contestazioni.filter(c =>
+  const esitiDelVista = vistaGruppo === "operativa" ? ESITI_CONTESTAZIONE_OPERATIVA : ESITI_CONTESTAZIONE_ARCHIVIO;
+  const contestazioniVista = contestazioni.filter(c => esitiDelVista.includes(c.esito));
+  const totaleOperativa = contestazioni.filter(c => ESITI_CONTESTAZIONE_OPERATIVA.includes(c.esito)).length;
+  const totaleArchivio = contestazioni.filter(c => ESITI_CONTESTAZIONE_ARCHIVIO.includes(c.esito)).length;
+
+  const contestazioniFiltrate = contestazioniVista.filter(c =>
     (!filtroGestore || c.gestore === filtroGestore) &&
     (!filtroEsito || c.esito === filtroEsito)
   );
 
-  // Vista aggregata: conteggio per gestore, per mese (dal più recente)
+  // Vista aggregata: conteggio per gestore, per mese (dal più recente), nell'ambito Operativa/Archivio corrente
   const andamento = useMemo(() => {
     const mesi = new Map<string, Record<Gestore, number>>();
-    for (const c of contestazioni) {
+    for (const c of contestazioniVista) {
       const chiave = meseAnno(c.createdAt);
-      if (!mesi.has(chiave)) mesi.set(chiave, { ACAM_AMBIENTE: 0, ACAM_ACQUE: 0, ATC: 0 });
+      if (!mesi.has(chiave)) mesi.set(chiave, { ACAM_AMBIENTE: 0, ACAM_ACQUE: 0, ATC: 0, ENEL: 0 });
       mesi.get(chiave)![c.gestore]++;
     }
     return Array.from(mesi.entries()).slice(0, 12);
-  }, [contestazioni]);
+  }, [contestazioniVista]);
 
   const totaliPerGestore = useMemo(() => {
-    const totali: Record<Gestore, number> = { ACAM_AMBIENTE: 0, ACAM_ACQUE: 0, ATC: 0 };
-    for (const c of contestazioni) totali[c.gestore]++;
+    const totali: Record<Gestore, number> = { ACAM_AMBIENTE: 0, ACAM_ACQUE: 0, ATC: 0, ENEL: 0 };
+    for (const c of contestazioniVista) totali[c.gestore]++;
     return totali;
-  }, [contestazioni]);
+  }, [contestazioniVista]);
 
   return (
     <div className="space-y-4 pb-8">
@@ -65,6 +75,30 @@ export default function ContestazioniPage() {
         >
           + Nuova
         </Link>
+      </div>
+
+      {/* Tab Operativa / Archivio */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => { setVistaGruppo("operativa"); setFiltroEsito(""); }}
+          className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors
+            ${vistaGruppo === "operativa" ? "bg-blue-600 text-white shadow-sm" : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+        >
+          ⚡ Operativa
+          <span className={`ml-2 text-xs font-mono ${vistaGruppo === "operativa" ? "text-blue-200" : "text-gray-400"}`}>
+            {totaleOperativa}
+          </span>
+        </button>
+        <button
+          onClick={() => { setVistaGruppo("archivio"); setFiltroEsito(""); }}
+          className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors
+            ${vistaGruppo === "archivio" ? "bg-gray-700 text-white shadow-sm" : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+        >
+          📁 Archivio
+          <span className={`ml-2 text-xs font-mono ${vistaGruppo === "archivio" ? "text-gray-300" : "text-gray-400"}`}>
+            {totaleArchivio}
+          </span>
+        </button>
       </div>
 
       {/* Tab Elenco / Andamento */}
@@ -112,7 +146,7 @@ export default function ContestazioniPage() {
               className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">Tutti gli esiti</option>
-              {(Object.keys(ESITO_LABEL) as EsitoContestazione[]).map(e => (
+              {esitiDelVista.map(e => (
                 <option key={e} value={e}>{ESITO_LABEL[e]}</option>
               ))}
             </select>

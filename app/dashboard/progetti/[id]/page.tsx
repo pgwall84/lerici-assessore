@@ -6,10 +6,11 @@ import Link from "next/link";
 import {
   DELEGHE_LABEL, PRIORITA_LABEL, STATO_RIUNIONE_LABEL, STATO_RIUNIONE_COLORE,
   STATO_PROGETTO_LABEL, STATO_PROGETTO_COLORE, TIPO_PROGETTO_LABEL, TIPO_PROGETTO_COLORE, TIPO_PROGETTO_ICONA,
+  CATEGORIA_VARIA_LABEL, CATEGORIA_VARIA_COLORE,
 } from "@/lib/constants";
 import { PrioritaBadge } from "@/components/PrioritaBadge";
 import { MailOriginaleButton } from "@/components/MailOriginaleButton";
-import type { ArgomentoRiunione, Delega, DocumentoProgetto, NotaProgetto, Priorita, Progetto, Riunione, StatoProgetto, TipoProgetto } from "@prisma/client";
+import type { ArgomentoRiunione, CategoriaVaria, Delega, DocumentoProgetto, NotaProgetto, Priorita, Progetto, Riunione, StatoProgetto, TipoProgetto } from "@prisma/client";
 
 type RiunioneCard = Riunione & { argomenti: ArgomentoRiunione[] };
 
@@ -36,7 +37,7 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
   const [assegnaMode, setAssegnaMode] = useState(false);
   const [selectedPersonaId, setSelectedPersonaId] = useState<string>("");
   const [modificaMode, setModificaMode] = useState(false);
-  const [formModifica, setFormModifica] = useState({ titolo: "", descrizione: "", delega: "" as Delega | "", fonteFinanziamento: "", priorita: "" as Priorita | "", tipo: "PROGETTO" as TipoProgetto });
+  const [formModifica, setFormModifica] = useState({ titolo: "", descrizione: "", delega: "" as Delega | "", categoriaVaria: "" as CategoriaVaria | "", fonteFinanziamento: "", priorita: "" as Priorita | "", tipo: "PROGETTO" as TipoProgetto });
   const [riunioni, setRiunioni] = useState<RiunioneCard[]>([]);
   const [inviando, setInviando] = useState<string | null>(null);
   const [emailPopup, setEmailPopup] = useState(false);
@@ -68,7 +69,8 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
     setFormModifica({
       titolo: progetto.titolo,
       descrizione: progetto.descrizione ?? "",
-      delega: progetto.delega,
+      delega: progetto.delega ?? "",
+      categoriaVaria: progetto.categoriaVaria ?? "",
       fonteFinanziamento: progetto.fonteFinanziamento ?? "",
       priorita: progetto.priorita ?? "",
       tipo: progetto.tipo,
@@ -83,7 +85,8 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
       body: JSON.stringify({
         titolo: formModifica.titolo,
         descrizione: formModifica.descrizione || null,
-        delega: formModifica.delega || undefined,
+        delega: formModifica.delega || null,
+        categoriaVaria: formModifica.categoriaVaria || null,
         fonteFinanziamento: formModifica.fonteFinanziamento || null,
         priorita: formModifica.priorita || null,
         tipo: formModifica.tipo,
@@ -133,7 +136,9 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
     const righe = [
       `📁 ${progetto.titolo}`,
       ``,
-      `🏷 ${DELEGHE_LABEL[progetto.delega]}`,
+      // "Varie" (evolutiva 2026-07-25): un Progetto ha o una vera delega o una categoriaVaria, mai entrambe.
+      ...(progetto.delega ? [`🏷 ${DELEGHE_LABEL[progetto.delega]}`]
+        : progetto.categoriaVaria ? [`🏷 ${CATEGORIA_VARIA_LABEL[progetto.categoriaVaria]}`] : []),
       `📊 Stato: ${STATO_LABEL[progetto.stato]}`,
     ];
     if (progetto.descrizione) righe.push(``, progetto.descrizione);
@@ -241,9 +246,15 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
         <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${STATO_COLORE[progetto.stato]}`}>
           {STATO_LABEL[progetto.stato]}
         </span>
-        <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">
-          {DELEGHE_LABEL[progetto.delega]}
-        </span>
+        {progetto.delega ? (
+          <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">
+            {DELEGHE_LABEL[progetto.delega]}
+          </span>
+        ) : progetto.categoriaVaria && (
+          <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${CATEGORIA_VARIA_COLORE[progetto.categoriaVaria]}`}>
+            {CATEGORIA_VARIA_LABEL[progetto.categoriaVaria]}
+          </span>
+        )}
         <PrioritaBadge priorita={progetto.priorita} />
       </div>
 
@@ -436,15 +447,29 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
               />
             </div>
             <div>
-              <label className="text-xs text-gray-500">Delega</label>
+              <label className="text-xs text-gray-500">Delega / Categoria</label>
               <select
-                value={formModifica.delega}
-                onChange={e => setFormModifica(f => ({ ...f, delega: e.target.value as Delega | "" }))}
+                value={formModifica.delega || (formModifica.categoriaVaria ? `varia:${formModifica.categoriaVaria}` : "")}
+                onChange={e => {
+                  const v = e.target.value;
+                  if (v.startsWith("varia:")) {
+                    setFormModifica(f => ({ ...f, delega: "", categoriaVaria: v.slice(6) as CategoriaVaria }));
+                  } else {
+                    setFormModifica(f => ({ ...f, delega: v as Delega, categoriaVaria: "" }));
+                  }
+                }}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                {(Object.keys(DELEGHE_LABEL) as Delega[]).map(d => (
-                  <option key={d} value={d}>{DELEGHE_LABEL[d]}</option>
-                ))}
+                <optgroup label="Delega">
+                  {(Object.keys(DELEGHE_LABEL) as Delega[]).map(d => (
+                    <option key={d} value={d}>{DELEGHE_LABEL[d]}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Varie">
+                  {(Object.keys(CATEGORIA_VARIA_LABEL) as CategoriaVaria[]).map(c => (
+                    <option key={c} value={`varia:${c}`}>{CATEGORIA_VARIA_LABEL[c]}</option>
+                  ))}
+                </optgroup>
               </select>
             </div>
             <div>

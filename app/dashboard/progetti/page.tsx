@@ -6,10 +6,11 @@ import {
   DELEGHE_LABEL, STATO_PROGETTO_LABEL, STATO_PROGETTO_COLORE,
   STATI_PROGETTO_OPERATIVA, STATI_PROGETTO_ARCHIVIO,
   TIPO_PROGETTO_LABEL, TIPO_PROGETTO_COLORE, TIPO_PROGETTO_ICONA,
+  CATEGORIA_VARIA_LABEL, CATEGORIA_VARIA_COLORE,
 } from "@/lib/constants";
 import { ordinaPerPriorita } from "@/lib/ordinamento";
 import { PrioritaBadge, PrioritaDot } from "@/components/PrioritaBadge";
-import type { Delega, DocumentoProgetto, NotaProgetto, Priorita, Progetto, StatoProgetto, TipoProgetto } from "@prisma/client";
+import type { CategoriaVaria, Delega, DocumentoProgetto, NotaProgetto, Priorita, Progetto, StatoProgetto, TipoProgetto } from "@prisma/client";
 
 const STATO_LABEL = STATO_PROGETTO_LABEL;
 const STATO_COLORE = STATO_PROGETTO_COLORE;
@@ -27,6 +28,7 @@ export default function ProgettiPage() {
   const [loading, setLoading] = useState(true);
   const [vista, setVista] = useState<"operativa" | "archivio">("operativa");
   const [filtroDelega, setFiltroDelega] = useState<Delega | "">("");
+  const [filtroCategoriaVaria, setFiltroCategoriaVaria] = useState<CategoriaVaria | "">("");
   const [filtroStato, setFiltroStato] = useState<StatoProgetto | "">("");
   const [filtroPriorita, setFiltroPriorita] = useState<Priorita | "">("");
   const [filtroTipo, setFiltroTipo] = useState<TipoProgetto | "">("");
@@ -55,7 +57,13 @@ export default function ProgettiPage() {
 
   const statVista = useMemo(() => {
     const conteggi: Partial<Record<Delega, number>> = {};
-    for (const p of progettiVista) conteggi[p.delega] = (conteggi[p.delega] ?? 0) + 1;
+    for (const p of progettiVista) if (p.delega) conteggi[p.delega] = (conteggi[p.delega] ?? 0) + 1;
+    return conteggi;
+  }, [progettiVista]);
+
+  const statVariaVista = useMemo(() => {
+    const conteggi: Partial<Record<CategoriaVaria, number>> = {};
+    for (const p of progettiVista) if (p.categoriaVaria) conteggi[p.categoriaVaria] = (conteggi[p.categoriaVaria] ?? 0) + 1;
     return conteggi;
   }, [progettiVista]);
 
@@ -66,16 +74,18 @@ export default function ProgettiPage() {
   const progettiFiltrati = useMemo(() => {
     const filtrati = progettiVista.filter(p =>
       (!filtroDelega || p.delega === filtroDelega) &&
+      (!filtroCategoriaVaria || p.categoriaVaria === filtroCategoriaVaria) &&
       (!filtroStato || p.stato === filtroStato) &&
       (!filtroPriorita || p.priorita === filtroPriorita) &&
       (!filtroTipo || p.tipo === filtroTipo)
     );
     return ordinaPerPriorita(filtrati, p => p.priorita, p => p.createdAt);
-  }, [progettiVista, filtroDelega, filtroStato, filtroPriorita, filtroTipo]);
+  }, [progettiVista, filtroDelega, filtroCategoriaVaria, filtroStato, filtroPriorita, filtroTipo]);
 
   function esporta(formato: "xlsx" | "pdf") {
     const params = new URLSearchParams({ vista, formato });
     if (filtroDelega) params.set("delega", filtroDelega);
+    if (filtroCategoriaVaria) params.set("categoriaVaria", filtroCategoriaVaria);
     if (filtroStato) params.set("stato", filtroStato);
     if (filtroPriorita) params.set("priorita", filtroPriorita);
     if (filtroTipo) params.set("tipo", filtroTipo);
@@ -88,12 +98,12 @@ export default function ProgettiPage() {
       {/* Sidebar deleghe — desktop */}
       <aside className="hidden md:flex flex-col gap-0.5 w-44 shrink-0 pt-1">
         <button
-          onClick={() => setFiltroDelega("")}
+          onClick={() => { setFiltroDelega(""); setFiltroCategoriaVaria(""); }}
           className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex justify-between items-center
-            ${filtroDelega === "" ? "bg-blue-600 text-white font-semibold" : "text-gray-700 hover:bg-gray-100"}`}
+            ${filtroDelega === "" && filtroCategoriaVaria === "" ? "bg-blue-600 text-white font-semibold" : "text-gray-700 hover:bg-gray-100"}`}
         >
           <span>Tutte</span>
-          <span className={`text-xs font-mono ${filtroDelega === "" ? "text-blue-100" : "text-gray-400"}`}>
+          <span className={`text-xs font-mono ${filtroDelega === "" && filtroCategoriaVaria === "" ? "text-blue-100" : "text-gray-400"}`}>
             {totaleVista}
           </span>
         </button>
@@ -103,11 +113,29 @@ export default function ProgettiPage() {
           return (
             <button
               key={d}
-              onClick={() => setFiltroDelega(d === filtroDelega ? "" : d)}
+              onClick={() => { setFiltroDelega(d === filtroDelega ? "" : d); setFiltroCategoriaVaria(""); }}
               className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex justify-between items-center gap-1
                 ${attiva ? "bg-blue-600 text-white font-semibold" : n === 0 ? "text-gray-300 hover:bg-gray-50" : "text-gray-700 hover:bg-gray-100"}`}
             >
               <span className="truncate leading-tight">{DELEGHE_LABEL[d]}</span>
+              {n > 0 && (
+                <span className={`text-xs font-mono shrink-0 ${attiva ? "text-blue-100" : "text-gray-400"}`}>{n}</span>
+              )}
+            </button>
+          );
+        })}
+        <div className="border-t border-gray-100 my-1" />
+        {(Object.keys(CATEGORIA_VARIA_LABEL) as CategoriaVaria[]).map(c => {
+          const n = statVariaVista[c] ?? 0;
+          const attiva = filtroCategoriaVaria === c;
+          return (
+            <button
+              key={c}
+              onClick={() => { setFiltroCategoriaVaria(c === filtroCategoriaVaria ? "" : c); setFiltroDelega(""); }}
+              className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex justify-between items-center gap-1
+                ${attiva ? "bg-blue-600 text-white font-semibold" : n === 0 ? "text-gray-300 hover:bg-gray-50" : "text-gray-700 hover:bg-gray-100"}`}
+            >
+              <span className="truncate leading-tight">{CATEGORIA_VARIA_LABEL[c]}</span>
               {n > 0 && (
                 <span className={`text-xs font-mono shrink-0 ${attiva ? "text-blue-100" : "text-gray-400"}`}>{n}</span>
               )}
@@ -155,9 +183,9 @@ export default function ProgettiPage() {
         {/* Deleghe mobile (scroll orizzontale) */}
         <div className="md:hidden flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
           <button
-            onClick={() => setFiltroDelega("")}
+            onClick={() => { setFiltroDelega(""); setFiltroCategoriaVaria(""); }}
             className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors
-              ${filtroDelega === "" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300"}`}
+              ${filtroDelega === "" && filtroCategoriaVaria === "" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300"}`}
           >
             Tutte {totaleVista > 0 && <span className="ml-1 opacity-70">{totaleVista}</span>}
           </button>
@@ -167,11 +195,25 @@ export default function ProgettiPage() {
             return (
               <button
                 key={d}
-                onClick={() => setFiltroDelega(d === filtroDelega ? "" : d)}
+                onClick={() => { setFiltroDelega(d === filtroDelega ? "" : d); setFiltroCategoriaVaria(""); }}
                 className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors
                   ${filtroDelega === d ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300"}`}
               >
                 {DELEGHE_LABEL[d]} {n > 0 && <span className="ml-1 opacity-70">{n}</span>}
+              </button>
+            );
+          })}
+          {(Object.keys(CATEGORIA_VARIA_LABEL) as CategoriaVaria[]).map(c => {
+            const n = statVariaVista[c] ?? 0;
+            if (n === 0 && filtroCategoriaVaria !== c) return null;
+            return (
+              <button
+                key={c}
+                onClick={() => { setFiltroCategoriaVaria(c === filtroCategoriaVaria ? "" : c); setFiltroDelega(""); }}
+                className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors
+                  ${filtroCategoriaVaria === c ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300"}`}
+              >
+                {CATEGORIA_VARIA_LABEL[c]} {n > 0 && <span className="ml-1 opacity-70">{n}</span>}
               </button>
             );
           })}
@@ -246,7 +288,7 @@ export default function ProgettiPage() {
                 </span>
                 <span className="font-medium text-gray-900 text-sm truncate flex-1">{p.titolo}</span>
                 <span className="text-xs text-gray-400 truncate hidden sm:block max-w-xs shrink-0">
-                  {DELEGHE_LABEL[p.delega]}
+                  {p.delega ? DELEGHE_LABEL[p.delega] : p.categoriaVaria ? CATEGORIA_VARIA_LABEL[p.categoriaVaria] : ""}
                 </span>
                 <span className={`shrink-0 text-xs px-2 py-0.5 rounded font-medium ${STATO_COLORE[p.stato]}`}>
                   {STATO_LABEL[p.stato]}
@@ -269,9 +311,15 @@ export default function ProgettiPage() {
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATO_COLORE[p.stato]}`}>
                     {STATO_LABEL[p.stato]}
                   </span>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                    {DELEGHE_LABEL[p.delega]}
-                  </span>
+                  {p.delega ? (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                      {DELEGHE_LABEL[p.delega]}
+                    </span>
+                  ) : p.categoriaVaria && (
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${CATEGORIA_VARIA_COLORE[p.categoriaVaria]}`}>
+                      {CATEGORIA_VARIA_LABEL[p.categoriaVaria]}
+                    </span>
+                  )}
                   <PrioritaBadge priorita={p.priorita} />
                 </div>
                 <p className="text-sm font-medium text-gray-900 leading-snug">{p.titolo}</p>

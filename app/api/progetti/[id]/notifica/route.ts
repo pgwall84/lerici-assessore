@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
-import { DELEGHE_LABEL, STATO_PROGETTO_LABEL } from "@/lib/constants";
+import { DELEGHE_LABEL, STATO_PROGETTO_LABEL, CATEGORIA_VARIA_LABEL } from "@/lib/constants";
 import { contentTypeDaNomeFile } from "@/lib/estrazione-documenti";
 import nodemailer from "nodemailer";
 
@@ -46,7 +46,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
 function formatMessaggio(progetto: {
   id: string;
-  delega: string;
+  delega: string | null;
+  categoriaVaria: string | null;
   titolo: string;
   descrizione: string | null;
   stato: string;
@@ -55,10 +56,18 @@ function formatMessaggio(progetto: {
   responsabile: { nome: string; cognome: string; ruolo: string | null; telefono: string | null; email: string | null } | null;
   note: { testo: string; createdAt: Date }[];
 }): string {
+  // "Varie" (evolutiva 2026-07-25): un Progetto ha o una vera delega o una categoriaVaria, mai
+  // entrambe — mostra quella valorizzata.
+  const etichettaClassificazione = progetto.delega
+    ? DELEGHE_LABEL[progetto.delega as keyof typeof DELEGHE_LABEL]
+    : progetto.categoriaVaria
+    ? CATEGORIA_VARIA_LABEL[progetto.categoriaVaria as keyof typeof CATEGORIA_VARIA_LABEL]
+    : null;
+
   const righe = [
     `📁 ${progetto.titolo}`,
     ``,
-    `🏷 ${DELEGHE_LABEL[progetto.delega as keyof typeof DELEGHE_LABEL]}`,
+    ...(etichettaClassificazione ? [`🏷 ${etichettaClassificazione}`] : []),
     `📊 Stato: ${STATO_PROGETTO_LABEL[progetto.stato as keyof typeof STATO_PROGETTO_LABEL]}`,
   ];
 

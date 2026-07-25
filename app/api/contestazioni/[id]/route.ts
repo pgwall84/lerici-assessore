@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
 const updateSchema = z.object({
-  gestore: z.enum(["ACAM_AMBIENTE", "ACAM_ACQUE", "ATC"]).optional(),
+  gestore: z.enum(["ACAM_AMBIENTE", "ACAM_ACQUE", "ATC", "ENEL"]).optional(),
   oggetto: z.string().min(1).max(200).optional(),
   descrizione: z.string().nullable().optional(),
   dataInvio: z.string().datetime().nullable().optional(),

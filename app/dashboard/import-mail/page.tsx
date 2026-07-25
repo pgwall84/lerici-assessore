@@ -5,7 +5,7 @@ import {
   DELEGHE_LABEL, ALBERO_ETICHETTE_MAIL, STATO_LABEL, STATI_PER_TIPO,
   STATO_PROGETTO_LABEL, STATO_ATTO_LABEL, ESITO_CONTESTAZIONE_LABEL, TIPO_PROGETTO_LABEL,
 } from "@/lib/constants";
-import type { Delega, StatoProgetto, StatoAtto, EsitoContestazione, TipoProgetto } from "@prisma/client";
+import type { Delega, StatoProgetto, StatoAtto, EsitoContestazione, TipoProgetto, CategoriaVaria } from "@prisma/client";
 
 type Binario = "AUTOMATICO" | "MANUALE" | "INCERTO" | "PROPOSTA_CONTINUAZIONE";
 
@@ -30,13 +30,14 @@ function gruppoDiEtichetta(etichetta: string): string {
   if (etichetta.startsWith("Consiglio Comunale")) return "Consiglio Comunale";
   if (etichetta.startsWith("Giunta")) return "Giunta";
   if (etichetta.startsWith("Deleghe")) return "Deleghe";
+  if (etichetta.startsWith("Varie")) return "Varie";
   return "Altro";
 }
 function etichettaBreve(etichetta: string): string {
   const parti = etichetta.split("/");
   return parti.length > 1 ? parti[1] : parti[0];
 }
-const GRUPPI_ORDINE = ["Consiglio Comunale", "Giunta", "Deleghe", "Altro"];
+const GRUPPI_ORDINE = ["Consiglio Comunale", "Giunta", "Deleghe", "Varie", "Altro"];
 
 // Enum di stato pertinente per la categoria risolta — null per le categorie senza un campo
 // stato (Giustifica, Verbale Giunta [sempre Archiviato], Delibera/Determina [nessuna entità]).
@@ -75,6 +76,7 @@ const GESTORE_LABEL: Record<string, string> = {
   ACAM_AMBIENTE: "ACAM Ambiente",
   ACAM_ACQUE: "ACAM Acque",
   ATC: "ATC",
+  ENEL: "ENEL",
 };
 
 type Voce = {
@@ -104,6 +106,9 @@ type Voce = {
   // stato locale: etichetta attualmente scelta nel picker (path completo, es. "Deleghe/Viabilità")
   etichettaScelta: string;
   delega: string;
+  // "Varie" (evolutiva 2026-07-25): alternativa alla delega per un Progetto — es. "Varie/ANCI"
+  // scelta dal picker, oppure "Varie/Comunicazioni" per la creazione manuale.
+  categoriaVaria: CategoriaVaria | "";
   gestore: string;
   luogo: string;
   // stato iniziale scelto per il tipo risultante (StatoPratica/StatoProgetto/StatoAtto/EsitoContestazione)
@@ -136,7 +141,7 @@ const FILTRI: { value: Binario | ""; label: string }[] = [
 ];
 
 type CampiServer = Omit<Voce,
-  "etichettaScelta" | "delega" | "gestore" | "luogo" | "stato" | "tipoProgetto" | "tipoProgettoSuggerito" |
+  "etichettaScelta" | "delega" | "categoriaVaria" | "gestore" | "luogo" | "stato" | "tipoProgetto" | "tipoProgettoSuggerito" |
   "caricandoTipoProgetto" | "candidatiOdg" | "indiceOdgScelto" | "modalitaProposta" | "modalitaManuale" |
   "tipoCollegamento" | "ricercaTesto" | "risultatiRicerca" | "cercandoEntita" | "entitaSelezionata"
 >;
@@ -146,10 +151,12 @@ function toVoce(r: CampiServer): Voce {
     ? r.etichettaProposta
     : "";
   const categoriaIniziale = categoriaDiEtichetta(etichettaIniziale);
+  const nodoIniziale = ALBERO_ETICHETTE_MAIL.find(n => n.etichetta === etichettaIniziale);
   return {
     ...r,
     etichettaScelta: etichettaIniziale,
     delega: r.delegaSuggerita,
+    categoriaVaria: nodoIniziale?.categoriaVaria ?? "",
     gestore: r.gestoreSuggerito,
     luogo: "",
     stato: opzioniStato(categoriaIniziale)?.[0]?.value ?? "",
@@ -239,6 +246,8 @@ export default function ImportMailPage() {
     // La delega di un ramo Deleghe/* diverso non deve restare "appiccicata" a un'altra categoria
     // (es. Segnalazioni) — meglio vuota e da scegliere che una delega di un altro ramo lasciata lì.
     aggiorna(v.mailProcessataId, "delega", nodo?.delega ?? "");
+    // "Varie" (evolutiva 2026-07-25): stessa logica della delega — solo il nodo "Varie/Comunicazioni" la porta.
+    aggiorna(v.mailProcessataId, "categoriaVaria", nodo?.categoriaVaria ?? "");
     aggiorna(v.mailProcessataId, "stato", opzioniStato(categoria)?.[0]?.value ?? "");
     if (categoria === "progetto") {
       if (v.tipoProgettoSuggerito === null && !v.caricandoTipoProgetto) {
@@ -306,6 +315,8 @@ export default function ImportMailPage() {
         titolo: v.titolo,
         descrizione: v.descrizione.slice(0, 1000),
         delega: v.delega || undefined,
+        // "Varie" (evolutiva 2026-07-25): alternativa alla delega per progetto — mai entrambe.
+        categoriaVaria: categoriaRisolta === "progetto" ? (v.categoriaVaria || undefined) : undefined,
         gestore: v.gestore || undefined,
         luogo: v.luogo || undefined,
         nomeMittente: v.nomeMittente || undefined,

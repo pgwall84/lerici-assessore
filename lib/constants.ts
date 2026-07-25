@@ -1,4 +1,4 @@
-import { Delega, EsitoContestazione, Priorita, StatoAtto, StatoPratica, StatoProgetto, StatoRiunione, TipoAtto, TipoPratica, TipoProgetto } from "@prisma/client";
+import { CategoriaVaria, Delega, EsitoContestazione, Priorita, StatoAtto, StatoPratica, StatoProgetto, StatoRiunione, TipoAtto, TipoPratica, TipoProgetto } from "@prisma/client";
 
 export const DELEGHE_LABEL: Record<Delega, string> = {
   VIABILITA: "Viabilità",
@@ -273,6 +273,9 @@ export const ESITO_CONTESTAZIONE_COLORE: Record<EsitoContestazione, string> = {
   SENZA_RISPOSTA: "bg-gray-100 text-gray-500",
 };
 
+export const ESITI_CONTESTAZIONE_OPERATIVA: EsitoContestazione[] = ["IN_ATTESA"];
+export const ESITI_CONTESTAZIONE_ARCHIVIO: EsitoContestazione[] = ["RISOLTO", "RESPINTO", "SENZA_RISPOSTA"];
+
 // Progetto vs Attività: stesso modello, stesso diario/documenti/responsabile — solo un badge/filtro
 // diverso in UI. Progetto = strutturato/duraturo, Attività = intervento tecnico puntuale.
 export const TIPO_PROGETTO_LABEL: Record<TipoProgetto, string> = {
@@ -288,6 +291,23 @@ export const TIPO_PROGETTO_COLORE: Record<TipoProgetto, string> = {
 export const TIPO_PROGETTO_ICONA: Record<TipoProgetto, string> = {
   PROGETTO: "📁",
   ATTIVITA: "🔧",
+};
+
+// "Varie" (evolutiva 2026-07-25): usata al posto della delega quando un Progetto non ne ha una
+// vera — comunicazioni istituzionali/enti esterni instradati per dominio mittente o senza un
+// segnale affidabile (Comunicazioni).
+export const CATEGORIA_VARIA_LABEL: Record<CategoriaVaria, string> = {
+  COMUNICAZIONI: "Comunicazioni",
+  ANCI: "ANCI",
+  REGIONE: "Regione",
+  GOVERNO: "Governo",
+};
+
+export const CATEGORIA_VARIA_COLORE: Record<CategoriaVaria, string> = {
+  COMUNICAZIONI: "bg-gray-100 text-gray-600",
+  ANCI: "bg-indigo-100 text-indigo-700",
+  REGIONE: "bg-cyan-100 text-cyan-700",
+  GOVERNO: "bg-slate-100 text-slate-700",
 };
 
 // --- Motore di scansione mail (sezione 6 spec) ---
@@ -354,14 +374,25 @@ export function categoriaProposta(voce: Exclude<VoceTassonomiaMail, { fuoriScope
 // al nome dell'etichetta Gmail da scrivere — serve sia quando l'etichetta era già presente
 // all'origine (per riscriverla comunque, idempotente) sia quando la categoria è stata dedotta
 // da zero (AI o scelta manuale su Incerto) e l'etichetta non esiste ancora su Gmail.
-export function etichettaPerCategoria(categoria: string, delega?: Delega): string | null {
+export function etichettaPerCategoria(categoria: string, delega?: Delega, categoriaVaria?: CategoriaVaria): string | null {
   if (categoria === "segnalazione") return "Segnalazioni";
   if (categoria === "contestazione") return "Contestazioni";
   if (categoria === "giustifica") return "Giustifica"; // scelta manuale da Incerto — minuscolo, diverso da "GIUSTIFICA" (Automatico)
   if (categoria === "progetto") {
-    if (!delega) return null;
-    const nomeEtichetta = Object.entries(ETICHETTA_DELEGA).find(([, d]) => d === delega)?.[0];
-    return nomeEtichetta ? `Deleghe/${nomeEtichetta}` : null;
+    if (delega) {
+      const nomeEtichetta = Object.entries(ETICHETTA_DELEGA).find(([, d]) => d === delega)?.[0];
+      return nomeEtichetta ? `Deleghe/${nomeEtichetta}` : null;
+    }
+    // "Varie" (evolutiva 2026-07-25): un Progetto senza vera delega — es. Comunicazioni,
+    // scelta manuale senza segnale di dominio affidabile.
+    if (categoriaVaria) return `Varie/${CATEGORIA_VARIA_LABEL[categoriaVaria]}`;
+    return null;
+  }
+  // ANCI/REGIONE/GOVERNO: categorie di primo livello instradate per dominio mittente (evolutiva
+  // 2026-07-25), stesso ruolo delle altre categorie Automatico (CONVOCAZIONE_CONSIGLIO, ecc.) —
+  // non hanno una vera etichetta Gmail preesistente in TASSONOMIA_MAIL, mappate qui direttamente.
+  if (categoria === "ANCI" || categoria === "REGIONE" || categoria === "GOVERNO") {
+    return `Varie/${CATEGORIA_VARIA_LABEL[categoria]}`;
   }
   for (const [etichetta, voce] of Object.entries(TASSONOMIA_MAIL)) {
     if ("fuoriScope" in voce) continue;
@@ -380,7 +411,7 @@ export const ETICHETTA_NON_RILEVANTE = "Bassa priorità/Non rilevante";
 // scegliere una vera "Deleghe/X".
 export const ETICHETTA_DELEGA_DA_SPECIFICARE = "Deleghe/da specificare";
 
-export type NodoAlberoEtichette = { etichetta: string; categoria: string; delega?: Delega };
+export type NodoAlberoEtichette = { etichetta: string; categoria: string; delega?: Delega; categoriaVaria?: CategoriaVaria };
 
 // Albero completo per il selettore di categoria/etichetta nella revisione mail (sezione 6,
 // redesign 2026-07-24) — deriva da TASSONOMIA_MAIL (unica fonte di verità, nessuna lista
@@ -397,4 +428,12 @@ export const ALBERO_ETICHETTE_MAIL: NodoAlberoEtichette[] = [
       delega: "delega" in voce ? voce.delega : undefined,
     })),
   { etichetta: "Segnalazioni", categoria: "segnalazione" },
+  // "Varie" (evolutiva 2026-07-25): ANCI/Regione/Governo sono categorie di primo livello
+  // (Automatico, instradate per dominio mittente — vedi categoriaVariaPerDominio in
+  // lib/classificatore.ts), Comunicazioni è un Progetto (Manuale, nessun segnale di dominio
+  // affidabile) con categoriaVaria al posto della delega.
+  { etichetta: "Varie/ANCI", categoria: "ANCI" },
+  { etichetta: "Varie/Regione", categoria: "REGIONE" },
+  { etichetta: "Varie/Governo", categoria: "GOVERNO" },
+  { etichetta: "Varie/Comunicazioni", categoria: "progetto", categoriaVaria: "COMUNICAZIONI" },
 ];
