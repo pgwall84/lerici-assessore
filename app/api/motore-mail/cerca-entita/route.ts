@@ -13,10 +13,20 @@ export async function GET(req: NextRequest) {
   const tipo = searchParams.get("tipo");
   const q = (searchParams.get("q") ?? "").trim();
 
-  if (tipo !== "pratica" && tipo !== "progetto" && tipo !== "contestazione") {
+  if (tipo !== "pratica" && tipo !== "progetto" && tipo !== "contestazione" && tipo !== "atto") {
     return NextResponse.json({ error: "tipo non valido" }, { status: 400 });
   }
   if (q.length < 2) return NextResponse.json({ risultati: [] });
+
+  if (tipo === "atto") {
+    const righe = await prisma.attoPoliticoAmministrativo.findMany({
+      where: { oggetto: { contains: q, mode: "insensitive" } },
+      select: { id: true, oggetto: true, stato: true },
+      orderBy: { createdAt: "desc" },
+      take: 15,
+    });
+    return NextResponse.json({ risultati: righe.map(r => ({ id: r.id, titolo: r.oggetto, stato: r.stato })) });
+  }
 
   if (tipo === "pratica") {
     const righe = await prisma.pratica.findMany({

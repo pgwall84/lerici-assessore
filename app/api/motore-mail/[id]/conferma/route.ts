@@ -5,7 +5,7 @@ import { getMailPerId, marcaImportata, applicaEtichettaEArchivia, rimuoviEtichet
 import { contentTypeDaNomeFile } from "@/lib/estrazione-documenti";
 import { etichettaPerCategoria, ALBERO_ETICHETTE_MAIL } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
-import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, eseguiSoloArchiviazione, type EsitoEsecuzione } from "@/lib/import-automatico";
+import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, eseguiCollegamentoAtto, eseguiSoloArchiviazione, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { decodificaEntita } from "@/lib/continuazione";
 import type { MailImport } from "@/lib/gmail";
 import type { Delega, StatoAtto, StatoPratica, StatoProgetto, EsitoContestazione, TipoProgetto } from "@prisma/client";
@@ -221,13 +221,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // sopra per il match automatico — nota nel diario + allegati + etichetta/archiviazione coerenti.
   const schemaCollegaEsistente = z.object({
     azione: z.literal("collega_esistente"),
-    tipo: z.enum(["pratica", "progetto", "contestazione"]),
+    tipo: z.enum(["pratica", "progetto", "contestazione", "atto"]),
     entitaId: z.string().min(1),
   });
   const parsedCollegaEsistente = schemaCollegaEsistente.safeParse(body);
   if (parsedCollegaEsistente.success) {
     const { tipo, entitaId } = parsedCollegaEsistente.data;
-    const esito = await eseguiCollegamento(mail, tipo, entitaId);
+    // Atti: solo allegati, nessuna nota nel diario (Atti non ne hanno uno) — vedi
+    // eseguiCollegamentoAtto. Caso reale: convocazione inviata più volte via PEC con allegati
+    // diversi per limite di dimensione, l'Atto è già stato creato dal primo invio.
+    const esito = tipo === "atto" ? await eseguiCollegamentoAtto(mail, entitaId) : await eseguiCollegamento(mail, tipo, entitaId);
     if (esito.esito === "ERRORE") {
       await prisma.mailProcessata.update({ where: { id }, data: { esito: "ERRORE" } });
       return NextResponse.json({ error: esito.errore }, { status: 500 });

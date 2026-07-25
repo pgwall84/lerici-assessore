@@ -265,6 +265,32 @@ export async function eseguiCollegamento(m: MailImport, tipo: TipoEntitaContinua
 }
 
 /**
+ * Collega gli allegati di una mail a un Atto già esistente (2026-07-25): caso reale, una
+ * convocazione inviata più volte via PEC con allegati diversi per volta (limite di dimensione
+ * del singolo invio) — l'Atto è già stato creato dal primo invio (ODG incluso), i successivi
+ * portano solo altri allegati. Solo upload dei file come DocumentoAtto: nessuna ri-estrazione
+ * ODG, nessuna modifica a oggetto/stato/dataSeduta — quelli restano quelli del primo invio, che
+ * resta l'unica fonte di verità per il contenuto dell'Atto.
+ */
+export async function eseguiCollegamentoAtto(m: MailImport, attoId: string): Promise<EsitoEsecuzione> {
+  try {
+    const atto = await prisma.attoPoliticoAmministrativo.findUnique({ where: { id: attoId } });
+    if (!atto) return { esito: "ERRORE", errore: "Atto non più trovato" };
+
+    for (const a of m.allegati) {
+      const url = await caricaFile(`atto-${atto.id}`, a.buffer, a.filename);
+      await prisma.documentoAtto.create({
+        data: { attoId: atto.id, nomeFile: a.filename, storageUrl: url, ruolo: "PRATICA_ALLEGATA" },
+      });
+    }
+
+    return { esito: "COMPLETATO", entitaId: atto.id, etichetta: etichettaPerCategoria(atto.tipo) ?? undefined };
+  } catch (e) {
+    return { esito: "ERRORE", errore: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
  * Match forte di continuazione (protocollo/threadId, sezione 6 evolutiva): non crea una nuova
  * entità, aggancia la mail a quella già trovata. Ri-esegue la ricerca invece di fidarsi di un
  * riferimento salvato in MailProcessata — stesso principio già usato per la delega dei Progetti

@@ -68,6 +68,7 @@ const TIPO_ENTITA_LABEL: Record<string, string> = {
   pratica: "📢 Segnalazione",
   progetto: "📁 Progetto",
   contestazione: "⚠️ Contestazione",
+  atto: "🏛️ Atto",
 };
 
 const GESTORE_LABEL: Record<string, string> = {
@@ -116,11 +117,11 @@ type Voce = {
   // stato locale solo per Manuale/Incerto: creare una voce nuova o cercare/collegare un'entità
   // già esistente (collegamento manuale, oltre la catena automatica — vedi diagnosi 2026-07-24)
   modalitaManuale: "nuova" | "collega_esistente";
-  tipoCollegamento: "pratica" | "progetto" | "contestazione" | "";
+  tipoCollegamento: "pratica" | "progetto" | "contestazione" | "atto" | "";
   ricercaTesto: string;
   risultatiRicerca: { id: string; titolo: string; stato: string }[];
   cercandoEntita: boolean;
-  entitaSelezionata: { tipo: "pratica" | "progetto" | "contestazione"; id: string; titolo: string } | null;
+  entitaSelezionata: { tipo: "pratica" | "progetto" | "contestazione" | "atto"; id: string; titolo: string } | null;
 };
 
 const FILTRI: { value: Binario | ""; label: string }[] = [
@@ -486,7 +487,7 @@ export default function ImportMailPage() {
                         </button>
                       </div>
                       <div className="flex gap-1.5">
-                        {(["pratica", "progetto", "contestazione"] as const).map(t => (
+                        {(["pratica", "progetto", "contestazione", "atto"] as const).map(t => (
                           <button
                             key={t}
                             onClick={() => {
@@ -538,7 +539,7 @@ export default function ImportMailPage() {
                               {v.risultatiRicerca.map(r => (
                                 <button
                                   key={r.id}
-                                  onClick={() => aggiorna(v.mailProcessataId, "entitaSelezionata", { tipo: v.tipoCollegamento as "pratica" | "progetto" | "contestazione", id: r.id, titolo: r.titolo })}
+                                  onClick={() => aggiorna(v.mailProcessataId, "entitaSelezionata", { tipo: v.tipoCollegamento as "pratica" | "progetto" | "contestazione" | "atto", id: r.id, titolo: r.titolo })}
                                   className="w-full text-left text-xs bg-white border border-gray-200 rounded-lg px-2 py-1.5 hover:border-purple-300"
                                 >
                                   <span className="text-gray-700">{r.titolo}</span>
