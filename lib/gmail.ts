@@ -457,7 +457,16 @@ function trovaParte(payload: any, filename: string): any {
   return null;
 }
 
-const TIPI_ALLEGATO_AMMESSI = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"];
+// Stessi tipi già noti a contentTypeDaNomeFile (lib/estrazione-documenti.ts) — il filtro di
+// estrazione allegati era rimasto più stretto (solo immagini + PDF), escludendo Word/RTF/ZIP che
+// lo storage sa già gestire. Caso reale 2026-07-26: PEC con un .doc (application/msword) mai
+// caricato come DocumentoAtto perché application/msword non era in questa lista.
+const TIPI_ALLEGATO_AMMESSI = [
+  "image/jpeg", "image/png", "image/gif", "image/webp",
+  "application/pdf", "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/rtf", "application/zip",
+];
 
 // Trova ricorsivamente le parti MIME che sono un vero allegato (non una parte di corpo inline):
 // un allegato Gmail ha sempre un filename non vuoto e il contenuto reso disponibile via
