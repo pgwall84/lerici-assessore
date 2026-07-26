@@ -139,9 +139,8 @@ async function parseMessaggioPerId(
     }
 
     // Foto e PDF allegati
-    const tipiAmmessi = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"];
     allegati = (parsed.attachments ?? [])
-      .filter(a => tipiAmmessi.includes(a.contentType) && a.content)
+      .filter(a => TIPI_ALLEGATO_AMMESSI.includes(a.contentType) && a.content)
       .slice(0, 5)
       .map(a => ({
         buffer: a.content as Buffer,
@@ -149,9 +148,24 @@ async function parseMessaggioPerId(
         contentType: a.contentType,
       }));
   } else {
-    // Nessun postacert.eml — usa corpo principale
+    // Nessun postacert.eml — mail Gmail normale (non certificata). Prima mancava qualunque
+    // estrazione allegati qui (diagnosi 2026-07-25, caso reale: Progetto "arredo urbano" da una
+    // mail interna con 17 foto JPEG, mai arrivate come documenti) — non un filtro sui tipi di
+    // file, proprio nessuna lettura degli allegati per questo ramo.
     corpoCompleto = estraiCorpoPrincipale(data.payload).slice(0, 20000);
     descrizione = corpoCompleto.slice(0, 1500);
+
+    const partiAllegato = trovaPartiAllegato(data.payload)
+      .filter(p => TIPI_ALLEGATO_AMMESSI.includes(p.mimeType))
+      .slice(0, 5);
+    allegati = await Promise.all(partiAllegato.map(async p => {
+      const att = await gmail.users.messages.attachments.get({ userId: "me", messageId, id: p.attachmentId });
+      return {
+        buffer: Buffer.from(att.data.data!, "base64url"),
+        filename: p.filename,
+        contentType: p.mimeType,
+      };
+    }));
   }
 
   return {
@@ -441,6 +455,22 @@ function trovaParte(payload: any, filename: string): any {
     if (found) return found;
   }
   return null;
+}
+
+const TIPI_ALLEGATO_AMMESSI = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"];
+
+// Trova ricorsivamente le parti MIME che sono un vero allegato (non una parte di corpo inline):
+// un allegato Gmail ha sempre un filename non vuoto e il contenuto reso disponibile via
+// attachmentId (non inline nel payload). Le parti di corpo (text/plain, text/html) hanno invece
+// filename vuoto — stesso discriminante già usato implicitamente da mailparser per il ramo PEC.
+function trovaPartiAllegato(payload: any): { filename: string; mimeType: string; attachmentId: string }[] {
+  if (!payload) return [];
+  const risultato: { filename: string; mimeType: string; attachmentId: string }[] = [];
+  if (payload.filename && payload.body?.attachmentId) {
+    risultato.push({ filename: payload.filename, mimeType: payload.mimeType ?? "application/octet-stream", attachmentId: payload.body.attachmentId });
+  }
+  for (const part of payload.parts ?? []) risultato.push(...trovaPartiAllegato(part));
+  return risultato;
 }
 
 function decodePart(data: string, mimeType: string, headers: any[]): string {
