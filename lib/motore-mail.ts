@@ -2,8 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { getMailsPaginato, getMappaEtichette, getMailPerId, marcaImportata, marcaIncerto, marcaNonRilevante, applicaEtichettaEArchivia, archiviaMail, rimuoviEtichetta, type MailImport } from "@/lib/gmail";
 import { classificaMail } from "@/lib/claude";
 import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria, ETICHETTA_NON_RILEVANTE, ETICHETTA_DELEGA_DA_SPECIFICARE, ALBERO_ETICHETTE_MAIL, type VoceTassonomiaMail } from "@/lib/constants";
-import { classificaDelega, categoriaVariaPerDominio } from "@/lib/classificatore";
-import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiSoloArchiviazione, eseguiProgettoVarie, type EsitoEsecuzione } from "@/lib/import-automatico";
+import { classificaDelega, categoriaVariaPerDominio, classificaDup } from "@/lib/classificatore";
+import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiProgettoVarie, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { trovaContinuazioneForte, trovaContinuazioneDebole, codificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
 import type { Delega } from "@prisma/client";
 
@@ -136,6 +136,27 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
       },
     });
     return "AUTOMATICO";
+  }
+
+  // Giunta/Dup (evolutiva 2026-07-26): parola chiave nell'oggetto, non un'etichetta Gmail —
+  // stesso principio deterministico delle regole sopra, controllato prima dell'AI. Binario
+  // MANUALE (non Automatico, a differenza di ANCI/REGIONE/GOVERNO): il segnale è pulito sul
+  // campione osservato ma troppo piccolo per fidarsi ciecamente — categoria/etichetta comunque
+  // già pre-compilate, risparmia solo la conferma finale a Marco, non la classificazione.
+  if (classificaDup(m.oggettoOriginale)) {
+    await prisma.mailProcessata.create({
+      data: {
+        messageId: m.messageId,
+        threadId: m.threadId || null,
+        mittente: m.mittente,
+        oggetto: m.oggettoOriginale,
+        categoriaProposta: "DUP",
+        etichettaProposta: etichettaPerCategoria("DUP"),
+        confidenza: 1,
+        binario: "MANUALE",
+      },
+    });
+    return "MANUALE";
   }
 
   // Nessuna etichetta nota sul messaggio: prova la classificazione AI prima di arrendersi a Incerto.
@@ -312,8 +333,8 @@ const GESTORI_AUTOMATICO: Record<string, (m: MailImport) => Promise<EsitoEsecuzi
   VERBALE_GIUNTA: eseguiVerbaleGiunta,
   GIUSTIFICA: eseguiGiustifica,
   CONTINUAZIONE: eseguiContinuazione,
-  DELIBERA_GIUNTA: eseguiSoloArchiviazione,
-  DETERMINA_GIUNTA: eseguiSoloArchiviazione,
+  DELIBERA_GIUNTA: m => eseguiConvocazione(m, "DELIBERA"),
+  DETERMINA_GIUNTA: m => eseguiConvocazione(m, "DETERMINA"),
   ANCI: m => eseguiProgettoVarie(m, "ANCI"),
   REGIONE: m => eseguiProgettoVarie(m, "REGIONE"),
   GOVERNO: m => eseguiProgettoVarie(m, "GOVERNO"),

@@ -40,12 +40,12 @@ function etichettaBreve(etichetta: string): string {
 const GRUPPI_ORDINE = ["Consiglio Comunale", "Giunta", "Deleghe", "Varie", "Altro"];
 
 // Enum di stato pertinente per la categoria risolta — null per le categorie senza un campo
-// stato (Giustifica, Verbale Giunta [sempre Archiviato], Delibera/Determina [nessuna entità]).
+// stato (Giustifica, Verbale Giunta [sempre Archiviato]).
 function opzioniStato(categoria: string): { value: string; label: string }[] | null {
   if (categoria === "segnalazione") return STATI_PER_TIPO.SEGNALAZIONE.map(s => ({ value: s, label: STATO_LABEL[s] }));
   if (categoria === "progetto") return (Object.keys(STATO_PROGETTO_LABEL) as StatoProgetto[]).map(s => ({ value: s, label: STATO_PROGETTO_LABEL[s] }));
   if (categoria === "contestazione") return (Object.keys(ESITO_CONTESTAZIONE_LABEL) as EsitoContestazione[]).map(s => ({ value: s, label: ESITO_CONTESTAZIONE_LABEL[s] }));
-  if (["CONVOCAZIONE_CONSIGLIO", "CONVOCAZIONE_COMMISSIONE", "CONVOCAZIONE_GIUNTA", "MOZIONE", "INTERROGAZIONE"].includes(categoria)) {
+  if (["CONVOCAZIONE_CONSIGLIO", "CONVOCAZIONE_COMMISSIONE", "CONVOCAZIONE_GIUNTA", "MOZIONE", "INTERROGAZIONE", "DELIBERA_GIUNTA", "DETERMINA_GIUNTA", "DUP"].includes(categoria)) {
     return (Object.keys(STATO_ATTO_LABEL) as StatoAtto[]).map(s => ({ value: s, label: STATO_ATTO_LABEL[s] }));
   }
   return null;

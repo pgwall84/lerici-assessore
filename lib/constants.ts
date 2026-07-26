@@ -185,6 +185,9 @@ export const TIPO_ATTO_LABEL: Record<TipoAtto, string> = {
   CONVOCAZIONE_COMMISSIONE: "Convocazione Commissione",
   MOZIONE: "Mozione",
   INTERROGAZIONE: "Interrogazione",
+  DELIBERA: "Delibera di Giunta",
+  DETERMINA: "Determina di Giunta",
+  DUP: "DUP",
 };
 
 // Etichette brevi per la sidebar delle sotto-categorie (stile Deleghe di Progetti).
@@ -194,6 +197,9 @@ export const TIPO_ATTO_LABEL_BREVE: Record<TipoAtto, string> = {
   MOZIONE: "Mozioni",
   INTERROGAZIONE: "Interrogazioni",
   CONVOCAZIONE_GIUNTA: "Giunta",
+  DELIBERA: "Delibere",
+  DETERMINA: "Determine",
+  DUP: "DUP",
 };
 
 export const TIPO_ATTO_ICONA: Record<TipoAtto, string> = {
@@ -202,6 +208,9 @@ export const TIPO_ATTO_ICONA: Record<TipoAtto, string> = {
   CONVOCAZIONE_COMMISSIONE: "🗂️",
   MOZIONE: "📄",
   INTERROGAZIONE: "❓",
+  DELIBERA: "📜",
+  DETERMINA: "📑",
+  DUP: "📊",
 };
 
 export const STATO_ATTO_LABEL: Record<StatoAtto, string> = {
@@ -314,9 +323,8 @@ export const CATEGORIA_VARIA_COLORE: Record<CategoriaVaria, string> = {
 
 // Etichetta Gmail -> regola di classificazione. Copre esattamente le stesse etichette già
 // consumate oggi da import-mail/import-automatico (vedi lib/import-automatico.ts e
-// app/api/import-mail/route.ts) + le sotto-etichette esplicitamente "fuori scope" per ora
-// (Giunta/Delibere, Giunta/Determine) e quelle che riflettono solo uno stato già gestito
-// altrove (Segnalazioni/Chiusa, Segnalazioni/In corso) — nessuna delle due va classificata.
+// app/api/import-mail/route.ts) + quelle che riflettono solo uno stato già gestito altrove
+// (Segnalazioni/Chiusa, Segnalazioni/In corso) — nessuna delle due va classificata.
 // Qualunque etichetta NON presente qui (o sotto-etichetta di un ramo noto non mappata) finisce
 // in binario INCERTO dopo il tentativo di classificazione AI.
 export type VoceTassonomiaMail =
@@ -324,9 +332,9 @@ export type VoceTassonomiaMail =
   | { binario: "AUTOMATICO"; categoria: "atto"; tipo: TipoAtto }
   | { binario: "AUTOMATICO"; categoria: "VERBALE_GIUNTA" }
   | { binario: "AUTOMATICO"; categoria: "GIUSTIFICA" }
-  // Nessuna entità creata: solo etichetta + esito COMPLETATO ("solo archiviazione", non un
-  // errore né un "non rilevante" — vedi eseguiSoloArchiviazione in lib/import-automatico.ts).
-  // Stessa affidabilità di Consiglio/Giunta/Giustifica (etichetta Gmail dedicata), quindi stesso
+  // Crea un vero Atto (tipo DELIBERA/DETERMINA) via eseguiConvocazione, stessa pipeline delle
+  // Convocazioni — evolutiva 2026-07-26, prima "solo archiviazione" senza entità. Stessa
+  // affidabilità di Consiglio/Giunta/Giustifica (etichetta Gmail dedicata), quindi stesso
   // binario AUTOMATICO — passa dal gate primaEsecuzione() come le altre, non lo salta come
   // NON_RILEVANTE.
   | { binario: "AUTOMATICO"; categoria: "DELIBERA_GIUNTA" }
@@ -394,6 +402,10 @@ export function etichettaPerCategoria(categoria: string, delega?: Delega, catego
   if (categoria === "ANCI" || categoria === "REGIONE" || categoria === "GOVERNO") {
     return `Varie/${CATEGORIA_VARIA_LABEL[categoria]}`;
   }
+  // DUP (evolutiva 2026-07-26): riconoscimento per parola chiave nell'oggetto (classificaDup in
+  // lib/classificatore.ts), non un'etichetta Gmail preesistente — stesso trattamento di
+  // ANCI/REGIONE/GOVERNO sopra.
+  if (categoria === "DUP") return "Giunta/Dup";
   for (const [etichetta, voce] of Object.entries(TASSONOMIA_MAIL)) {
     if ("fuoriScope" in voce) continue;
     if (categoriaProposta(voce) === categoria) return etichetta;
@@ -436,4 +448,7 @@ export const ALBERO_ETICHETTE_MAIL: NodoAlberoEtichette[] = [
   { etichetta: "Varie/Regione", categoria: "REGIONE" },
   { etichetta: "Varie/Governo", categoria: "GOVERNO" },
   { etichetta: "Varie/Comunicazioni", categoria: "progetto", categoriaVaria: "COMUNICAZIONI" },
+  // DUP (evolutiva 2026-07-26): riconoscimento per parola chiave nell'oggetto (classificaDup),
+  // non un'etichetta Gmail — stesso trattamento di Varie/ANCI ecc. sopra.
+  { etichetta: "Giunta/Dup", categoria: "DUP" },
 ];

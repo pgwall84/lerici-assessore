@@ -63,6 +63,7 @@ model Persona {
   pratiche        Pratica[]
   progetti        Progetto[]
   riunioni        Riunione[]
+  atti            AttoPoliticoAmministrativo[]
 }
 
 // ---------------------------------------------------------------------------
@@ -329,9 +330,20 @@ model AttoPoliticoAmministrativo {
   visualizzato         Boolean                      @default(false)
   visualizzatoAt       DateTime?
   documenti            DocumentoAtto[]
+  note                 NotaAtto[]
+  responsabileId       Int?
+  responsabile         Persona?                     @relation(fields: [responsabileId], references: [id])
   messageId            String?
   createdAt            DateTime                     @default(now())
   updatedAt            DateTime                     @updatedAt
+}
+
+model NotaAtto {
+  id        String                     @id @default(cuid())
+  attoId    String
+  atto      AttoPoliticoAmministrativo @relation(fields: [attoId], references: [id], onDelete: Cascade)
+  testo     String
+  createdAt DateTime                   @default(now())
 }
 
 enum TipoAtto {
@@ -340,6 +352,9 @@ enum TipoAtto {
   CONVOCAZIONE_COMMISSIONE
   MOZIONE
   INTERROGAZIONE
+  DELIBERA
+  DETERMINA
+  DUP
 }
 
 enum StatoAtto {

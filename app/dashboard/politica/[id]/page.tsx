@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { TIPO_ATTO_LABEL, STATO_ATTO_LABEL, STATO_ATTO_COLORE, PRIORITA_LABEL } from "@/lib/constants";
 import { PrioritaBadge } from "@/components/PrioritaBadge";
 import { MailOriginaleButton } from "@/components/MailOriginaleButton";
-import type { AttoPoliticoAmministrativo, DocumentoAtto, Priorita, RuoloDocumento, StatoAtto } from "@prisma/client";
+import { ReferenteBox } from "@/components/ReferenteBox";
+import type { AttoPoliticoAmministrativo, DocumentoAtto, NotaAtto, Priorita, RuoloDocumento, StatoAtto } from "@prisma/client";
 
 const TIPO_LABEL = TIPO_ATTO_LABEL;
 const STATO_LABEL = STATO_ATTO_LABEL;
@@ -20,7 +21,9 @@ const RUOLO_LABEL: Record<RuoloDocumento, string> = {
 
 type AttoFull = AttoPoliticoAmministrativo & {
   documenti: DocumentoAtto[];
+  note: NotaAtto[];
   consiglioCollegato: { id: string; oggetto: string } | null;
+  responsabile: { id: number; nome: string; cognome: string; ruolo: string | null; telefono: string | null; email: string | null } | null;
 };
 
 export default function AttoPage({ params }: { params: Promise<{ id: string }> }) {
@@ -37,7 +40,10 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
   const [riEstraendoId, setRiEstraendoId] = useState<string | null>(null);
   const [consigli, setConsigli] = useState<{ id: string; oggetto: string }[]>([]);
   const [modificaMode, setModificaMode] = useState(false);
-  const [formModifica, setFormModifica] = useState({ oggetto: "", dataSeduta: "", scadenzaRisposta: "", priorita: "" as Priorita | "" });
+  const [formModifica, setFormModifica] = useState({ oggetto: "", dataSeduta: "", scadenzaRisposta: "", priorita: "" as Priorita | "", responsabileId: "" as string });
+  const [persone, setPersone] = useState<{ id: number; nome: string; cognome: string; ruolo: string | null }[]>([]);
+  const [nuovaNota, setNuovaNota] = useState("");
+  const [savingNota, setSavingNota] = useState(false);
 
   useEffect(() => {
     fetch(`/api/atti/${id}`)
@@ -60,6 +66,7 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
         }
       })
       .catch(() => setLoading(false));
+    fetch("/api/persone").then(r => r.json()).then(setPersone).catch(() => {});
   }, [id]);
 
   useEffect(() => {
@@ -102,6 +109,7 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
       dataSeduta: atto.dataSeduta ? new Date(atto.dataSeduta).toISOString().slice(0, 10) : "",
       scadenzaRisposta: atto.scadenzaRisposta ? new Date(atto.scadenzaRisposta).toISOString().slice(0, 10) : "",
       priorita: atto.priorita ?? "",
+      responsabileId: atto.responsabileId ? String(atto.responsabileId) : "",
     });
     setModificaMode(true);
   }
@@ -115,6 +123,7 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
         dataSeduta: formModifica.dataSeduta ? new Date(formModifica.dataSeduta).toISOString() : null,
         scadenzaRisposta: formModifica.scadenzaRisposta ? new Date(formModifica.scadenzaRisposta).toISOString() : null,
         priorita: formModifica.priorita || null,
+        responsabileId: formModifica.responsabileId ? Number(formModifica.responsabileId) : null,
       }),
     });
     if (res.ok) {
@@ -122,6 +131,81 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
       setAtto(a => a ? { ...a, ...aggiornato } : a);
       setModificaMode(false);
     }
+  }
+
+  async function assegnaReferente(responsabileId: number) {
+    const res = await fetch(`/api/atti/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ responsabileId }),
+    });
+    if (res.ok) {
+      const aggiornato = await res.json();
+      setAtto(a => a ? { ...a, responsabile: aggiornato.responsabile, responsabileId: aggiornato.responsabileId } : a);
+    }
+  }
+
+  async function inviaEmail(destinatario: string) {
+    const res = await fetch(`/api/atti/${id}/notifica`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ canale: "email", destinatario }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(`Errore invio email: ${err.error ?? res.status}`);
+    }
+  }
+
+  async function inviaTelegram() {
+    const res = await fetch(`/api/atti/${id}/notifica`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ canale: "telegram" }),
+    });
+    if (!res.ok) alert("Errore invio");
+  }
+
+  function apriWhatsApp() {
+    if (!atto) return;
+    const righe = [
+      `🏛️ ${atto.oggetto}`,
+      ``,
+      `🏷 ${TIPO_LABEL[atto.tipo]}`,
+      `📊 Stato: ${STATO_LABEL[atto.stato]}`,
+    ];
+    if (atto.dataSeduta) righe.push(`📅 Seduta il ${new Date(atto.dataSeduta).toLocaleDateString("it-IT")}`);
+    if (atto.responsabile) {
+      righe.push(``, `📌 Responsabile: ${atto.responsabile.nome} ${atto.responsabile.cognome}`);
+      if (atto.responsabile.ruolo) righe.push(`   ${atto.responsabile.ruolo}`);
+      if (atto.responsabile.telefono) righe.push(`   📞 ${atto.responsabile.telefono}`);
+    }
+    if (atto.note.length > 0) righe.push(``, `📝 ${atto.note[atto.note.length - 1].testo}`);
+    righe.push(``, `🔗 Atto #${atto.id}`);
+
+    const testo = righe.join("\n");
+    const numero = atto.responsabile?.telefono?.replace(/\D/g, "") ?? "";
+    const encoded = encodeURIComponent(testo);
+    const url = numero
+      ? `whatsapp://send?phone=${numero}&text=${encoded}`
+      : `whatsapp://send?text=${encoded}`;
+    window.location.href = url;
+  }
+
+  async function aggiungiNota() {
+    if (!nuovaNota.trim()) return;
+    setSavingNota(true);
+    const res = await fetch(`/api/atti/${id}/note`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ testo: nuovaNota.trim() }),
+    });
+    if (res.ok) {
+      const nota = await res.json();
+      setAtto(a => a ? { ...a, note: [...a.note, nota] } : a);
+      setNuovaNota("");
+    }
+    setSavingNota(false);
   }
 
   async function eliminaAtto() {
@@ -240,6 +324,16 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
         <p className="text-gray-400 text-xs">Creato il {new Date(atto.createdAt).toLocaleDateString("it-IT")}</p>
         <MailOriginaleButton messageId={atto.messageId} />
       </div>
+
+      {/* Responsabile */}
+      <ReferenteBox
+        responsabile={atto.responsabile}
+        persone={persone}
+        onAssegna={assegnaReferente}
+        onInviaTelegram={inviaTelegram}
+        onInviaEmail={inviaEmail}
+        onWhatsApp={apriWhatsApp}
+      />
 
       {/* Collegamento al Consiglio (Mozioni/Interrogazioni) */}
       {mostraCollegamento && (
@@ -363,6 +457,40 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
         </button>
       </div>
 
+      {/* Diario evoluzioni */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <p className="font-medium text-gray-700 mb-3 text-sm">📋 Diario evoluzioni</p>
+        <div className="flex gap-2 mb-4">
+          <textarea
+            value={nuovaNota}
+            onChange={e => setNuovaNota(e.target.value)}
+            placeholder="Aggiungi aggiornamento…"
+            rows={2}
+            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+          />
+          <button
+            onClick={aggiungiNota}
+            disabled={savingNota || !nuovaNota.trim()}
+            className="bg-blue-600 text-white rounded-lg px-4 text-sm font-medium disabled:opacity-50"
+          >
+            ✓
+          </button>
+        </div>
+        <div className="space-y-2">
+          {atto.note.length === 0 && (
+            <p className="text-xs text-gray-400">Nessun aggiornamento ancora</p>
+          )}
+          {[...atto.note].reverse().map((n, i) => (
+            <div key={n.id} className={`rounded-lg px-3 py-2 border-l-2 ${i === 0 ? "bg-blue-50 border-blue-400" : "bg-gray-50 border-gray-200"}`}>
+              <p className="text-sm text-gray-800">{n.testo}</p>
+              <p className="text-xs text-gray-400 mt-1">
+                {new Date(n.createdAt).toLocaleString("it-IT", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Popup modifica */}
       {modificaMode && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
@@ -406,6 +534,21 @@ export default function AttoPage({ params }: { params: Promise<{ id: string }> }
                 <option value="">Non specificata</option>
                 {(Object.keys(PRIORITA_LABEL) as Priorita[]).map(p => (
                   <option key={p} value={p}>{PRIORITA_LABEL[p]}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">Responsabile</label>
+              <select
+                value={formModifica.responsabileId}
+                onChange={e => setFormModifica(f => ({ ...f, responsabileId: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">— nessuno —</option>
+                {persone.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.nome} {p.cognome}{p.ruolo ? ` — ${p.ruolo}` : ""}
+                  </option>
                 ))}
               </select>
             </div>

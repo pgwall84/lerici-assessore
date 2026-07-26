@@ -13,6 +13,7 @@ const updateSchema = z.object({
   consiglioCollegatoId: z.string().nullable().optional(),
   priorita: z.enum(["BASSA", "MEDIA", "ALTA"]).nullable().optional(),
   visualizzato: z.boolean().optional(),
+  responsabileId: z.number().int().nullable().optional(),
 });
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -24,8 +25,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     where: { id },
     include: {
       documenti: { orderBy: { createdAt: "asc" } },
+      note: { orderBy: { createdAt: "asc" } },
       consiglioCollegato: true,
       risposteCollegate: true,
+      responsabile: true,
     },
   });
 
@@ -55,7 +58,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(scadenzaRisposta !== undefined ? { scadenzaRisposta: scadenzaRisposta ? new Date(scadenzaRisposta) : null } : {}),
       ...(visualizzato !== undefined ? { visualizzato, visualizzatoAt: visualizzato ? new Date() : null } : {}),
     },
-    include: { documenti: { orderBy: { createdAt: "asc" } }, consiglioCollegato: true },
+    include: { documenti: { orderBy: { createdAt: "asc" } }, consiglioCollegato: true, responsabile: true },
   });
 
   return NextResponse.json(atto);

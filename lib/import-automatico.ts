@@ -17,8 +17,6 @@ export type EsitoEsecuzione =
   // `etichetta`: solo per i gestori (es. eseguiContinuazione) la cui entità di destinazione non
   // è ricavabile dal semplice categoriaProposta della riga — il chiamante la usa al posto del
   // lookup generico via etichettaPerCategoria(riga.categoriaProposta).
-  // `entitaId` assente solo per eseguiSoloArchiviazione (Delibere/Determine Giunta): nessuna
-  // entità creata, solo etichetta + esito COMPLETATO — completamento legittimo, non un errore.
   | { esito: "COMPLETATO"; entitaId?: string; etichetta?: string }
   // ODG ambiguo nello zip: il sistema si ferma SOLO per questa mail, nessuna entità creata.
   // Dal cron non è risolvibile (nessun umano a cui chiedere): la riga resta IN_ATTESA e il resto
@@ -189,14 +187,54 @@ export async function eseguiVerbaleGiunta(m: MailImport): Promise<EsitoEsecuzion
   }
 }
 
-// Delibere/Determine di Giunta: nessuna entità da creare, solo l'etichetta Gmail + esito
-// COMPLETATO — "solo archiviazione" è un esito legittimo di pari dignità delle altre categorie
-// Automatico (Consiglio/Giunta/Giustifica), non un errore né un "non rilevante". A differenza di
-// NON_RILEVANTE (che completa subito allo scan, bypassando primaEsecuzione() di proposito perché
-// è spam/newsletter su cui non serve mai una conferma umana), questa passa dal normale gate
-// Automatico: la prima volta resta IN_ATTESA per la conferma di Marco, come le altre.
-export async function eseguiSoloArchiviazione(): Promise<EsitoEsecuzione> {
-  return { esito: "COMPLETATO" };
+// Non deve mai far fallire l'esecuzione (stesso principio di provaEstraiOdg sopra): un documento
+// corrotto o non estraibile (es. PDF malformato) lascia semplicemente odgTestoEstratto vuoto,
+// mai un ERRORE che farebbe perdere l'atto/allegati già creati con successo.
+async function provaEstraiTestoDup(atto: { id: string; corpoCompleto: string }, allegati: MailImport["allegati"]) {
+  try {
+    const documentoTestuale = allegati.find(a => /\.(pdf|docx)$/i.test(a.filename));
+    if (documentoTestuale) {
+      const testo = await estraiTestoDaFile(documentoTestuale.buffer, documentoTestuale.filename);
+      if (testo) {
+        await prisma.attoPoliticoAmministrativo.update({ where: { id: atto.id }, data: { odgTestoEstratto: testo } });
+      }
+      return;
+    }
+    const corpoPulito = atto.corpoCompleto.replace(/\n{3,}/g, "\n\n").trim();
+    if (corpoPulito.length >= SOGLIA_CORPO_SOSTANZIALE) {
+      await prisma.attoPoliticoAmministrativo.update({ where: { id: atto.id }, data: { odgTestoEstratto: corpoPulito } });
+    }
+  } catch {
+    // ignorato di proposito — vedi commento sopra
+  }
+}
+
+/**
+ * DUP (Documento Unico di Programmazione, evolutiva 2026-07-26): crea l'atto, carica gli
+ * allegati, estrae il testo dal primo PDF/DOCX allegato — a differenza dell'ODG delle
+ * Convocazioni, NESSUNA riformattazione Claude: il testo va salvato così com'è, un DUP è un
+ * documento già strutturato di suo, non si presta a un elenco puntato. Se non c'è un PDF/DOCX
+ * (raro, ma capita), stesso fallback sul corpo mail già usato per Mozioni/Interrogazioni.
+ */
+export async function eseguiDup(m: MailImport): Promise<EsitoEsecuzione> {
+  try {
+    const atto = await prisma.attoPoliticoAmministrativo.create({
+      data: { tipo: "DUP", oggetto: m.titolo, messageId: m.messageId },
+    });
+
+    for (const a of m.allegati) {
+      const url = await caricaFile(`atto-${atto.id}`, a.buffer, a.filename);
+      await prisma.documentoAtto.create({
+        data: { attoId: atto.id, nomeFile: a.filename, storageUrl: url, ruolo: "PRATICA_ALLEGATA" },
+      });
+    }
+
+    await provaEstraiTestoDup({ id: atto.id, corpoCompleto: m.corpoCompleto }, m.allegati);
+
+    return { esito: "COMPLETATO", entitaId: atto.id };
+  } catch (e) {
+    return { esito: "ERRORE", errore: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 export async function eseguiGiustifica(m: MailImport): Promise<EsitoEsecuzione> {

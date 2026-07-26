@@ -11,7 +11,7 @@ import { ordinaPerPriorita } from "@/lib/ordinamento";
 import { PrioritaBadge, PrioritaDot } from "@/components/PrioritaBadge";
 import type { AttoPoliticoAmministrativo, DocumentoAtto, Priorita, StatoAtto, TipoAtto } from "@prisma/client";
 
-const TIPI: TipoAtto[] = ["CONVOCAZIONE_CONSIGLIO", "CONVOCAZIONE_COMMISSIONE", "MOZIONE", "INTERROGAZIONE", "CONVOCAZIONE_GIUNTA"];
+const TIPI: TipoAtto[] = ["CONVOCAZIONE_CONSIGLIO", "CONVOCAZIONE_COMMISSIONE", "MOZIONE", "INTERROGAZIONE", "CONVOCAZIONE_GIUNTA", "DELIBERA", "DETERMINA", "DUP"];
 
 type AttoCard = AttoPoliticoAmministrativo & { documenti: DocumentoAtto[] };
 

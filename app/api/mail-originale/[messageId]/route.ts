@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { getMailPerId } from "@/lib/gmail";
+import { estraiMittenteReale } from "@/lib/inoltro";
 
 // Testo completo del messaggio originale, a richiesta (redesign 2026-07-25) — usato dal pulsante
 // "Mostra testo completo mail originale" sulle pagine di dettaglio di Pratica/Progetto/Atto/
@@ -20,5 +21,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ mess
     corpoCompleto: mail.corpoCompleto,
     nomeMittente: mail.nomeMittente,
     data: mail.data,
+    // Solo informativo (evolutiva 2026-07-26) — vedi lib/inoltro.ts. null se il messaggio non è
+    // un inoltro riconoscibile, mai un dato indovinato.
+    mittenteReale: estraiMittenteReale(mail.corpoCompleto),
   });
 }

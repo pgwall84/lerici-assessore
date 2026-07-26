@@ -2,18 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { PRIORITA_LABEL } from "@/lib/constants";
+import { PRIORITA_LABEL, TIPO_ATTO_LABEL } from "@/lib/constants";
 import type { Priorita, TipoAtto } from "@prisma/client";
 
-const TIPO_LABEL: Record<TipoAtto, string> = {
-  CONVOCAZIONE_GIUNTA: "Convocazione Giunta",
-  CONVOCAZIONE_CONSIGLIO: "Convocazione Consiglio",
-  CONVOCAZIONE_COMMISSIONE: "Convocazione Commissione",
-  MOZIONE: "Mozione",
-  INTERROGAZIONE: "Interrogazione",
-};
+const TIPO_LABEL = TIPO_ATTO_LABEL;
 
-const TIPI: TipoAtto[] = ["CONVOCAZIONE_GIUNTA", "CONVOCAZIONE_CONSIGLIO", "CONVOCAZIONE_COMMISSIONE", "MOZIONE", "INTERROGAZIONE"];
+const TIPI: TipoAtto[] = [
+  "CONVOCAZIONE_GIUNTA", "CONVOCAZIONE_CONSIGLIO", "CONVOCAZIONE_COMMISSIONE", "MOZIONE", "INTERROGAZIONE",
+  "DELIBERA", "DETERMINA", "DUP",
+];
 
 export default function NuovoAttoPage() {
   const router = useRouter();

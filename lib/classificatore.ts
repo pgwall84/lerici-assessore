@@ -117,6 +117,17 @@ export function categoriaVariaPerDominio(emailMittente: string): "ANCI" | "REGIO
   return null;
 }
 
+// Riconoscimento Giunta/Dup (evolutiva 2026-07-26): parola chiave nell'oggetto, non un'etichetta
+// Gmail preesistente. Verificato dal vivo sul corpus reale (2026-07-26): un solo caso trovato,
+// oggetto esattamente "DUP" — segnale pulito ma campione troppo piccolo per fidarsi ciecamente,
+// quindi binario MANUALE (non Automatico) in classificaESalva nonostante il match sia certo qui.
+// "\bDUP\b" richiede una parola isolata (maiuscole comprese, i.e. non "duplicato").
+const REGEX_DUP = /\bDUP\b|documento\s+unico\s+di\s+programmazione/i;
+
+export function classificaDup(oggetto: string): boolean {
+  return REGEX_DUP.test(oggetto);
+}
+
 export function estraiTitolo(oggetto: string, corpo: string): string {
   if (oggetto && oggetto.trim().length > 5) {
     return oggetto.replace(/^(re:|fwd?:|i:|fw:)\s*/gi, "").trim().slice(0, 120);

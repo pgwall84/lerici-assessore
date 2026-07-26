@@ -5,7 +5,7 @@ import { getMailPerId, marcaImportata, applicaEtichettaEArchivia, rimuoviEtichet
 import { contentTypeDaNomeFile } from "@/lib/estrazione-documenti";
 import { etichettaPerCategoria, ALBERO_ETICHETTE_MAIL } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
-import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, eseguiCollegamentoAtto, eseguiSoloArchiviazione, eseguiProgettoVarie, type EsitoEsecuzione } from "@/lib/import-automatico";
+import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, eseguiCollegamentoAtto, eseguiProgettoVarie, eseguiDup, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { decodificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
 import type { MailImport } from "@/lib/gmail";
 import type { Delega, StatoAtto, StatoPratica, StatoProgetto, EsitoContestazione, TipoProgetto } from "@prisma/client";
@@ -74,11 +74,15 @@ const GESTORI_AUTOMATICO: Record<string, (m: MailImport, indiceOdgForzato?: numb
   VERBALE_GIUNTA: m => eseguiVerbaleGiunta(m),
   GIUSTIFICA: m => eseguiGiustifica(m),
   CONTINUAZIONE: m => eseguiContinuazione(m),
-  DELIBERA_GIUNTA: () => eseguiSoloArchiviazione(),
-  DETERMINA_GIUNTA: () => eseguiSoloArchiviazione(),
+  DELIBERA_GIUNTA: (m, i, s) => eseguiConvocazione(m, "DELIBERA", i, s),
+  DETERMINA_GIUNTA: (m, i, s) => eseguiConvocazione(m, "DETERMINA", i, s),
   ANCI: m => eseguiProgettoVarie(m, "ANCI"),
   REGIONE: m => eseguiProgettoVarie(m, "REGIONE"),
   GOVERNO: m => eseguiProgettoVarie(m, "GOVERNO"),
+  // DUP resta binario MANUALE alla scansione (mai eseguito dal cron, vedi lib/motore-mail.ts) —
+  // ma raggiungibile da qui tramite "esegui_automatico" quando Marco conferma la proposta o sceglie
+  // "Giunta/Dup" dal tree-picker, stessa infrastruttura già usata per le altre categorie sopra.
+  DUP: m => eseguiDup(m),
 };
 
 async function caricaFile(cartella: string, buffer: Buffer, nomeFile: string): Promise<string> {
