@@ -4,7 +4,7 @@ description: "Scoperte tecniche e gotcha emersi durante sviluppo/debug — da co
 metadata:
   node_type: note
   project: lerici-assessore
-  aggiornato: 2026-07-19
+  aggiornato: 2026-07-26
 ---
 
 # Note tecniche — scoperte importanti
@@ -183,3 +183,38 @@ Verificato via API Vercel (`GET /v2/teams`, piano confermato `hobby`) e document
 - **Durata massima di una singola esecuzione** (questa nota): 300s — molto più permissivo di quanto sembri intuitivo pensando a "Hobby = piano gratuito limitato".
 
 Prima di assumere un tetto di durata per dimensionare `maxDuration`, verificare il piano reale via `curl https://api.vercel.com/v2/teams -H "Authorization: Bearer $TOKEN"` (token in `%APPDATA%/xdg.data/com.vercel.cli/auth.json` su Windows) invece di affidarsi a un numero ricordato — i limiti Vercel cambiano nel tempo (fluid compute è una novità relativamente recente che ha alzato parecchio il tetto Hobby).
+
+---
+
+## 17. Rigenerare il refresh token Google in locale non lo aggiorna su Vercel — stesso principio della nota #1, direzione opposta
+
+`scripts/get-google-token.ts` scrive il nuovo `GOOGLE_REFRESH_TOKEN` solo in `.env.local` e `.env.production` (file locali, gitignorati — mai sincronizzati con Vercel). Le Environment Variables della dashboard Vercel restano quelle vecchie finché non vengono aggiornate esplicitamente lì. Sintomo osservato il 2026-07-26: token scaduto (`invalid_grant`), rigenerato correttamente in locale (verificato funzionante da script), ma il caricamento mail in produzione continuava a fallire — `npx vercel env ls production` mostrava il vecchio token, creato 7 giorni prima.
+
+**Fix**: dopo aver rigenerato il token con lo script, aggiornarlo anche su Vercel:
+```bash
+npx vercel env rm GOOGLE_REFRESH_TOKEN production --yes
+sed -n 's/^GOOGLE_REFRESH_TOKEN="\(.*\)"$/\1/p' .env.local | npx vercel env add GOOGLE_REFRESH_TOKEN production
+npx vercel --prod --yes
+```
+Un cambio di env var su Vercel richiede comunque un nuovo deploy per essere effettivo sulle function già in esecuzione.
+
+---
+
+## 18. Estrazione allegati mail: due bug distinti, stessa causa di fondo (liste di tipi mai tenute sincronizzate)
+
+Scoperti il 2026-07-26 mentre si indagava perché alcuni Progetti/Atti creati da mail non avessero mai ricevuto i loro allegati:
+
+- **Mail non-PEC senza estrazione allegati**: `parseMessaggioPerId` (`lib/gmail.ts`) estraeva gli allegati solo dentro il ramo `postacertPart` (mail PEC con `postacert.eml`). Per qualunque mail Gmail normale (non certificata) il ramo `else` leggeva solo il corpo testo e non guardava mai gli allegati — nessun filtro sui tipi, proprio nessuna lettura. Fix: stessa estrazione aggiunta anche lì, individuando i veri allegati tra le parti MIME (`filename` non vuoto + `body.attachmentId`, a differenza delle parti di corpo inline che hanno `filename` vuoto).
+- **Filtro tipi più stretto dello storage**: la lista `TIPI_ALLEGATO_AMMESSI` (usata per decidere quali allegati estrarre) accettava solo `image/*` e `application/pdf` — escludendo Word/RTF/ZIP che `contentTypeDaNomeFile` (`lib/estrazione-documenti.ts`) sapeva già gestire correttamente per lo storage. Un `.doc` (`application/msword`) dentro una PEC non veniva mai caricato.
+
+**Lezione**: quando esistono due liste separate che descrivono "che tipi di file sono supportati" (una per l'estrazione, una per il content-type di storage), va tenuta una sola fonte di verità o le due vanno controllate insieme ad ogni modifica — altrimenti si crea un buco silenzioso (nessun errore, l'allegato semplicemente non arriva mai).
+
+---
+
+## 19. Cambiare l'algoritmo di deduplica (hash) senza backfill lascia duplicati storici, anche se il nuovo codice è corretto
+
+Scoperto il 2026-07-26: il commit `78d4199` (21/07) ha cambiato la chiave di hash dei Bandi da titolo (estratto via AI, variabile run su run) a `bandoUrl` (stabile) — fix corretto e verificato: zero duplicati creati dopo quel commit. Ma i bandi già in DB da *prima* del fix avevano hash calcolati con l'algoritmo vecchio; ogni scan successivo ricalcolava un hash diverso (nuovo algoritmo) per lo stesso bando reale, non trovava corrispondenza (`findUnique` sul vecchio hash falliva) e ne creava un altro — 20 gruppi di duplicati accumulati tra il 10/07 e il 22/07, ciascuno con una notifica Telegram separata.
+
+**Lezione**: cambiare la chiave/l'algoritmo di una deduplica esistente richiede quasi sempre un backfill esplicito sui record già in DB (ricalcolare l'hash col nuovo algoritmo sui record esistenti), non solo il codice nuovo per i record futuri — altrimenti il vecchio e il nuovo continuano a divergere silenziosamente finché qualcuno non se ne accorge dai duplicati visibili in UI.
+
+**Attenzione se si pulisce manualmente**: prima di eliminare i duplicati, verificare se una delle copie ha uno stato che riflette una decisione umana già presa (es. `SCARTATO`/`INTERESSANTE` su Bando) — va riportato sul record superstite, mai perso scegliendo la copia da tenere solo per data.
