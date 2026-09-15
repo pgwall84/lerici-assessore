@@ -27,7 +27,11 @@ export async function GET(req: NextRequest) {
   });
 
   const mappaEtichette = await getMappaEtichette();
-  const mails = await Promise.all(righe.map(r => getMailPerId(r.messageId)));
+  // Un errore Gmail su una singola riga (es. quota "Total Query Cost" superata, vista più volte
+  // in produzione durante gli script di manutenzione) non deve far fallire l'intera pagina di 10 —
+  // meglio saltare quella riga (torna null, filtrata sotto come le mail non trovate) che perdere
+  // anche le altre 9 già recuperate con successo.
+  const mails = await Promise.all(righe.map(r => getMailPerId(r.messageId).catch(() => null)));
 
   const risultato = await Promise.all(righe.map(async (r, i) => {
     const mail = mails[i];

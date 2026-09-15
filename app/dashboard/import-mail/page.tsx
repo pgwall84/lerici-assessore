@@ -236,12 +236,17 @@ export default function ImportMailPage() {
     const params = new URLSearchParams();
     if (binario) params.set("binario", binario);
     fetch(`/api/motore-mail/revisione?${params}`)
-      .then(r => r.json())
-      .then(data => {
+      .then(async r => ({ ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) }))
+      .then(({ ok, status, data }) => {
+        if (!ok || !Array.isArray(data.mails)) {
+          alert(`Errore nel caricare le mail: ${JSON.stringify(data.error ?? status)}`);
+          return;
+        }
         setVoci(data.mails.map((r: CampiServer) => toVoce(r, gestoriByNome, entiByNome, sottoTemiByKey)));
         setCursor(data.nextCursor);
-        setLoading(false);
-      });
+      })
+      .catch(e => alert(`Errore nel caricare le mail: ${e instanceof Error ? e.message : e}`))
+      .finally(() => setLoading(false));
   }
 
   // gestoriByNome/entiByNome/sottoTemiByKey tra le dipendenze: al primo mount le liste arrivano
@@ -252,13 +257,26 @@ export default function ImportMailPage() {
   async function caricaAltre() {
     if (!cursor) return;
     setCaricandoAltre(true);
-    const params = new URLSearchParams({ cursor });
-    if (filtro) params.set("binario", filtro);
-    const res = await fetch(`/api/motore-mail/revisione?${params}`);
-    const data = await res.json();
-    setVoci(vs => [...vs, ...data.mails.map((r: CampiServer) => toVoce(r, gestoriByNome, entiByNome, sottoTemiByKey))]);
-    setCursor(data.nextCursor);
-    setCaricandoAltre(false);
+    try {
+      const params = new URLSearchParams({ cursor });
+      if (filtro) params.set("binario", filtro);
+      const res = await fetch(`/api/motore-mail/revisione?${params}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !Array.isArray(data.mails)) {
+        // Prima di questo fix: un errore qui (es. quota Gmail superata, vista più volte oggi
+        // durante gli script di pulizia) lasciava il pulsante bloccato su "Carico…" senza dire
+        // nulla e senza far riprovare — sembrava che "carica altre" non facesse semplicemente
+        // nulla. Ora l'errore è visibile e il pulsante torna cliccabile.
+        alert(`Errore nel caricare altre mail: ${JSON.stringify(data.error ?? res.status)}`);
+        return;
+      }
+      setVoci(vs => [...vs, ...data.mails.map((r: CampiServer) => toVoce(r, gestoriByNome, entiByNome, sottoTemiByKey))]);
+      setCursor(data.nextCursor);
+    } catch (e) {
+      alert(`Errore nel caricare altre mail: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setCaricandoAltre(false);
+    }
   }
 
   function aggiorna<K extends keyof Voce>(id: string, campo: K, valore: Voce[K]) {
