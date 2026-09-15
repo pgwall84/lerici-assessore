@@ -218,3 +218,48 @@ Scoperto il 2026-07-26: il commit `78d4199` (21/07) ha cambiato la chiave di has
 **Lezione**: cambiare la chiave/l'algoritmo di una deduplica esistente richiede quasi sempre un backfill esplicito sui record già in DB (ricalcolare l'hash col nuovo algoritmo sui record esistenti), non solo il codice nuovo per i record futuri — altrimenti il vecchio e il nuovo continuano a divergere silenziosamente finché qualcuno non se ne accorge dai duplicati visibili in UI.
 
 **Attenzione se si pulisce manualmente**: prima di eliminare i duplicati, verificare se una delle copie ha uno stato che riflette una decisione umana già presa (es. `SCARTATO`/`INTERESSANTE` su Bando) — va riportato sul record superstite, mai perso scegliendo la copia da tenere solo per data.
+
+---
+
+## 20. `npx vercel --prod` può fallire con un falso errore sulla Root Directory, anche a impostazione corretta sul server — bug della CLI, non della config
+
+Scoperto il 2026-08-09: `npx vercel --prod --yes` falliva con `Error: If defined, the Root Directory must be a relative path not starting with './'...`, ripetuto identico anche dopo aver verificato via API (`GET /v9/projects/...`) che `rootDirectory` sul progetto era correttamente `null`, dopo aver aggiornato la CLI a `@latest`, e dopo un rilink completo (`.vercel` cancellata, `vercel link` da zero). La causa più probabile: un bug della CLI stessa nel calcolo del percorso relativo quando la cartella di lavoro coincide esattamente con la root del progetto (comportamento cambiato di recente — Vercel ha toccato la logica di matching root-directory/link nella CLI proprio ad agosto 2026), non qualcosa di sbagliato nella configurazione del progetto.
+
+**Fix/bypass**: il progetto è collegato a GitHub — non serve affatto `vercel --prod` da locale. Due alternative che aggirano completamente la CLI:
+- Dashboard Vercel → Deployments → "..." sull'ultimo deployment → **Redeploy**.
+- `git commit --allow-empty -m "trigger redeploy" && git push origin master` (l'integrazione GitHub builda da sola).
+
+Le environment variable già aggiornate (es. `GOOGLE_REFRESH_TOKEN`) vengono comunque applicate al nuovo build in entrambi i casi — sono lette al momento del deploy, non passate dalla CLI. **Evitare `vercel --prod` da locale finché questo bug non risulta risolto a monte.**
+
+---
+
+## 21. Il refresh token Google scade ogni ~7 giorni: non è normale usura, è lo stato "Testing" dell'OAuth consent screen
+
+Scoperto il 2026-08-09, dopo l'ennesima rigenerazione del token (vedi nota #17): Google **forza la scadenza di ogni refresh token dopo 7 giorni esatti** quando lo stato di pubblicazione ("Publishing status") dell'app OAuth su Google Cloud Console è **"Testing"** — indipendentemente da quanto o quanto spesso l'app viene usata. Non è un sintomo di bug nel nostro codice né di una config di refresh sbagliata: è una regola documentata di Google per le app non pubblicate.
+
+**Fix**: Google Cloud Console → il progetto usato per questo tool → APIs & Services → OAuth consent screen → **Publish App**. Con stato "In production" il refresh token non ha più il tetto fisso di 7 giorni — resta valido finché non viene revocato manualmente, non usato per 6 mesi, o la password Google cambia.
+
+**Attenzione**: un token già emesso *mentre* lo stato era ancora "Testing" può restare comunque soggetto al tetto dei 7 giorni originario anche dopo il Publish successivo — il Publish non è retroattivo sui token già in circolazione. Dopo aver pubblicato l'app, rigenerare il token **un'ultima volta** con `scripts/get-google-token.ts` e sincronizzarlo su Vercel (nota #17), così il token in uso è quello emesso *dopo* la pubblicazione.
+
+**Effetto collaterale del Publish, non un blocco**: alla prossima autorizzazione manuale comparirà lo schermo "Google non ha verificato questa app" (l'app richiede `gmail.modify`, scope sensibile, e non è passata dalla verifica ufficiale di Google) — cliccare "Avanzate" → "Vai a [nome app] (non sicuro)" per procedere. Irrilevante per un tool a uso personale; la verifica ufficiale serve solo per app con molti utenti esterni.
+
+---
+
+## 22. Il pattern `config({path:".env.local"})` della nota #2 non basta più con `import { prisma } from "../lib/prisma"` statico: serve `import()` dinamico
+
+Scoperto il 2026-09-14 sistemando `scripts/list-bandi.ts`: seguendo esattamente il pattern della nota #2 (`import { config } from "dotenv"; config({ path: ".env.local", override: true }); import { prisma } from "../lib/prisma";`) lo script falliva con `SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string` — non l'errore di rete `P1001` della nota #12, un errore diverso e più subdolo.
+
+Causa: `lib/prisma.ts` chiama `new Pool({ connectionString: process.env.DATABASE_URL })` **a livello di modulo** (non dentro una funzione lazy). Con gli script eseguiti da `tsx` in questo progetto, le dichiarazioni `import` statiche vengono issate (hoisted) ed eseguite **prima** di qualunque altra istruzione del file, indipendentemente dall'ordine testuale — quindi `import { prisma } from "../lib/prisma"` valutava `process.env.DATABASE_URL` (e costruiva il `Pool` con quel valore, catturato una volta sola) **prima** che la `config()` scritta sulla riga precedente venisse davvero eseguita. Verificato con un log subito prima e subito dopo l'import: `process.env.DATABASE_URL` risultava già corretto (`.env.local`, pooler) in entrambi i punti — perché il log è codice normale, non un import, e quindi *non* viene issato — ma il `Pool` dentro `lib/prisma.ts` aveva comunque già catturato il valore sbagliato (probabilmente `undefined`, dato che nulla aveva ancora caricato `.env` a quel punto) al momento della sua creazione.
+
+**Fix**: sostituire l'import statico di `lib/prisma` con un `import()` dinamico dentro `main()`, che a differenza di `import` statico **non** viene issato e quindi viene eseguito solo al punto in cui compare nel codice, dopo la `config()`:
+```ts
+import { config } from "dotenv";
+config({ path: ".env.local", override: true });
+
+async function main() {
+  const { prisma } = await import("../lib/prisma");
+  // ...
+}
+```
+
+**Script già scritti col vecchio pattern (import statico) probabilmente affetti dallo stesso bug, non ancora verificati/corretti**: `scripts/test-motore-mail.ts`, `scripts/test-motore-mail-esecuzione.ts`. Da controllare/correggere allo stesso modo se rieseguiti e falliscono con lo stesso errore SASL.

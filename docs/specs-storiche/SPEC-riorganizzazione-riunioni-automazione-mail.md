@@ -1,4 +1,7 @@
+> **✅ Implementata.** Questa è la spec di progettazione originale (creata 2026-07-15), conservata per il "perché" delle decisioni (es. i tre binari di classificazione mail, il modello dati di Riunioni/Atti). Alcuni dettagli sono evoluti rispetto a questa versione (es. `TipoAtto` include ora anche `DELIBERA`/`DETERMINA`/`DUP`) — per lo stato attuale vedi [FUNZIONALITA-lerici-assessore.md](../../FUNZIONALITA-lerici-assessore.md).
+
 ---
+
 name: spec-riorganizzazione-riunioni-automazione-mail
 description: "Specifica tecnica unificata: separazione Segnalazioni/Progetti/Attività Politico-Amministrativa, automazione classificazione mail PEC, e feature Riunioni (registrazione vocale + checklist) in lerici-assessore"
 metadata:

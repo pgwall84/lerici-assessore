@@ -1,4 +1,7 @@
+> **✅ Implementata.** Questa è la spec di progettazione originale (creata 2026-07-10), conservata per il "perché" delle decisioni (es. quali fonti sono escluse e perché). Per lo stato attuale della feature Bandi, vedi [FUNZIONALITA-lerici-assessore.md](../../FUNZIONALITA-lerici-assessore.md#bandi).
+
 ---
+
 name: spec-feature-bandi
 description: "Specifica tecnica per l'implementazione della sezione Bandi in lerici-assessore — monitoraggio bandi pubblici con notifica Telegram"
 metadata:

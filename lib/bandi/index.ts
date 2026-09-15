@@ -46,6 +46,14 @@ const FONTI: FonteConfig[] = [
   // a loro. È anche la fonte più rumorosa (mescola webinar/eventi ai bandi veri) e la più lenta
   // (~13s). Riattivare importando parseAnciNazionale da "./fonti/anci-nazionale" quando le altre 4
   // sono stabili e verificate.
+  //
+  // regione-liguria.ts (esiste, parser completo) NON è incluso qui di proposito, non per
+  // dimenticanza: verifica robots.txt (luglio 2026) su regione.liguria.it ha rilevato
+  // "Disallow: /" per tutti i bot generici (Crawl-delay: 600, solo Googlebot/Bingbot ammessi).
+  // Stesso motivo per incentivi.gov.it, mai aggiunto come parser. Entrambe restano a controllo
+  // manuale periodico (vedi docs/specs-storiche/SPEC-feature-bandi.md, sezione 1) finché non si
+  // trova un accesso dati concordato o un feed alternativo — non riattivare semplicemente
+  // importando il parser senza prima risolvere il blocco robots.txt.
 ];
 
 export async function checkBandi(): Promise<{ nuovi: number; errori: string[] }> {

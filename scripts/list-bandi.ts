@@ -1,7 +1,8 @@
-import "dotenv/config";
-import { prisma } from "../lib/prisma";
+import { config } from "dotenv";
+config({ path: ".env.local", override: true });
 
 async function main() {
+  const { prisma } = await import("../lib/prisma");
   const bandi = await prisma.bando.findMany({
     select: { titolo: true, ente: true, bandoUrl: true, descrizione: true, beneficiari: true },
     orderBy: [{ ente: "asc" }, { titolo: "asc" }],

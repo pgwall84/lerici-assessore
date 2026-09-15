@@ -1,9 +1,10 @@
 import { config } from "dotenv";
 config({ path: ".env.local", override: true });
-import { eseguiMotoreMail, primaEsecuzione } from "../lib/motore-mail";
-import { prisma } from "../lib/prisma";
 
 async function main() {
+  const { eseguiMotoreMail, primaEsecuzione } = await import("../lib/motore-mail");
+  const { prisma } = await import("../lib/prisma");
+
   console.log("primaEsecuzione():", await primaEsecuzione());
 
   const attiPrima = await prisma.attoPoliticoAmministrativo.count();

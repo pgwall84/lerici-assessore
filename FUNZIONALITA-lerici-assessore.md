@@ -13,6 +13,8 @@ metadata:
 
 App Next.js + Prisma + PostgreSQL (Supabase) per la gestione delle attività di Marco Muro come Assessore del Comune di Lerici. Deploy su Vercel.
 
+Vedi anche: [NOTE-TECNICHE.md](./NOTE-TECNICHE.md) per gotcha tecnici, [docs/specs-storiche/](./docs/specs-storiche/) per il "perché" delle decisioni di design delle feature già implementate.
+
 ## Sidebar / sezioni principali
 
 Menu principale: Segnalazioni, Nuova, Mail, Dashboard, Politica, Riunioni. Menu secondario "Altro": Agenda, Rubrica, Bandi, Contestazioni, Giustifiche.
@@ -113,7 +115,7 @@ Monitoraggio automatico di bandi pubblici (nazionali/regionali/provinciali) rile
 
 - **4 fonti attive**: Conferenza Stato-Città, x-desk Info Bandi, ANCI Liguria, UPEL — tutte con estrazione via Claude (non più selettori CSS/regex, troppo fragili ai redesign dei siti)
 - **ANCI Nazionale**: parser scritto (`lib/bandi/fonti/anci-nazionale.ts`) ma disattivato temporaneamente nel codice (troppo rumoroso, mescola webinar/eventi ai bandi veri) — da riattivare quando le 4 fonti attive sono stabili
-- **Regione Liguria**: parser scritto e completo (`lib/bandi/fonti/regione-liguria.ts`, presente fin dal primo commit Bandi) ma **non incluso** nell'elenco fonti attive in `lib/bandi/index.ts` — nessun commento nel codice spiega il motivo. Verificare se riattivarlo o se c'è una ragione (es. robots.txt) da documentare esplicitamente prima di scartare il file
+- **Regione Liguria**: parser scritto e completo (`lib/bandi/fonti/regione-liguria.ts`, presente fin dal primo commit Bandi) ma non incluso nell'elenco fonti attive in `lib/bandi/index.ts` — motivo ora commentato direttamente nel codice: `regione.liguria.it` blocca tutti i bot generici via robots.txt (verificato luglio 2026). Stesso motivo per `incentivi.gov.it`, mai scritto come parser. Entrambe restano a controllo manuale periodico — dettagli completi in [docs/specs-storiche/SPEC-feature-bandi.md](./docs/specs-storiche/SPEC-feature-bandi.md), sezione 1
 - **Incentivi.gov.it**: nessun parser scritto, controllo resta manuale
 - Campi estratti: titolo, ente, dotazione, beneficiari, scadenza, ambito territoriale, soglia di popolazione, tipo beneficiario (ente pubblico/impresa/misto/cittadino)
 - Deduplica via hash su URL del bando (non più sul titolo, che l'AI può riformulare leggermente run su run)

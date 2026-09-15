@@ -1,9 +1,9 @@
 import { config } from "dotenv";
 config({ path: ".env.local", override: true });
-import { scansionaMail } from "../lib/motore-mail";
-import { prisma } from "../lib/prisma";
 
 async function main() {
+  const { scansionaMail } = await import("../lib/motore-mail");
+  const { prisma } = await import("../lib/prisma");
   const pageToken = process.argv[2];
   const risultato = await scansionaMail(pageToken, 15);
   console.log(JSON.stringify(risultato, null, 2));
