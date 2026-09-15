@@ -178,6 +178,17 @@ Punti da decidere in fase di implementazione, non banali:
 - **Cosa succede se l'etichetta non è riconosciuta** (es. Marco ha creato un'etichetta a mano senza passare dal tool): non forzare nulla, loggare come "conflitto" per revisione manuale — stesso principio del binario Incerto.
 - **Non tocca mai `MailProcessata.esito` né `entitaCreataId`**: quei campi restano quelli della creazione originale, la riconciliazione è un canale a parte.
 
+### Implementato il 2026-09-15 — scoperte dal dry-run prima di scrivere sul DB reale
+
+Prima di eseguire la funzione dal vivo, un dry-run in sola lettura contro le 145 righe reali candidate ha trovato due cose non previste dal disegno originale:
+
+1. **Etichette residue pre-esistenti la cleanup automatica**: un Progetto (creato 2026-07-19, prima del fix diagnosticato il 2026-07-25 su `daRimuovere`) portava ancora `Deleghe/Lavori Pubblici` insieme alla vera etichetta corrente `Istituzioni/ANCI` — mai ripulita perché la logica di pulizia etichette in conflitto non esisteva ancora quando quel Progetto fu creato. Un design naive ("prendi la prima etichetta Deleghe/Istituzioni/Segnalazioni che trovi") avrebbe **sovrascritto silenziosamente un'entità già classificata correttamente**. Fix: quando un messaggio porta contemporaneamente etichette di più di un albero (Deleghe + Istituzioni sullo stesso Progetto, o più deleghe distinte sotto Segnalazioni/Deleghe), è trattato come **conflitto** — mai risolto indovinando quale sia quella giusta.
+2. **Limite di quota Gmail**: `maxRighe` di default abbassato da 50 a 20 — un giro con troppe righe, nello stesso cron che ha già fatto scan+esecuzione automatica, rischia di avvicinarsi al limite "Units per minute per user" dell'API Gmail (osservato dal vivo). Recuperato in più giri successivi, coerente con "non serve near-realtime" già confermato da Marco.
+
+Verificati anche casi reali legittimi (non trovati come falsi positivi): due Pratiche con delega `AMBIENTE` in DB ma etichetta Gmail `Segnalazioni/Ciclo Rifiuti` — correzioni fatte a mano da Marco su Gmail mai recepite dal tool, esattamente il caso d'uso per cui questa sezione esiste.
+
+Include anche la "Risolta inversa" (richiesta a parte da Marco dopo la sezione 3): se un messaggio porta una sotto-etichetta `.../Risolta` a qualunque profondità sotto `Segnalazioni/<Delega>`, la Pratica collegata viene chiusa nel DB (stato, `chiusaAt`, storico) senza mai richiamare `spostaInChiusa` (Gmail ha già lo stato corretto).
+
 ---
 
 ## 5. Enti istituzionali (Regione, Provincia, ANCI, Governo...) — da enum a modello

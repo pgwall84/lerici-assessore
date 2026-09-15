@@ -1,10 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { getMailsPaginato, getMappaEtichette, getMailPerId, marcaImportata, marcaIncerto, marcaNonRilevante, applicaEtichettaEArchivia, archiviaMail, rimuoviEtichetta, type MailImport } from "@/lib/gmail";
 import { classificaMail } from "@/lib/claude";
-import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria, ETICHETTA_NON_RILEVANTE, ETICHETTA_DELEGA_DA_SPECIFICARE, ALBERO_ETICHETTE_MAIL, ETICHETTE_SEGNALAZIONE, type VoceTassonomiaMail } from "@/lib/constants";
+import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria, ETICHETTA_NON_RILEVANTE, ETICHETTA_DELEGA_DA_SPECIFICARE, ALBERO_ETICHETTE_MAIL, ETICHETTE_SEGNALAZIONE, ETICHETTA_DELEGA, type VoceTassonomiaMail } from "@/lib/constants";
 import { classificaDelega, categoriaVariaPerDominio, classificaDup, classificaBilancio, categoriaGestoreEntrataPerIndirizzo } from "@/lib/classificatore";
 import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiProgettoVarie, eseguiContestazioneGestore, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { trovaContinuazioneForte, trovaContinuazioneDebole, codificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
+import { trovaOCreaEnteVario } from "@/lib/enti-vari";
 import type { Delega } from "@prisma/client";
 
 const SOGLIA_CONFIDENZA = 0.6;
@@ -396,7 +397,146 @@ export type RisultatoMotore = {
   completati: number;
   inAttesa: number;
   errori: string[];
+  // Fase 2 sezione 4: esito del passaggio di riconciliazione, in coda allo stesso giro.
+  riconciliazione: { aggiornate: number; conflitti: string[] };
 };
+
+// Fase 2 sezione 4: allinea una Pratica o un Progetto quando Marco sposta a mano l'etichetta
+// Gmail della mail già processata (es. da "Segnalazioni/Viabilità" a "Segnalazioni/Ambiente", o
+// dentro una sotto-etichetta "Risolta" per chiudere una segnalazione). Non viola mai "DB prima di
+// Gmail" (regola nata da un incidente reale, vedi NOTE-TECNICHE.md): non crea né cancella
+// un'entità, aggiorna solo campi di classificazione/stato su un'entità che esiste già.
+async function riconciliaSegnalazione(entitaCreataId: string, nomiEtichette: string[]): Promise<"aggiornata" | "conflitto" | "nessuna"> {
+  const praticaId = Number(entitaCreataId);
+  if (!Number.isFinite(praticaId)) return "nessuna";
+  const pratica = await prisma.pratica.findUnique({ where: { id: praticaId } });
+  if (!pratica) return "nessuna"; // entità cancellata nel frattempo, non blocca il resto del giro
+
+  const etichetteSegnalazioni = nomiEtichette.filter(e => e.startsWith("Segnalazioni/"));
+  if (!etichetteSegnalazioni.length) return "nessuna";
+
+  // Chiusura manuale (decisione di Marco, 2026-09-15): qualunque sotto-etichetta "Risolta", a
+  // qualunque profondità (Segnalazioni/<Delega>/Risolta o Segnalazioni/<Delega>/<sottotema>/
+  // Risolta) — Gmail ha già lo stato corretto, qui si allinea solo il DB. Mai richiamare
+  // spostaInChiusa: riscriverebbe etichette già a posto.
+  if (etichetteSegnalazioni.some(e => e.endsWith("/Risolta"))) {
+    if (pratica.stato === "CHIUSA") return "nessuna";
+    await prisma.pratica.update({
+      where: { id: praticaId },
+      data: { stato: "CHIUSA", chiusaAt: new Date(), storico: { create: { statoPrecedente: pratica.stato, statoNuovo: "CHIUSA" } } },
+    });
+    return "aggiornata";
+  }
+
+  // Cambio di delega: tutte le vere deleghe DISTINTE risolte da una qualunque "Segnalazioni/*"
+  // (ETICHETTA_DELEGA, stessa tabella di "Deleghe/<nome>"). Le etichette di stato note (Chiusa
+  // piatta legacy, In corso) non contano né come delega né come conflitto — la loro semplice
+  // presenza accanto a una vera delega non deve mai bloccare l'aggiornamento.
+  //
+  // Più di UNA delega distinta = stato ambiguo, mai risolto indovinando quale sia quella giusta:
+  // trovato dal vivo nel dry-run (2026-09-15) un caso reale di etichetta residua mai ripulita,
+  // rimasta da prima dell'introduzione della pulizia automatica (diagnosi 2026-07-25) — un
+  // Progetto ANCI portava ancora "Deleghe/Lavori Pubblici" insieme alla vera etichetta corrente.
+  // Stesso rischio qui: va trattato come conflitto per revisione manuale, non risolto a caso.
+  const delegheTrovate = new Set(
+    etichetteSegnalazioni.map(e => e.split("/")[1]).filter((nome): nome is string => nome in ETICHETTA_DELEGA).map(nome => ETICHETTA_DELEGA[nome])
+  );
+  if (delegheTrovate.size === 0) {
+    const soloStatoNoto = etichetteSegnalazioni.every(e => e === "Segnalazioni/Chiusa" || e === "Segnalazioni/In corso");
+    return soloStatoNoto ? "nessuna" : "conflitto";
+  }
+  if (delegheTrovate.size > 1) return "conflitto";
+
+  const [delega] = delegheTrovate;
+  if (delega === pratica.delega) return "nessuna";
+  await prisma.pratica.update({ where: { id: praticaId }, data: { delega } });
+  return "aggiornata";
+}
+
+async function riconciliaProgetto(entitaCreataId: string, nomiEtichette: string[]): Promise<"aggiornata" | "conflitto" | "nessuna"> {
+  const progetto = await prisma.progetto.findUnique({ where: { id: entitaCreataId }, include: { enteVario: true } });
+  if (!progetto) return "nessuna";
+
+  const etichetteDelega = nomiEtichette.filter(e => e.startsWith("Deleghe/"));
+  const etichetteIstituzioni = nomiEtichette.filter(e => e.startsWith("Istituzioni/"));
+
+  // Presenza contemporanea di entrambi gli alberi: stato strutturalmente ambiguo (un Progetto ha
+  // o una vera delega o un ente, mai entrambi) — quasi sempre un'etichetta residua mai ripulita,
+  // non un cambio voluto. Caso reale trovato dal vivo nel dry-run (2026-09-15): un Progetto ANCI
+  // portava ancora "Deleghe/Lavori Pubblici" da prima dell'introduzione della pulizia automatica
+  // (diagnosi 2026-07-25). Mai indovinare quale sia quella corretta — conflitto, non un update.
+  if (etichetteDelega.length && etichetteIstituzioni.length) return "conflitto";
+
+  if (etichetteDelega.length) {
+    const deleghe = new Set(etichetteDelega.map(e => e.split("/")[1]).filter((nome): nome is string => nome in ETICHETTA_DELEGA).map(nome => ETICHETTA_DELEGA[nome]));
+    if (deleghe.size === 0) return "conflitto";
+    if (deleghe.size > 1) return "conflitto"; // più di una delega distinta, stesso principio sopra
+    const [delega] = deleghe;
+    if (delega === progetto.delega) return "nessuna";
+    await prisma.progetto.update({ where: { id: progetto.id }, data: { delega, enteVarioId: null } });
+    return "aggiornata";
+  }
+
+  // "Istituzioni/<nome>" (chiamata "Varie" fino al 2026-09-15): il nome può essere qualunque
+  // EnteVario, anche uno aggiunto al volo — trova o crea, mai da inventare un ente inesistente.
+  if (etichetteIstituzioni.length) {
+    const nomiEnte = new Set(etichetteIstituzioni.map(e => e.split("/")[1]).filter((n): n is string => !!n));
+    if (nomiEnte.size === 0) return "conflitto";
+    if (nomiEnte.size > 1) return "conflitto";
+    const [nomeEnte] = nomiEnte;
+    if (nomeEnte === progetto.enteVario?.nome) return "nessuna";
+    const ente = await trovaOCreaEnteVario(nomeEnte);
+    await prisma.progetto.update({ where: { id: progetto.id }, data: { enteVarioId: ente.id, delega: null } });
+    return "aggiornata";
+  }
+
+  return "nessuna";
+}
+
+// Introdotta con un tetto basso (maxRighe) di proposito: prima osservata su volumi contenuti,
+// poi eventualmente allargata — stesso approccio prudente già usato per il binario Automatico
+// alla sua introduzione. Non tocca mai MailProcessata.esito né entitaCreataId: quei campi restano
+// quelli della creazione originale, questa è un canale a parte.
+// Default abbassato a 20 (non i 50 della spec originale): verificato dal vivo con un dry-run
+// (2026-09-15) che una singola chiamata gmail.users.messages.get(format:"full") per riga, nello
+// stesso giro cron che ha già fatto scan+esecuzione automatica, può avvicinarsi al limite di
+// quota Gmail "Units per minute per user" — recuperato in più giri successivi, non serve
+// near-realtime (confermato da Marco), meglio restare sotto quota che processare tutto in un colpo.
+export async function riconciliaEtichette(maxRighe = 20): Promise<{ aggiornate: number; conflitti: string[] }> {
+  const righe = await prisma.mailProcessata.findMany({
+    where: { esito: "COMPLETATO", entitaCreataId: { not: null }, categoriaProposta: { in: ["segnalazione", "progetto"] } },
+    orderBy: { updatedAt: "asc" },
+    take: maxRighe,
+  });
+  if (!righe.length) return { aggiornate: 0, conflitti: [] };
+
+  const mappaEtichette = await getMappaEtichette();
+  let aggiornate = 0;
+  const conflitti: string[] = [];
+
+  for (const riga of righe) {
+    if (!riga.entitaCreataId) continue;
+    const mail = await getMailPerId(riga.messageId);
+    if (!mail) continue; // mail cancellata/spostata altrove — non blocca il resto del giro
+
+    const nomiEtichette = mail.labelIds.map(id => mappaEtichette.get(id)).filter((n): n is string => !!n);
+
+    const esito = riga.categoriaProposta === "segnalazione"
+      ? await riconciliaSegnalazione(riga.entitaCreataId, nomiEtichette)
+      : await riconciliaProgetto(riga.entitaCreataId, nomiEtichette);
+
+    if (esito === "aggiornata") {
+      aggiornate++;
+      // updatedAt si aggiorna da solo con l'update sopra — la prossima riconciliazione non la
+      // rivede subito in cima alla coda (orderBy updatedAt asc), stesso principio del "toccato di
+      // recente passa in fondo" già implicito nel resto del motore.
+    } else if (esito === "conflitto") {
+      conflitti.push(`${riga.messageId}: etichetta non riconosciuta, revisione manuale`);
+    }
+  }
+
+  return { aggiornate, conflitti };
+}
 
 /**
  * Un giro completo del motore (chiamato dal cron o a mano): drena il pregresso non ancora in
@@ -492,5 +632,10 @@ export async function eseguiMotoreMail(maxPagineScan = 20, maxEsecuzioni = 15): 
     }
   }
 
-  return { primaEsecuzione: primaVolta, scansionate, completati, inAttesa, errori };
+  // Fase 2 sezione 4: sempre eseguita, anche alla prima esecuzione — non crea né cancella
+  // un'entità (aggiorna solo campi di classificazione/stato su entità già confermate), quindi non
+  // è soggetta al gate "prima esecuzione" che protegge solo le azioni di creazione.
+  const riconciliazione = await riconciliaEtichette();
+
+  return { primaEsecuzione: primaVolta, scansionate, completati, inAttesa, errori, riconciliazione };
 }
