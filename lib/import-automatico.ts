@@ -211,16 +211,17 @@ async function provaEstraiTestoDup(atto: { id: string; corpoCompleto: string }, 
 }
 
 /**
- * DUP (Documento Unico di Programmazione, evolutiva 2026-07-26): crea l'atto, carica gli
- * allegati, estrae il testo dal primo PDF/DOCX allegato — a differenza dell'ODG delle
- * Convocazioni, NESSUNA riformattazione Claude: il testo va salvato così com'è, un DUP è un
- * documento già strutturato di suo, non si presta a un elenco puntato. Se non c'è un PDF/DOCX
- * (raro, ma capita), stesso fallback sul corpo mail già usato per Mozioni/Interrogazioni.
+ * DUP (Documento Unico di Programmazione, evolutiva 2026-07-26) e Bilancio (Fase 2 sezione 7,
+ * stesso trattamento — previsione/rendiconto/variazioni): crea l'atto, carica gli allegati,
+ * estrae il testo dal primo PDF/DOCX allegato — a differenza dell'ODG delle Convocazioni,
+ * NESSUNA riformattazione Claude: il testo va salvato così com'è, questi documenti sono già
+ * strutturati di loro, non si prestano a un elenco puntato. Se non c'è un PDF/DOCX (raro, ma
+ * capita), stesso fallback sul corpo mail già usato per Mozioni/Interrogazioni.
  */
-export async function eseguiDup(m: MailImport): Promise<EsitoEsecuzione> {
+export async function eseguiDup(m: MailImport, tipo: "DUP" | "BILANCIO" = "DUP"): Promise<EsitoEsecuzione> {
   try {
     const atto = await prisma.attoPoliticoAmministrativo.create({
-      data: { tipo: "DUP", oggetto: m.titolo, messageId: m.messageId },
+      data: { tipo, oggetto: m.titolo, messageId: m.messageId },
     });
 
     for (const a of m.allegati) {

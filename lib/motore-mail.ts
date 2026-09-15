@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getMailsPaginato, getMappaEtichette, getMailPerId, marcaImportata, marcaIncerto, marcaNonRilevante, applicaEtichettaEArchivia, archiviaMail, rimuoviEtichetta, type MailImport } from "@/lib/gmail";
 import { classificaMail } from "@/lib/claude";
 import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria, ETICHETTA_NON_RILEVANTE, ETICHETTA_DELEGA_DA_SPECIFICARE, ALBERO_ETICHETTE_MAIL, type VoceTassonomiaMail } from "@/lib/constants";
-import { classificaDelega, categoriaVariaPerDominio, classificaDup } from "@/lib/classificatore";
+import { classificaDelega, categoriaVariaPerDominio, classificaDup, classificaBilancio } from "@/lib/classificatore";
 import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiProgettoVarie, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { trovaContinuazioneForte, trovaContinuazioneDebole, codificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
 import type { Delega } from "@prisma/client";
@@ -152,6 +152,23 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
         oggetto: m.oggettoOriginale,
         categoriaProposta: "DUP",
         etichettaProposta: etichettaPerCategoria("DUP"),
+        confidenza: 1,
+        binario: "MANUALE",
+      },
+    });
+    return "MANUALE";
+  }
+
+  // Giunta/Bilancio (Fase 2 sezione 7): stesso trattamento di Giunta/Dup sopra.
+  if (classificaBilancio(m.oggettoOriginale)) {
+    await prisma.mailProcessata.create({
+      data: {
+        messageId: m.messageId,
+        threadId: m.threadId || null,
+        mittente: m.mittente,
+        oggetto: m.oggettoOriginale,
+        categoriaProposta: "BILANCIO",
+        etichettaProposta: etichettaPerCategoria("BILANCIO"),
         confidenza: 1,
         binario: "MANUALE",
       },

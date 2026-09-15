@@ -87,10 +87,12 @@ const GESTORI_AUTOMATICO: Record<string, (m: MailImport, indiceOdgForzato?: numb
   ANCI: m => eseguiProgettoVarie(m, "ANCI"),
   REGIONE: m => eseguiProgettoVarie(m, "REGIONE"),
   GOVERNO: m => eseguiProgettoVarie(m, "GOVERNO"),
-  // DUP resta binario MANUALE alla scansione (mai eseguito dal cron, vedi lib/motore-mail.ts) —
-  // ma raggiungibile da qui tramite "esegui_automatico" quando Marco conferma la proposta o sceglie
-  // "Giunta/Dup" dal tree-picker, stessa infrastruttura già usata per le altre categorie sopra.
+  // DUP/Bilancio restano binario MANUALE alla scansione (mai eseguiti dal cron, vedi
+  // lib/motore-mail.ts) — ma raggiungibili da qui tramite "esegui_automatico" quando Marco
+  // conferma la proposta o sceglie "Giunta/Dup"/"Giunta/Bilancio" dal tree-picker, stessa
+  // infrastruttura già usata per le altre categorie sopra.
   DUP: m => eseguiDup(m),
+  BILANCIO: m => eseguiDup(m, "BILANCIO"),
 };
 
 async function caricaFile(cartella: string, buffer: Buffer, nomeFile: string): Promise<string> {

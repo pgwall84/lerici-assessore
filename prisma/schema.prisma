@@ -377,6 +377,7 @@ enum TipoAtto {
   DELIBERA
   DETERMINA
   DUP
+  BILANCIO
 }
 
 enum StatoAtto {

@@ -136,6 +136,16 @@ export function classificaDup(oggetto: string): boolean {
   return REGEX_DUP.test(oggetto);
 }
 
+// Riconoscimento Giunta/Bilancio (Fase 2 sezione 7, 2026-09-15): stesso trattamento di DUP sopra
+// — parola chiave nell'oggetto, non un'etichetta Gmail preesistente, binario MANUALE (volumi
+// bassi confermati da Marco: "ce ne saranno poche", segnale testuale pulito ma campione troppo
+// piccolo per fidarsi ciecamente).
+const REGEX_BILANCIO = /\bbilancio\s+di\s+previsione\b|\bbilancio\s+di\s+esercizio\b|\brendiconto\s+di\s+gestione\b|\bvariazione\s+di\s+bilancio\b/i;
+
+export function classificaBilancio(oggetto: string): boolean {
+  return REGEX_BILANCIO.test(oggetto);
+}
+
 export function estraiTitolo(oggetto: string, corpo: string): string {
   if (oggetto && oggetto.trim().length > 5) {
     return oggetto.replace(/^(re:|fwd?:|i:|fw:)\s*/gi, "").trim().slice(0, 120);

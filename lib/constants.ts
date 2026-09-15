@@ -188,6 +188,7 @@ export const TIPO_ATTO_LABEL: Record<TipoAtto, string> = {
   DELIBERA: "Delibera di Giunta",
   DETERMINA: "Determina di Giunta",
   DUP: "DUP",
+  BILANCIO: "Bilancio",
 };
 
 // Etichette brevi per la sidebar delle sotto-categorie (stile Deleghe di Progetti).
@@ -200,6 +201,7 @@ export const TIPO_ATTO_LABEL_BREVE: Record<TipoAtto, string> = {
   DELIBERA: "Delibere",
   DETERMINA: "Determine",
   DUP: "DUP",
+  BILANCIO: "Bilancio",
 };
 
 export const TIPO_ATTO_ICONA: Record<TipoAtto, string> = {
@@ -211,6 +213,7 @@ export const TIPO_ATTO_ICONA: Record<TipoAtto, string> = {
   DELIBERA: "📜",
   DETERMINA: "📑",
   DUP: "📊",
+  BILANCIO: "💰",
 };
 
 export const STATO_ATTO_LABEL: Record<StatoAtto, string> = {
@@ -400,10 +403,11 @@ export function etichettaPerCategoria(categoria: string, delega?: Delega, enteNo
   if (categoria === "ANCI" || categoria === "REGIONE" || categoria === "GOVERNO") {
     return `Varie/${NOME_ENTE_FISSO[categoria]}`;
   }
-  // DUP (evolutiva 2026-07-26): riconoscimento per parola chiave nell'oggetto (classificaDup in
-  // lib/classificatore.ts), non un'etichetta Gmail preesistente — stesso trattamento di
-  // ANCI/REGIONE/GOVERNO sopra.
+  // DUP/Bilancio (evolutiva 2026-07-26, Bilancio Fase 2 sezione 7): riconoscimento per parola
+  // chiave nell'oggetto (classificaDup/classificaBilancio in lib/classificatore.ts), non
+  // un'etichetta Gmail preesistente — stesso trattamento di ANCI/REGIONE/GOVERNO sopra.
   if (categoria === "DUP") return "Giunta/Dup";
+  if (categoria === "BILANCIO") return "Giunta/Bilancio";
   for (const [etichetta, voce] of Object.entries(TASSONOMIA_MAIL)) {
     if ("fuoriScope" in voce) continue;
     if (categoriaProposta(voce) === categoria) return etichetta;
@@ -446,7 +450,9 @@ export const ALBERO_ETICHETTE_MAIL: NodoAlberoEtichette[] = [
   { etichetta: "Varie/Regione", categoria: "REGIONE" },
   { etichetta: "Varie/Governo", categoria: "GOVERNO" },
   { etichetta: "Varie/Comunicazioni", categoria: "progetto", enteNome: "Comunicazioni" },
-  // DUP (evolutiva 2026-07-26): riconoscimento per parola chiave nell'oggetto (classificaDup),
-  // non un'etichetta Gmail — stesso trattamento di Varie/ANCI ecc. sopra.
+  // DUP/Bilancio (evolutiva 2026-07-26, Bilancio Fase 2 sezione 7): riconoscimento per parola
+  // chiave nell'oggetto (classificaDup/classificaBilancio), non un'etichetta Gmail — stesso
+  // trattamento di Varie/ANCI ecc. sopra.
   { etichetta: "Giunta/Dup", categoria: "DUP" },
+  { etichetta: "Giunta/Bilancio", categoria: "BILANCIO" },
 ];

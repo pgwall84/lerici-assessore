@@ -45,7 +45,7 @@ function opzioniStato(categoria: string): { value: string; label: string }[] | n
   if (categoria === "segnalazione") return STATI_PER_TIPO.SEGNALAZIONE.map(s => ({ value: s, label: STATO_LABEL[s] }));
   if (categoria === "progetto") return (Object.keys(STATO_PROGETTO_LABEL) as StatoProgetto[]).map(s => ({ value: s, label: STATO_PROGETTO_LABEL[s] }));
   if (categoria === "contestazione") return (Object.keys(ESITO_CONTESTAZIONE_LABEL) as EsitoContestazione[]).map(s => ({ value: s, label: ESITO_CONTESTAZIONE_LABEL[s] }));
-  if (["CONVOCAZIONE_CONSIGLIO", "CONVOCAZIONE_COMMISSIONE", "CONVOCAZIONE_GIUNTA", "MOZIONE", "INTERROGAZIONE", "DELIBERA_GIUNTA", "DETERMINA_GIUNTA", "DUP"].includes(categoria)) {
+  if (["CONVOCAZIONE_CONSIGLIO", "CONVOCAZIONE_COMMISSIONE", "CONVOCAZIONE_GIUNTA", "MOZIONE", "INTERROGAZIONE", "DELIBERA_GIUNTA", "DETERMINA_GIUNTA", "DUP", "BILANCIO"].includes(categoria)) {
     return (Object.keys(STATO_ATTO_LABEL) as StatoAtto[]).map(s => ({ value: s, label: STATO_ATTO_LABEL[s] }));
   }
   return null;
