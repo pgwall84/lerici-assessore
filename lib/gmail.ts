@@ -17,10 +17,25 @@ function getAuth() {
 export async function getOrCreateLabel(name: string): Promise<string> {
   const gmail = google.gmail({ version: "v1", auth: getAuth() });
   const res = await gmail.users.labels.list({ userId: "me" });
-  const existing = res.data.labels?.find(l => l.name === name);
+  // Gmail tratta i nomi etichetta come case-insensitive per l'unicità (scoperto Fase 2 sezione 3,
+  // creando le sotto-etichette Segnalazioni/<Delega>: "Segnalazioni/Lavori Pubblici" falliva con
+  // 409 "Label name exists or conflicts" perché esisteva già "Segnalazioni/lavori pubblici",
+  // minuscolo) — confronto case-insensitive, non più un confronto esatto che non rispecchiava il
+  // vincolo reale di Gmail.
+  const existing = res.data.labels?.find(l => l.name?.toLowerCase() === name.toLowerCase());
   if (existing?.id) return existing.id;
-  const created = await gmail.users.labels.create({ userId: "me", requestBody: { name } });
-  return created.data.id!;
+  try {
+    const created = await gmail.users.labels.create({ userId: "me", requestBody: { name } });
+    return created.data.id!;
+  } catch (e) {
+    // Race/conflitto residuo (un'altra chiamata l'ha creata nel frattempo, o una variante di
+    // maiuscole/minuscole sfuggita alla lista sopra): ri-cerca invece di far fallire il chiamante
+    // per un 409 su un'etichetta che di fatto esiste già.
+    const retryRes = await gmail.users.labels.list({ userId: "me" });
+    const retryExisting = retryRes.data.labels?.find(l => l.name?.toLowerCase() === name.toLowerCase());
+    if (retryExisting?.id) return retryExisting.id;
+    throw e;
+  }
 }
 
 export async function getMailsSegnalazioni(): Promise<MailImport[]> {
