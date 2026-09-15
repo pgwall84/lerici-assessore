@@ -300,7 +300,7 @@ export async function eseguiCollegamento(m: MailImport, tipo: TipoEntitaContinua
         const urls = await caricaAllegatiMail(m.allegati, praticaId);
         await Promise.all(urls.map(url => prisma.foto.create({ data: { praticaId, path: url } })));
       }
-      return { esito: "COMPLETATO", entitaId: String(praticaId), etichetta: etichettaPerCategoria("segnalazione") ?? undefined };
+      return { esito: "COMPLETATO", entitaId: String(praticaId), etichetta: etichettaPerCategoria("segnalazione", pratica.delega) ?? undefined };
     }
 
     if (tipo === "progetto") {

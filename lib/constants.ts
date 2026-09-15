@@ -383,13 +383,30 @@ export function categoriaProposta(voce: Exclude<VoceTassonomiaMail, { fuoriScope
 // al nome dell'etichetta Gmail da scrivere — serve sia quando l'etichetta era già presente
 // all'origine (per riscriverla comunque, idempotente) sia quando la categoria è stata dedotta
 // da zero (AI o scelta manuale su Incerto) e l'etichetta non esiste ancora su Gmail.
+// Nome esatto della sotto-etichetta Gmail per una delega — stessa tabella (ETICHETTA_DELEGA) usata
+// da "Deleghe/<nome>", non DELEGHE_LABEL: verificato in fase di implementazione (Fase 2 sezione 3)
+// che i due non coincidono per 3 deleghe su 10 (Idrico, Pubblica Illuminazione, Lavori Pubblici —
+// DELEGHE_LABEL è pensata per la UI, non per i nomi reali delle etichette). Un'unica fonte per
+// entrambi gli alberi "Deleghe/" e "Segnalazioni/", come richiesto dalla spec.
+function nomeEtichettaDelega(delega: Delega): string | undefined {
+  return Object.entries(ETICHETTA_DELEGA).find(([, d]) => d === delega)?.[0];
+}
+
 export function etichettaPerCategoria(categoria: string, delega?: Delega, enteNome?: string): string | null {
-  if (categoria === "segnalazione") return "Segnalazioni";
+  // Fase 2 sezione 3: sotto-etichetta di delega in coesistenza con quelle di stato già esistenti
+  // (Segnalazioni/Chiusa, Segnalazioni/In corso) — un messaggio può avere entrambe. "Segnalazioni"
+  // piatta resta solo il fallback quando la delega non è ancora nota (in pratica mai in scrittura,
+  // dato che Pratica.delega è obbligatoria — ma la funzione può essere chiamata senza per un badge).
+  if (categoria === "segnalazione") {
+    if (!delega) return "Segnalazioni";
+    const nomeEtichetta = nomeEtichettaDelega(delega);
+    return nomeEtichetta ? `Segnalazioni/${nomeEtichetta}` : "Segnalazioni";
+  }
   if (categoria === "contestazione") return "Contestazioni";
   if (categoria === "giustifica") return "Giustifica"; // scelta manuale da Incerto — minuscolo, diverso da "GIUSTIFICA" (Automatico)
   if (categoria === "progetto") {
     if (delega) {
-      const nomeEtichetta = Object.entries(ETICHETTA_DELEGA).find(([, d]) => d === delega)?.[0];
+      const nomeEtichetta = nomeEtichettaDelega(delega);
       return nomeEtichetta ? `Deleghe/${nomeEtichetta}` : null;
     }
     // "Varie" (evolutiva 2026-07-25, da enum a EnteVario in Fase 2 sezione 5): un Progetto senza
@@ -417,6 +434,13 @@ export function etichettaPerCategoria(categoria: string, delega?: Delega, enteNo
 
 export const ETICHETTA_INCERTO = "Incerto/Da classificare";
 export const ETICHETTA_NON_RILEVANTE = "Bassa priorità/Non rilevante";
+
+// Etichette Gmail di CLASSIFICAZIONE sotto "Segnalazioni" (Fase 2 sezione 3) — la piatta più una
+// per delega, stessi nomi di "Deleghe/<nome>" (ETICHETTA_DELEGA). Esclude di proposito le
+// etichette di STATO (Segnalazioni/Chiusa, Segnalazioni/In corso, mai scritte da questa funzione,
+// gestite altrove) — usata per sapere quali rimuovere quando la delega cambia o la pratica si
+// chiude, senza toccare mai lo stato.
+export const ETICHETTE_SEGNALAZIONE = ["Segnalazioni", ...Object.keys(ETICHETTA_DELEGA).map(nome => `Segnalazioni/${nome}`)];
 
 // Badge esplicito quando la categoria risolta è "progetto" ma classificaDelega() non ha trovato
 // nessuna parola chiave (quindi nessuna delega attendibile da proporre) — mai un default silenzioso

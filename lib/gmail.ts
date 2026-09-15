@@ -1,7 +1,7 @@
 import { google } from "googleapis";
 import { simpleParser } from "mailparser";
 import { supabase } from "@/lib/supabase";
-import { ETICHETTA_INCERTO, ETICHETTA_NON_RILEVANTE } from "@/lib/constants";
+import { ETICHETTA_INCERTO, ETICHETTA_NON_RILEVANTE, ETICHETTE_SEGNALAZIONE } from "@/lib/constants";
 import iconv from "iconv-lite";
 import he from "he";
 
@@ -387,19 +387,31 @@ export async function marcaNonRilevante(messageId: string): Promise<void> {
 
 export async function spostaInChiusa(messageId: string): Promise<void> {
   const gmail = google.gmail({ version: "v1", auth: getAuth() });
-  const labelsRes = await gmail.users.labels.list({ userId: "me" });
+  const [labelsRes, msgRes] = await Promise.all([
+    gmail.users.labels.list({ userId: "me" }),
+    gmail.users.messages.get({ userId: "me", id: messageId, format: "minimal" }),
+  ]);
   const labels = labelsRes.data.labels ?? [];
+  const labelById = new Map(labels.map(l => [l.id, l.name]));
 
   const labelChiusa = labels.find(l => l.name === "Segnalazioni/Chiusa");
-  const labelSegnalazioni = labels.find(l => l.name === "Segnalazioni");
   const labelImportata = labels.find(l => l.name === "Importata");
 
   const addLabelIds: string[] = [];
   const removeLabelIds: string[] = [];
 
   if (labelChiusa?.id) addLabelIds.push(labelChiusa.id);
-  if (labelSegnalazioni?.id) removeLabelIds.push(labelSegnalazioni.id);
   if (labelImportata?.id) removeLabelIds.push(labelImportata.id);
+
+  // Fase 2 sezione 3: rimuove qualunque etichetta di classificazione "Segnalazioni" o
+  // "Segnalazioni/<Delega>" effettivamente presente sul messaggio, non più la stringa fissa
+  // "Segnalazioni" — la classificazione ora scrive quasi sempre la sotto-etichetta di delega.
+  const nomiEtichetteAttuali = (msgRes.data.labelIds ?? []).map(id => labelById.get(id)).filter((n): n is string => !!n);
+  for (const nome of nomiEtichetteAttuali) {
+    if (!ETICHETTE_SEGNALAZIONE.includes(nome)) continue;
+    const id = labels.find(l => l.name === nome)?.id;
+    if (id) removeLabelIds.push(id);
+  }
 
   if (!addLabelIds.length && !removeLabelIds.length) return;
 

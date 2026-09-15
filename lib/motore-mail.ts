@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getMailsPaginato, getMappaEtichette, getMailPerId, marcaImportata, marcaIncerto, marcaNonRilevante, applicaEtichettaEArchivia, archiviaMail, rimuoviEtichetta, type MailImport } from "@/lib/gmail";
 import { classificaMail } from "@/lib/claude";
-import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria, ETICHETTA_NON_RILEVANTE, ETICHETTA_DELEGA_DA_SPECIFICARE, ALBERO_ETICHETTE_MAIL, type VoceTassonomiaMail } from "@/lib/constants";
+import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria, ETICHETTA_NON_RILEVANTE, ETICHETTA_DELEGA_DA_SPECIFICARE, ALBERO_ETICHETTE_MAIL, ETICHETTE_SEGNALAZIONE, type VoceTassonomiaMail } from "@/lib/constants";
 import { classificaDelega, categoriaVariaPerDominio, classificaDup, classificaBilancio } from "@/lib/classificatore";
 import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiProgettoVarie, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { trovaContinuazioneForte, trovaContinuazioneDebole, codificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
@@ -214,7 +214,7 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
         // "Varie/<ente>" incluso anche quando l'ente non è uno dei 4 nodi statici dell'albero
         // (Fase 2 sezione 5: un ente aggiunto al volo non ha un nodo fisso qui) — qualunque
         // etichetta sotto "Varie/" è comunque di competenza di questa tassonomia.
-        const daRimuovere = nomiEtichette.filter(e => ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === e) || e.startsWith("Varie/"));
+        const daRimuovere = nomiEtichette.filter(e => ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === e) || e.startsWith("Varie/") || ETICHETTE_SEGNALAZIONE.includes(e));
         for (const e of daRimuovere) {
           try { await rimuoviEtichetta(m.messageId, e); } catch { /* comodo, non blocca l'esito */ }
         }

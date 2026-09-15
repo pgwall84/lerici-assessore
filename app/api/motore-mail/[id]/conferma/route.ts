@@ -3,7 +3,7 @@ import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getMailPerId, marcaImportata, applicaEtichettaEArchivia, rimuoviEtichetta, getMappaEtichette, caricaAllegatiMail } from "@/lib/gmail";
 import { contentTypeDaNomeFile } from "@/lib/estrazione-documenti";
-import { etichettaPerCategoria, ALBERO_ETICHETTE_MAIL } from "@/lib/constants";
+import { etichettaPerCategoria, ALBERO_ETICHETTE_MAIL, ETICHETTE_SEGNALAZIONE } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
 import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, eseguiCollegamentoAtto, eseguiProgettoVarie, eseguiDup, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { decodificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
@@ -129,7 +129,7 @@ async function applicaEtichetteFinali(rigaId: string, messageId: string, nomeEti
       // di categorie mostrata nel tree-picker.
       // "Varie/<ente>" incluso anche quando l'ente non è uno dei 4 nodi statici dell'albero
       // (Fase 2 sezione 5: un ente aggiunto al volo non ha un nodo fisso qui).
-      const daRimuovere = etichetteAttuali.filter(e => e !== nomeEtichetta && (ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === e) || e.startsWith("Varie/")));
+      const daRimuovere = etichetteAttuali.filter(e => e !== nomeEtichetta && (ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === e) || e.startsWith("Varie/") || ETICHETTE_SEGNALAZIONE.includes(e)));
       for (const e of daRimuovere) {
         try { await rimuoviEtichetta(messageId, e); } catch { /* comodo, non blocca l'esito */ }
       }
