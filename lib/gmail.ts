@@ -1,7 +1,7 @@
 import { google } from "googleapis";
 import { simpleParser } from "mailparser";
 import { supabase } from "@/lib/supabase";
-import { ETICHETTA_INCERTO, ETICHETTA_NON_RILEVANTE, ETICHETTE_SEGNALAZIONE, etichettaSegnalazioneRisolta } from "@/lib/constants";
+import { ETICHETTA_INCERTO, ETICHETTA_NON_RILEVANTE, ETICHETTE_SEGNALAZIONE, etichettaSegnalazioneDelega, etichettaSegnalazioneRisolta } from "@/lib/constants";
 import type { Delega } from "@prisma/client";
 import iconv from "iconv-lite";
 import he from "he";
@@ -407,13 +407,22 @@ export async function marcaNonRilevante(messageId: string): Promise<void> {
 // Pratica.delega non è mai nulla.
 export async function spostaInChiusa(messageId: string, delega: Delega): Promise<void> {
   const gmail = google.gmail({ version: "v1", auth: getAuth() });
-  const [msgRes, idRisolta] = await Promise.all([
+  const [msgRes, labelsRes] = await Promise.all([
     gmail.users.messages.get({ userId: "me", id: messageId, format: "minimal" }),
-    getOrCreateLabel(etichettaSegnalazioneRisolta(delega)),
+    gmail.users.labels.list({ userId: "me" }),
   ]);
-  const labelsRes = await gmail.users.labels.list({ userId: "me" });
   const labels = labelsRes.data.labels ?? [];
   const labelById = new Map(labels.map(l => [l.id, l.name]));
+  const nomiEtichetteAttuali = (msgRes.data.labelIds ?? []).map(id => labelById.get(id)).filter((n): n is string => !!n);
+
+  // Se il messaggio porta già una sotto-etichetta più specifica sotto la stessa delega (es.
+  // "Segnalazioni/Ambiente/Sfalci", organizzazione manuale di Marco sotto ai rami di delega) la
+  // chiusura va nella "Risolta" nidificata lì, non genericamente sotto la delega — mai indovinare
+  // quale sotto-tema, solo riconoscerlo se il messaggio lo porta già.
+  const etichettaDelega = etichettaSegnalazioneDelega(delega);
+  const sottoEtichettaSpecifica = nomiEtichetteAttuali.find(n => n.startsWith(`${etichettaDelega}/`) && !n.endsWith("/Risolta"));
+  const nomeRisolta = sottoEtichettaSpecifica ? `${sottoEtichettaSpecifica}/Risolta` : etichettaSegnalazioneRisolta(delega);
+  const idRisolta = await getOrCreateLabel(nomeRisolta);
 
   const labelImportata = labels.find(l => l.name === "Importata");
 
@@ -422,12 +431,11 @@ export async function spostaInChiusa(messageId: string, delega: Delega): Promise
 
   if (labelImportata?.id) removeLabelIds.push(labelImportata.id);
 
-  // Fase 2 sezione 3: rimuove qualunque etichetta di classificazione "Segnalazioni" o
-  // "Segnalazioni/<Delega>" effettivamente presente sul messaggio, non più la stringa fissa
-  // "Segnalazioni" — la classificazione ora scrive quasi sempre la sotto-etichetta di delega.
-  const nomiEtichetteAttuali = (msgRes.data.labelIds ?? []).map(id => labelById.get(id)).filter((n): n is string => !!n);
+  // Fase 2 sezione 3: rimuove qualunque etichetta di classificazione "Segnalazioni",
+  // "Segnalazioni/<Delega>" o la sotto-etichetta specifica appena riconosciuta, effettivamente
+  // presente sul messaggio — non più la stringa fissa "Segnalazioni".
   for (const nome of nomiEtichetteAttuali) {
-    if (!ETICHETTE_SEGNALAZIONE.includes(nome)) continue;
+    if (!ETICHETTE_SEGNALAZIONE.includes(nome) && nome !== sottoEtichettaSpecifica) continue;
     const id = labels.find(l => l.name === nome)?.id;
     if (id) removeLabelIds.push(id);
   }

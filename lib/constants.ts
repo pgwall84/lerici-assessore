@@ -392,6 +392,13 @@ function nomeEtichettaDelega(delega: Delega): string | undefined {
   return Object.entries(ETICHETTA_DELEGA).find(([, d]) => d === delega)?.[0];
 }
 
+// "Segnalazioni/<Delega>" — unica fonte per etichettaPerCategoria e etichettaSegnalazioneRisolta
+// sotto, mai due derivazioni parallele dello stesso nome.
+export function etichettaSegnalazioneDelega(delega: Delega): string {
+  const nome = nomeEtichettaDelega(delega);
+  return nome ? `Segnalazioni/${nome}` : "Segnalazioni";
+}
+
 // Sotto-etichetta di chiusura per delega (decisione di Marco, 2026-09-15): sostituisce la vecchia
 // "Segnalazioni/Chiusa" piatta — quando il tool chiude una Pratica, la sposta in
 // "Segnalazioni/<Delega>/Risolta" invece che in un'unica etichetta di stato indistinta, così
