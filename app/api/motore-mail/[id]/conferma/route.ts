@@ -127,9 +127,10 @@ async function applicaEtichetteFinali(rigaId: string, messageId: string, nomeEti
       // senza questo, restava con entrambe le etichette contemporaneamente. Vale per qualunque
       // cambio, non solo "Segnalazioni": confronta contro ALBERO_ETICHETTE_MAIL, la stessa lista
       // di categorie mostrata nel tree-picker.
-      // "Varie/<ente>" incluso anche quando l'ente non è uno dei 4 nodi statici dell'albero
-      // (Fase 2 sezione 5: un ente aggiunto al volo non ha un nodo fisso qui).
-      const daRimuovere = etichetteAttuali.filter(e => e !== nomeEtichetta && (ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === e) || e.startsWith("Varie/") || ETICHETTE_SEGNALAZIONE.includes(e)));
+      // "Istituzioni/<ente>" (chiamata "Varie" fino al 2026-09-15) incluso anche quando l'ente
+      // non è uno dei 4 nodi statici dell'albero (Fase 2 sezione 5: un ente aggiunto al volo non
+      // ha un nodo fisso qui).
+      const daRimuovere = etichetteAttuali.filter(e => e !== nomeEtichetta && (ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === e) || e.startsWith("Istituzioni/") || ETICHETTE_SEGNALAZIONE.includes(e)));
       for (const e of daRimuovere) {
         try { await rimuoviEtichetta(messageId, e); } catch { /* comodo, non blocca l'esito */ }
       }

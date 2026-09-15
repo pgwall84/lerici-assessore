@@ -426,16 +426,17 @@ export function etichettaPerCategoria(categoria: string, delega?: Delega, enteNo
       const nomeEtichetta = nomeEtichettaDelega(delega);
       return nomeEtichetta ? `Deleghe/${nomeEtichetta}` : null;
     }
-    // "Varie" (evolutiva 2026-07-25, da enum a EnteVario in Fase 2 sezione 5): un Progetto senza
-    // vera delega — nome dell'ente esatto (es. "Comunicazioni", o qualunque ente aggiunto al volo).
-    if (enteNome) return `Varie/${enteNome}`;
+    // "Istituzioni" (chiamata "Varie" fino al 2026-09-15, rinominata su richiesta di Marco — più
+    // corretto per un albero di enti/associazioni del territorio): un Progetto senza vera delega —
+    // nome dell'ente esatto (es. "Comunicazioni", o qualunque ente aggiunto al volo).
+    if (enteNome) return `Istituzioni/${enteNome}`;
     return null;
   }
   // ANCI/REGIONE/GOVERNO: categorie di primo livello instradate per dominio mittente (evolutiva
   // 2026-07-25), stesso ruolo delle altre categorie Automatico (CONVOCAZIONE_CONSIGLIO, ecc.) —
   // non hanno una vera etichetta Gmail preesistente in TASSONOMIA_MAIL, mappate qui direttamente.
   if (categoria === "ANCI" || categoria === "REGIONE" || categoria === "GOVERNO") {
-    return `Varie/${NOME_ENTE_FISSO[categoria]}`;
+    return `Istituzioni/${NOME_ENTE_FISSO[categoria]}`;
   }
   // DUP/Bilancio (evolutiva 2026-07-26, Bilancio Fase 2 sezione 7): riconoscimento per parola
   // chiave nell'oggetto (classificaDup/classificaBilancio in lib/classificatore.ts), non
@@ -483,14 +484,14 @@ export const ALBERO_ETICHETTE_MAIL: NodoAlberoEtichette[] = [
       delega: "delega" in voce ? voce.delega : undefined,
     })),
   { etichetta: "Segnalazioni", categoria: "segnalazione" },
-  // "Varie" (evolutiva 2026-07-25, da enum a EnteVario in Fase 2 sezione 5): ANCI/Regione/Governo
-  // sono categorie di primo livello (Automatico, instradate per dominio mittente — vedi
-  // categoriaVariaPerDominio in lib/classificatore.ts), Comunicazioni è un Progetto (Manuale,
-  // nessun segnale di dominio affidabile) con enteNome al posto della delega.
-  { etichetta: "Varie/ANCI", categoria: "ANCI" },
-  { etichetta: "Varie/Regione", categoria: "REGIONE" },
-  { etichetta: "Varie/Governo", categoria: "GOVERNO" },
-  { etichetta: "Varie/Comunicazioni", categoria: "progetto", enteNome: "Comunicazioni" },
+  // "Istituzioni" (chiamata "Varie" fino al 2026-09-15, rinominata su richiesta di Marco):
+  // ANCI/Regione/Governo sono categorie di primo livello (Automatico, instradate per dominio
+  // mittente — vedi categoriaVariaPerDominio in lib/classificatore.ts), Comunicazioni è un
+  // Progetto (Manuale, nessun segnale di dominio affidabile) con enteNome al posto della delega.
+  { etichetta: "Istituzioni/ANCI", categoria: "ANCI" },
+  { etichetta: "Istituzioni/Regione", categoria: "REGIONE" },
+  { etichetta: "Istituzioni/Governo", categoria: "GOVERNO" },
+  { etichetta: "Istituzioni/Comunicazioni", categoria: "progetto", enteNome: "Comunicazioni" },
   // DUP/Bilancio (evolutiva 2026-07-26, Bilancio Fase 2 sezione 7): riconoscimento per parola
   // chiave nell'oggetto (classificaDup/classificaBilancio), non un'etichetta Gmail — stesso
   // trattamento di Varie/ANCI ecc. sopra.

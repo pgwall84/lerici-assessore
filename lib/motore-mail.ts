@@ -211,10 +211,11 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
         // filtro Gmail troppo largo) che l'AI ha giudicato non pertinenti — stesso principio del
         // fix sul tree-picker (diagnosi 2026-07-25): mai lasciare due etichette di categoria in
         // conflitto sullo stesso messaggio, qui come lì.
-        // "Varie/<ente>" incluso anche quando l'ente non è uno dei 4 nodi statici dell'albero
-        // (Fase 2 sezione 5: un ente aggiunto al volo non ha un nodo fisso qui) — qualunque
-        // etichetta sotto "Varie/" è comunque di competenza di questa tassonomia.
-        const daRimuovere = nomiEtichette.filter(e => ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === e) || e.startsWith("Varie/") || ETICHETTE_SEGNALAZIONE.includes(e));
+        // "Istituzioni/<ente>" (chiamata "Varie" fino al 2026-09-15) incluso anche quando l'ente
+        // non è uno dei 4 nodi statici dell'albero (Fase 2 sezione 5: un ente aggiunto al volo non
+        // ha un nodo fisso qui) — qualunque etichetta sotto "Istituzioni/" è comunque di
+        // competenza di questa tassonomia.
+        const daRimuovere = nomiEtichette.filter(e => ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === e) || e.startsWith("Istituzioni/") || ETICHETTE_SEGNALAZIONE.includes(e));
         for (const e of daRimuovere) {
           try { await rimuoviEtichetta(m.messageId, e); } catch { /* comodo, non blocca l'esito */ }
         }

@@ -30,14 +30,14 @@ function gruppoDiEtichetta(etichetta: string): string {
   if (etichetta.startsWith("Consiglio Comunale")) return "Consiglio Comunale";
   if (etichetta.startsWith("Giunta")) return "Giunta";
   if (etichetta.startsWith("Deleghe")) return "Deleghe";
-  if (etichetta.startsWith("Varie")) return "Varie";
+  if (etichetta.startsWith("Istituzioni")) return "Istituzioni";
   return "Altro";
 }
 function etichettaBreve(etichetta: string): string {
   const parti = etichetta.split("/");
   return parti.length > 1 ? parti[1] : parti[0];
 }
-const GRUPPI_ORDINE = ["Consiglio Comunale", "Giunta", "Deleghe", "Varie", "Altro"];
+const GRUPPI_ORDINE = ["Consiglio Comunale", "Giunta", "Deleghe", "Istituzioni", "Altro"];
 
 // Enum di stato pertinente per la categoria risolta — null per le categorie senza un campo
 // stato (Giustifica, Verbale Giunta [sempre Archiviato]).

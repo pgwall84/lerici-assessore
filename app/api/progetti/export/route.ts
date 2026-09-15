@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
     "Titolo": p.titolo,
     "Tipo": TIPO_PROGETTO_LABEL[p.tipo],
     // "Varie" (Fase 2 sezione 5): un Progetto ha o una vera delega o un ente, mai entrambe.
-    "Delega": p.delega ? DELEGHE_LABEL[p.delega] : p.enteVario ? `Varie: ${p.enteVario.nome}` : "",
+    "Delega": p.delega ? DELEGHE_LABEL[p.delega] : p.enteVario ? `Istituzioni: ${p.enteVario.nome}` : "",
     "Stato": STATO_PROGETTO_LABEL[p.stato],
     "Priorità": p.priorita ? PRIORITA_LABEL[p.priorita] : "",
     "Responsabile": p.responsabile ? `${p.responsabile.nome} ${p.responsabile.cognome}` : "",

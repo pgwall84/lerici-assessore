@@ -397,7 +397,7 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
                     <option key={d} value={d}>{DELEGHE_LABEL[d]}</option>
                   ))}
                 </optgroup>
-                <optgroup label="Varie">
+                <optgroup label="Istituzioni">
                   {entiVari.map(ente => (
                     <option key={ente.id} value={`varia:${ente.id}`}>{ente.nome}</option>
                   ))}
