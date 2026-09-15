@@ -249,10 +249,28 @@ export default function ImportMailPage() {
       .finally(() => setLoading(false));
   }
 
-  // gestoriByNome/entiByNome/sottoTemiByKey tra le dipendenze: al primo mount le liste arrivano
-  // dopo questa mail-list (fetch separate), quindi si ricarica una volta in più quando arrivano,
-  // per risolvere gestoreSuggerito/enteNome/sottoTemaSuggerito sugli id giusti invece di lasciarli vuoti.
-  useEffect(() => { carica(filtro); caricaConteggi(); }, [filtro, gestoriByNome, entiByNome, sottoTemiByKey]);
+  useEffect(() => { carica(filtro); caricaConteggi(); }, [filtro]);
+
+  // BUG REALE (2026-09-15): gestoriByNome/entiByNome/sottoTemiByKey erano prima nelle dipendenze
+  // dell'effetto sopra, per ri-risolvere gestoreSuggerito/enteNome/sottoTemaSuggerito una volta
+  // che le 3 liste (fetch separate, arrivano dopo la mail-list) diventavano disponibili — ma
+  // questo rifaceva l'intero fetch al server, che per ogni riga richiama Gmail (messaggio + thread).
+  // Con 3 liste indipendenti, un solo caricamento pagina arrivava a rifare la stessa chiamata fino
+  // a 4 volte, abbastanza da far scattare la quota "Total Query Cost" di Gmail (visto in produzione:
+  // 4 GET /api/motore-mail/revisione nello stesso secondo, l'ultima finita in errore di quota).
+  // Fix: quando le liste arrivano, risolve i suggerimenti già in mano SENZA richiamare il server —
+  // tocca solo i campi ancora vuoti, mai un valore già scelto (suggerito o già modificato a mano).
+  useEffect(() => {
+    setVoci(vs => vs.map(v => {
+      const nodo = ALBERO_ETICHETTE_MAIL.find(n => n.etichetta === v.etichettaScelta);
+      return {
+        ...v,
+        gestoreId: v.gestoreId || (v.gestoreSuggerito && gestoriByNome.get(v.gestoreSuggerito)) || "",
+        enteVarioId: v.enteVarioId || (nodo?.enteNome && entiByNome.get(nodo.enteNome)) || "",
+        sottoTemaId: v.sottoTemaId || (v.sottoTemaSuggerito && v.delegaSuggerita && sottoTemiByKey.get(`${v.delegaSuggerita}|${v.sottoTemaSuggerito}`)) || "",
+      };
+    }));
+  }, [gestoriByNome, entiByNome, sottoTemiByKey]);
 
   async function caricaAltre() {
     if (!cursor) return;
