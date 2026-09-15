@@ -6,12 +6,12 @@ import Link from "next/link";
 import {
   DELEGHE_LABEL, PRIORITA_LABEL, STATO_RIUNIONE_LABEL, STATO_RIUNIONE_COLORE,
   STATO_PROGETTO_LABEL, STATO_PROGETTO_COLORE, TIPO_PROGETTO_LABEL, TIPO_PROGETTO_COLORE, TIPO_PROGETTO_ICONA,
-  CATEGORIA_VARIA_LABEL, CATEGORIA_VARIA_COLORE,
+  ENTE_VARIO_COLORE,
 } from "@/lib/constants";
 import { PrioritaBadge } from "@/components/PrioritaBadge";
 import { MailOriginaleButton } from "@/components/MailOriginaleButton";
 import { ReferenteBox } from "@/components/ReferenteBox";
-import type { ArgomentoRiunione, CategoriaVaria, Delega, DocumentoProgetto, NotaProgetto, Priorita, Progetto, Riunione, StatoProgetto, TipoProgetto } from "@prisma/client";
+import type { ArgomentoRiunione, Delega, DocumentoProgetto, EnteVario, NotaProgetto, Priorita, Progetto, Riunione, StatoProgetto, TipoProgetto } from "@prisma/client";
 
 type RiunioneCard = Riunione & { argomenti: ArgomentoRiunione[] };
 
@@ -20,8 +20,12 @@ const STATO_COLORE = STATO_PROGETTO_COLORE;
 
 const STATI: StatoProgetto[] = ["IN_CORSO", "SOSPESO", "CONCLUSO", "ARCHIVIATO"];
 
+// Sentinella per l'opzione "nuovo ente" nel selettore combinato Delega/Varie sotto.
+const NUOVO_ENTE = "__nuovo__";
+
 type ProgettoFull = Progetto & {
   responsabile: { id: number; nome: string; cognome: string; ruolo: string | null; telefono: string | null; email: string | null } | null;
+  enteVario: EnteVario | null;
   note: NotaProgetto[];
   documenti: DocumentoProgetto[];
 };
@@ -35,8 +39,9 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
   const [savingNota, setSavingNota] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [persone, setPersone] = useState<{ id: number; nome: string; cognome: string; ruolo: string | null }[]>([]);
+  const [entiVari, setEntiVari] = useState<EnteVario[]>([]);
   const [modificaMode, setModificaMode] = useState(false);
-  const [formModifica, setFormModifica] = useState({ titolo: "", descrizione: "", delega: "" as Delega | "", categoriaVaria: "" as CategoriaVaria | "", fonteFinanziamento: "", priorita: "" as Priorita | "", tipo: "PROGETTO" as TipoProgetto });
+  const [formModifica, setFormModifica] = useState({ titolo: "", descrizione: "", delega: "" as Delega | "", enteVarioId: "" as string, nuovoEnteNome: "", fonteFinanziamento: "", priorita: "" as Priorita | "", tipo: "PROGETTO" as TipoProgetto });
   const [riunioni, setRiunioni] = useState<RiunioneCard[]>([]);
 
   useEffect(() => {
@@ -45,6 +50,7 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
       .then(data => { setProgetto(data); setLoading(false); })
       .catch(() => setLoading(false));
     fetch("/api/persone").then(r => r.json()).then(setPersone).catch(() => {});
+    fetch("/api/enti-vari").then(r => r.ok ? r.json() : []).then(setEntiVari).catch(() => {});
     fetch(`/api/riunioni?progettoId=${id}`).then(r => r.json()).then(setRiunioni).catch(() => {});
   }, [id]);
 
@@ -66,7 +72,8 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
       titolo: progetto.titolo,
       descrizione: progetto.descrizione ?? "",
       delega: progetto.delega ?? "",
-      categoriaVaria: progetto.categoriaVaria ?? "",
+      enteVarioId: progetto.enteVarioId ?? "",
+      nuovoEnteNome: "",
       fonteFinanziamento: progetto.fonteFinanziamento ?? "",
       priorita: progetto.priorita ?? "",
       tipo: progetto.tipo,
@@ -82,7 +89,8 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
         titolo: formModifica.titolo,
         descrizione: formModifica.descrizione || null,
         delega: formModifica.delega || null,
-        categoriaVaria: formModifica.categoriaVaria || null,
+        enteVarioId: formModifica.enteVarioId && formModifica.enteVarioId !== NUOVO_ENTE ? formModifica.enteVarioId : null,
+        nuovoEnteNome: formModifica.enteVarioId === NUOVO_ENTE ? formModifica.nuovoEnteNome.trim() || undefined : undefined,
         fonteFinanziamento: formModifica.fonteFinanziamento || null,
         priorita: formModifica.priorita || null,
         tipo: formModifica.tipo,
@@ -121,9 +129,9 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
     const righe = [
       `📁 ${progetto.titolo}`,
       ``,
-      // "Varie" (evolutiva 2026-07-25): un Progetto ha o una vera delega o una categoriaVaria, mai entrambe.
+      // "Varie" (Fase 2 sezione 5): un Progetto ha o una vera delega o un ente, mai entrambe.
       ...(progetto.delega ? [`🏷 ${DELEGHE_LABEL[progetto.delega]}`]
-        : progetto.categoriaVaria ? [`🏷 ${CATEGORIA_VARIA_LABEL[progetto.categoriaVaria]}`] : []),
+        : progetto.enteVario ? [`🏷 ${progetto.enteVario.nome}`] : []),
       `📊 Stato: ${STATO_LABEL[progetto.stato]}`,
     ];
     if (progetto.descrizione) righe.push(``, progetto.descrizione);
@@ -232,9 +240,9 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
           <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">
             {DELEGHE_LABEL[progetto.delega]}
           </span>
-        ) : progetto.categoriaVaria && (
-          <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${CATEGORIA_VARIA_COLORE[progetto.categoriaVaria]}`}>
-            {CATEGORIA_VARIA_LABEL[progetto.categoriaVaria]}
+        ) : progetto.enteVario && (
+          <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${ENTE_VARIO_COLORE}`}>
+            {progetto.enteVario.nome}
           </span>
         )}
         <PrioritaBadge priorita={progetto.priorita} />
@@ -373,13 +381,13 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
             <div>
               <label className="text-xs text-gray-500">Delega / Categoria</label>
               <select
-                value={formModifica.delega || (formModifica.categoriaVaria ? `varia:${formModifica.categoriaVaria}` : "")}
+                value={formModifica.delega || (formModifica.enteVarioId ? `varia:${formModifica.enteVarioId}` : "")}
                 onChange={e => {
                   const v = e.target.value;
                   if (v.startsWith("varia:")) {
-                    setFormModifica(f => ({ ...f, delega: "", categoriaVaria: v.slice(6) as CategoriaVaria }));
+                    setFormModifica(f => ({ ...f, delega: "", enteVarioId: v.slice(6) }));
                   } else {
-                    setFormModifica(f => ({ ...f, delega: v as Delega, categoriaVaria: "" }));
+                    setFormModifica(f => ({ ...f, delega: v as Delega, enteVarioId: "" }));
                   }
                 }}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -390,12 +398,24 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
                   ))}
                 </optgroup>
                 <optgroup label="Varie">
-                  {(Object.keys(CATEGORIA_VARIA_LABEL) as CategoriaVaria[]).map(c => (
-                    <option key={c} value={`varia:${c}`}>{CATEGORIA_VARIA_LABEL[c]}</option>
+                  {entiVari.map(ente => (
+                    <option key={ente.id} value={`varia:${ente.id}`}>{ente.nome}</option>
                   ))}
+                  <option value={`varia:${NUOVO_ENTE}`}>+ Nuovo ente…</option>
                 </optgroup>
               </select>
             </div>
+            {formModifica.enteVarioId === NUOVO_ENTE && (
+              <div>
+                <label className="text-xs text-gray-500">Nome del nuovo ente</label>
+                <input
+                  value={formModifica.nuovoEnteNome}
+                  onChange={e => setFormModifica(f => ({ ...f, nuovoEnteNome: e.target.value }))}
+                  placeholder="es. Questura della Spezia"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            )}
             <div>
               <label className="text-xs text-gray-500">Tipo</label>
               <select

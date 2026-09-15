@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
+import { risolviEnteVarioId } from "@/lib/enti-vari";
 import { z } from "zod";
 
 const schema = z.object({
@@ -9,7 +10,10 @@ const schema = z.object({
     "VIABILITA","AMBIENTE","RIFIUTI","SISTEMA_IDRICO","ILLUMINAZIONE",
     "ACCESSIBILITA","CIMITERI","POLITICHE_ABITATIVE","DIGITALIZZAZIONE","MANUTENZIONE_PATRIMONIO",
   ]).optional(),
-  categoriaVaria: z.enum(["COMUNICAZIONI", "ANCI", "REGIONE", "GOVERNO"]).optional(),
+  // "Varie" (Fase 2 sezione 5: da enum a modello EnteVario) — enteVarioId sceglie un ente già
+  // noto, nuovoEnteNome ne crea uno al volo se Marco digita un nome non ancora in lista.
+  enteVarioId: z.string().min(1).optional(),
+  nuovoEnteNome: z.string().min(1).max(100).optional(),
   descrizione: z.string().optional(),
   responsabileId: z.number().int().optional(),
   fonteFinanziamento: z.string().optional(),
@@ -38,6 +42,7 @@ export async function GET(req: NextRequest) {
     },
     include: {
       responsabile: true,
+      enteVario: true,
       note: { orderBy: { createdAt: "desc" }, take: 1 },
       documenti: true,
     },
@@ -54,13 +59,16 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  if (!parsed.data.delega && !parsed.data.categoriaVaria) {
-    return NextResponse.json({ error: "Delega o categoria Varie obbligatoria" }, { status: 400 });
+
+  const { enteVarioId, nuovoEnteNome, ...rest } = parsed.data;
+  const enteVarioIdRisolto = await risolviEnteVarioId({ enteVarioId, nuovoEnteNome });
+  if (!rest.delega && !enteVarioIdRisolto) {
+    return NextResponse.json({ error: "Delega o ente obbligatorio" }, { status: 400 });
   }
 
   const progetto = await prisma.progetto.create({
-    data: parsed.data,
-    include: { responsabile: true },
+    data: { ...rest, enteVarioId: enteVarioIdRisolto },
+    include: { responsabile: true, enteVario: true },
   });
 
   return NextResponse.json(progetto, { status: 201 });

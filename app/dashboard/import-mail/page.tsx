@@ -5,7 +5,7 @@ import {
   DELEGHE_LABEL, ALBERO_ETICHETTE_MAIL, STATO_LABEL, STATI_PER_TIPO,
   STATO_PROGETTO_LABEL, STATO_ATTO_LABEL, ESITO_CONTESTAZIONE_LABEL, TIPO_PROGETTO_LABEL,
 } from "@/lib/constants";
-import type { Delega, StatoProgetto, StatoAtto, EsitoContestazione, TipoProgetto, CategoriaVaria } from "@prisma/client";
+import type { Delega, StatoProgetto, StatoAtto, EsitoContestazione, TipoProgetto, EnteVario } from "@prisma/client";
 
 type Binario = "AUTOMATICO" | "MANUALE" | "INCERTO" | "PROPOSTA_CONTINUAZIONE";
 
@@ -76,6 +76,10 @@ const TIPO_ENTITA_LABEL: Record<string, string> = {
 // invece di una mappa statica, così un nuovo gestore appare qui senza toccare il codice.
 type GestoreOpzione = { id: string; nome: string };
 
+// Sentinella per l'opzione "nuovo ente" nel selettore Varie sotto (Fase 2 sezione 5) — mai un id
+// reale (i cuid di EnteVario non usano questa forma).
+const NUOVO_ENTE = "__nuovo__";
+
 type Voce = {
   mailProcessataId: string;
   binario: Binario;
@@ -109,9 +113,12 @@ type Voce = {
   // stato locale: etichetta attualmente scelta nel picker (path completo, es. "Deleghe/Viabilità")
   etichettaScelta: string;
   delega: string;
-  // "Varie" (evolutiva 2026-07-25): alternativa alla delega per un Progetto — es. "Varie/ANCI"
-  // scelta dal picker, oppure "Varie/Comunicazioni" per la creazione manuale.
-  categoriaVaria: CategoriaVaria | "";
+  // "Varie" (evolutiva 2026-07-25, da enum a modello EnteVario in Fase 2 sezione 5): alternativa
+  // alla delega per un Progetto — es. "Varie/ANCI" scelta dal picker (istradata per dominio,
+  // categoria di primo livello — non passa da qui), oppure "Varie/Comunicazioni" per la creazione
+  // manuale, risolta su un id di EnteVario. NUOVO_ENTE apre il campo per digitare un nome nuovo.
+  enteVarioId: string;
+  nuovoEnteNome: string;
   gestoreId: string;
   luogo: string;
   // stato iniziale scelto per il tipo risultante (StatoPratica/StatoProgetto/StatoAtto/EsitoContestazione)
@@ -144,12 +151,12 @@ const FILTRI: { value: Binario | ""; label: string }[] = [
 ];
 
 type CampiServer = Omit<Voce,
-  "etichettaScelta" | "delega" | "categoriaVaria" | "gestoreId" | "luogo" | "stato" | "tipoProgetto" | "tipoProgettoSuggerito" |
+  "etichettaScelta" | "delega" | "enteVarioId" | "nuovoEnteNome" | "gestoreId" | "luogo" | "stato" | "tipoProgetto" | "tipoProgettoSuggerito" |
   "caricandoTipoProgetto" | "candidatiOdg" | "indiceOdgScelto" | "modalitaProposta" | "modalitaManuale" |
   "tipoCollegamento" | "ricercaTesto" | "risultatiRicerca" | "cercandoEntita" | "entitaSelezionata"
 >;
 
-function toVoce(r: CampiServer, gestoriByNome: Map<string, string>): Voce {
+function toVoce(r: CampiServer, gestoriByNome: Map<string, string>, entiByNome: Map<string, string>): Voce {
   const etichettaIniziale = r.etichettaProposta && ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === r.etichettaProposta)
     ? r.etichettaProposta
     : "";
@@ -159,7 +166,8 @@ function toVoce(r: CampiServer, gestoriByNome: Map<string, string>): Voce {
     ...r,
     etichettaScelta: etichettaIniziale,
     delega: r.delegaSuggerita,
-    categoriaVaria: nodoIniziale?.categoriaVaria ?? "",
+    enteVarioId: (nodoIniziale?.enteNome && entiByNome.get(nodoIniziale.enteNome)) || "",
+    nuovoEnteNome: "",
     gestoreId: (r.gestoreSuggerito && gestoriByNome.get(r.gestoreSuggerito)) || "",
     luogo: "",
     stato: opzioniStato(categoriaIniziale)?.[0]?.value ?? "",
@@ -187,13 +195,16 @@ export default function ImportMailPage() {
   const [confermando, setConfermando] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<Binario | "">("");
   const [conteggi, setConteggi] = useState({ manuale: 0, incerto: 0, automatico: 0, propostaContinuazione: 0 });
-  // Gestore ora è un modello, non un enum (Fase 2 sezione 6.1) — caricato da /api/gestori invece
-  // di una mappa statica, così un nuovo gestore appare qui senza toccare il codice.
+  // Gestore/EnteVario ora sono modelli, non enum (Fase 2 sezioni 6.1 e 5) — caricati dalle rispettive
+  // API invece di mappe statiche, così un nuovo gestore/ente appare qui senza toccare il codice.
   const [gestori, setGestori] = useState<GestoreOpzione[]>([]);
   const gestoriByNome = useMemo(() => new Map(gestori.map(g => [g.nome, g.id])), [gestori]);
+  const [entiVari, setEntiVari] = useState<EnteVario[]>([]);
+  const entiByNome = useMemo(() => new Map(entiVari.map(e => [e.nome, e.id])), [entiVari]);
 
   useEffect(() => {
     fetch("/api/gestori").then(r => r.ok ? r.json() : []).then(setGestori).catch(() => {});
+    fetch("/api/enti-vari").then(r => r.ok ? r.json() : []).then(setEntiVari).catch(() => {});
   }, []);
 
   function caricaConteggi() {
@@ -207,16 +218,16 @@ export default function ImportMailPage() {
     fetch(`/api/motore-mail/revisione?${params}`)
       .then(r => r.json())
       .then(data => {
-        setVoci(data.mails.map((r: CampiServer) => toVoce(r, gestoriByNome)));
+        setVoci(data.mails.map((r: CampiServer) => toVoce(r, gestoriByNome, entiByNome)));
         setCursor(data.nextCursor);
         setLoading(false);
       });
   }
 
-  // gestoriByNome tra le dipendenze: al primo mount la lista gestori arriva dopo questa mail-list
-  // (fetch separata), quindi si ricarica una volta in più quando arriva, per risolvere
-  // gestoreSuggerito sull'id giusto invece di lasciarlo vuoto.
-  useEffect(() => { carica(filtro); caricaConteggi(); }, [filtro, gestoriByNome]);
+  // gestoriByNome/entiByNome tra le dipendenze: al primo mount le liste arrivano dopo questa
+  // mail-list (fetch separate), quindi si ricarica una volta in più quando arrivano, per risolvere
+  // gestoreSuggerito/enteNome sugli id giusti invece di lasciarli vuoti.
+  useEffect(() => { carica(filtro); caricaConteggi(); }, [filtro, gestoriByNome, entiByNome]);
 
   async function caricaAltre() {
     if (!cursor) return;
@@ -225,7 +236,7 @@ export default function ImportMailPage() {
     if (filtro) params.set("binario", filtro);
     const res = await fetch(`/api/motore-mail/revisione?${params}`);
     const data = await res.json();
-    setVoci(vs => [...vs, ...data.mails.map((r: CampiServer) => toVoce(r, gestoriByNome))]);
+    setVoci(vs => [...vs, ...data.mails.map((r: CampiServer) => toVoce(r, gestoriByNome, entiByNome))]);
     setCursor(data.nextCursor);
     setCaricandoAltre(false);
   }
@@ -261,7 +272,8 @@ export default function ImportMailPage() {
     // (es. Segnalazioni) — meglio vuota e da scegliere che una delega di un altro ramo lasciata lì.
     aggiorna(v.mailProcessataId, "delega", nodo?.delega ?? "");
     // "Varie" (evolutiva 2026-07-25): stessa logica della delega — solo il nodo "Varie/Comunicazioni" la porta.
-    aggiorna(v.mailProcessataId, "categoriaVaria", nodo?.categoriaVaria ?? "");
+    aggiorna(v.mailProcessataId, "enteVarioId", (nodo?.enteNome && entiByNome.get(nodo.enteNome)) || "");
+    aggiorna(v.mailProcessataId, "nuovoEnteNome", "");
     aggiorna(v.mailProcessataId, "stato", opzioniStato(categoria)?.[0]?.value ?? "");
     if (categoria === "progetto") {
       if (v.tipoProgettoSuggerito === null && !v.caricandoTipoProgetto) {
@@ -329,8 +341,11 @@ export default function ImportMailPage() {
         titolo: v.titolo,
         descrizione: v.descrizione.slice(0, 1000),
         delega: v.delega || undefined,
-        // "Varie" (evolutiva 2026-07-25): alternativa alla delega per progetto — mai entrambe.
-        categoriaVaria: categoriaRisolta === "progetto" ? (v.categoriaVaria || undefined) : undefined,
+        // "Varie" (evolutiva 2026-07-25, da enum a EnteVario in Fase 2 sezione 5): alternativa
+        // alla delega per progetto — mai entrambe. enteVarioId sceglie un ente esistente dalla
+        // lista, nuovoEnteNome ne crea uno al volo quando Marco digita un nome non ancora in lista.
+        enteVarioId: categoriaRisolta === "progetto" && v.enteVarioId !== NUOVO_ENTE ? (v.enteVarioId || undefined) : undefined,
+        nuovoEnteNome: categoriaRisolta === "progetto" && v.enteVarioId === NUOVO_ENTE ? (v.nuovoEnteNome.trim() || undefined) : undefined,
         gestoreId: v.gestoreId || undefined,
         luogo: v.luogo || undefined,
         nomeMittente: v.nomeMittente || undefined,
@@ -692,7 +707,7 @@ export default function ImportMailPage() {
                             ))}
                           </select>
                         </div>
-                      ) : categoriaRisolta === "segnalazione" && (
+                      ) : categoriaRisolta === "segnalazione" ? (
                         <div>
                           <label className="text-xs text-gray-500">Delega</label>
                           <select
@@ -709,7 +724,30 @@ export default function ImportMailPage() {
                             <p className="text-[11px] text-orange-600 mt-1">Nessuna ipotesi — scegli tu prima di confermare.</p>
                           )}
                         </div>
-                      )}
+                      ) : categoriaRisolta === "progetto" && !v.delega ? (
+                        <div>
+                          <label className="text-xs text-gray-500">Ente (Varie)</label>
+                          <select
+                            value={v.enteVarioId}
+                            onChange={e => aggiorna(v.mailProcessataId, "enteVarioId", e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
+                          >
+                            <option value="">— da specificare —</option>
+                            {entiVari.map(ente => (
+                              <option key={ente.id} value={ente.id}>{ente.nome}</option>
+                            ))}
+                            <option value={NUOVO_ENTE}>+ Nuovo ente…</option>
+                          </select>
+                          {v.enteVarioId === NUOVO_ENTE && (
+                            <input
+                              value={v.nuovoEnteNome}
+                              onChange={e => aggiorna(v.mailProcessataId, "nuovoEnteNome", e.target.value)}
+                              placeholder="es. Questura della Spezia"
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          )}
+                        </div>
+                      ) : null}
 
                       {categoriaRisolta === "segnalazione" && (
                         <>
@@ -752,7 +790,9 @@ export default function ImportMailPage() {
                       (v.candidatiOdg !== null && v.indiceOdgScelto === null) ||
                       ((v.binario === "MANUALE" || v.binario === "INCERTO") && v.modalitaManuale === "collega_esistente"
                         ? !v.entitaSelezionata
-                        : !v.etichettaScelta || (categoriaRisolta === "segnalazione" && !v.delega))
+                        : !v.etichettaScelta
+                          || (categoriaRisolta === "segnalazione" && !v.delega)
+                          || (categoriaRisolta === "progetto" && !v.delega && (!v.enteVarioId || (v.enteVarioId === NUOVO_ENTE && !v.nuovoEnteNome.trim()))))
                     }
                     className={`w-full text-white rounded-lg py-2 text-sm font-medium disabled:opacity-50 ${
                       (v.binario === "PROPOSTA_CONTINUAZIONE" && v.modalitaProposta === "collega") ||

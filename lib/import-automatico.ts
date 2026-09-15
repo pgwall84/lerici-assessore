@@ -4,8 +4,9 @@ import { contentTypeDaNomeFile, estraiTestoDaFile, estraiVociZip, trovaOdgInZip 
 import { riformattaOdg } from "@/lib/claude";
 import { etichettaPerCategoria } from "@/lib/constants";
 import { trovaContinuazioneForte, type TipoEntitaContinuazione } from "@/lib/continuazione";
+import { trovaOCreaEnteVario } from "@/lib/enti-vari";
 import { supabase } from "@/lib/supabase";
-import type { TipoAtto, StatoAtto, CategoriaVaria } from "@prisma/client";
+import type { TipoAtto, StatoAtto } from "@prisma/client";
 
 const BUCKET = "foto";
 
@@ -259,11 +260,14 @@ export async function eseguiGiustifica(m: MailImport): Promise<EsitoEsecuzione> 
  * (ANCI/Regione/Governo — vedi categoriaVariaPerDominio in lib/classificatore.ts). Nasce con
  * tipo: ATTIVITA di default, non PROGETTO — sono più spesso comunicazioni istituzionali che
  * iniziative con inizio/fine definiti (resta comunque modificabile a mano come ogni altro campo).
+ * `nomeEnte` è il nome esatto dell'EnteVario (Fase 2 sezione 5, es. "ANCI", "Regione", "Governo")
+ * — trovato o creato al volo (nessuna migration necessaria per un nome mai visto prima).
  */
-export async function eseguiProgettoVarie(m: MailImport, categoriaVaria: CategoriaVaria): Promise<EsitoEsecuzione> {
+export async function eseguiProgettoVarie(m: MailImport, nomeEnte: string): Promise<EsitoEsecuzione> {
   try {
+    const ente = await trovaOCreaEnteVario(nomeEnte);
     const progetto = await prisma.progetto.create({
-      data: { titolo: m.titolo, categoriaVaria, tipo: "ATTIVITA", messageId: m.messageId },
+      data: { titolo: m.titolo, enteVarioId: ente.id, tipo: "ATTIVITA", messageId: m.messageId },
     });
     await Promise.all(m.allegati.map(async a => {
       const url = await caricaFile(`progetto-${progetto.id}`, a.buffer, a.filename);
@@ -299,14 +303,14 @@ export async function eseguiCollegamento(m: MailImport, tipo: TipoEntitaContinua
     }
 
     if (tipo === "progetto") {
-      const progetto = await prisma.progetto.findUnique({ where: { id } });
+      const progetto = await prisma.progetto.findUnique({ where: { id }, include: { enteVario: true } });
       if (!progetto) return { esito: "ERRORE", errore: "Progetto non più trovato" };
       await prisma.notaProgetto.create({ data: { progettoId: progetto.id, testo: testoNota } });
       await Promise.all(m.allegati.map(async a => {
         const url = await caricaFile(`progetto-${progetto.id}`, a.buffer, a.filename);
         await prisma.documentoProgetto.create({ data: { progettoId: progetto.id, nomeFile: a.filename, storageUrl: url } });
       }));
-      return { esito: "COMPLETATO", entitaId: progetto.id, etichetta: etichettaPerCategoria("progetto", progetto.delega ?? undefined, progetto.categoriaVaria ?? undefined) ?? undefined };
+      return { esito: "COMPLETATO", entitaId: progetto.id, etichetta: etichettaPerCategoria("progetto", progetto.delega ?? undefined, progetto.enteVario?.nome) ?? undefined };
     }
 
     // contestazione

@@ -2,19 +2,25 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { DELEGHE_LABEL, PRIORITA_LABEL, CATEGORIA_VARIA_LABEL } from "@/lib/constants";
-import type { CategoriaVaria, Delega, Priorita } from "@prisma/client";
+import { DELEGHE_LABEL, PRIORITA_LABEL } from "@/lib/constants";
+import type { Delega, EnteVario, Priorita } from "@prisma/client";
 
 type Persona = { id: number; nome: string; cognome: string; ruolo: string | null };
+
+// Sentinella per l'opzione "nuovo ente" nel selettore combinato Delega/Varie sotto — mai un id
+// reale (i cuid di EnteVario non usano questa forma), sicura da distinguere da un id vero.
+const NUOVO_ENTE = "__nuovo__";
 
 export default function NuovoProgettoPage() {
   const router = useRouter();
   const [persone, setPersone] = useState<Persona[]>([]);
+  const [entiVari, setEntiVari] = useState<EnteVario[]>([]);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     titolo: "",
     delega: "" as Delega | "",
-    categoriaVaria: "" as CategoriaVaria | "",
+    enteVarioId: "" as string,
+    nuovoEnteNome: "",
     descrizione: "",
     responsabileId: "" as string,
     fonteFinanziamento: "",
@@ -23,11 +29,13 @@ export default function NuovoProgettoPage() {
 
   useEffect(() => {
     fetch("/api/persone").then(r => r.json()).then(setPersone).catch(() => {});
+    fetch("/api/enti-vari").then(r => r.ok ? r.json() : []).then(setEntiVari).catch(() => {});
   }, []);
 
   async function salva(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.titolo.trim() || (!form.delega && !form.categoriaVaria)) return;
+    const enteScelto = form.enteVarioId === NUOVO_ENTE ? form.nuovoEnteNome.trim() : form.enteVarioId;
+    if (!form.titolo.trim() || (!form.delega && !enteScelto)) return;
     setSaving(true);
     const res = await fetch("/api/progetti", {
       method: "POST",
@@ -35,7 +43,8 @@ export default function NuovoProgettoPage() {
       body: JSON.stringify({
         titolo: form.titolo.trim(),
         delega: form.delega || undefined,
-        categoriaVaria: form.categoriaVaria || undefined,
+        enteVarioId: form.enteVarioId && form.enteVarioId !== NUOVO_ENTE ? form.enteVarioId : undefined,
+        nuovoEnteNome: form.enteVarioId === NUOVO_ENTE ? form.nuovoEnteNome.trim() || undefined : undefined,
         descrizione: form.descrizione || undefined,
         responsabileId: form.responsabileId ? Number(form.responsabileId) : undefined,
         fonteFinanziamento: form.fonteFinanziamento || undefined,
@@ -73,13 +82,13 @@ export default function NuovoProgettoPage() {
         <div>
           <label className="text-xs text-gray-500">Delega / Categoria *</label>
           <select
-            value={form.delega || (form.categoriaVaria ? `varia:${form.categoriaVaria}` : "")}
+            value={form.delega || (form.enteVarioId ? `varia:${form.enteVarioId}` : "")}
             onChange={e => {
               const v = e.target.value;
               if (v.startsWith("varia:")) {
-                setForm(f => ({ ...f, delega: "", categoriaVaria: v.slice(6) as CategoriaVaria }));
+                setForm(f => ({ ...f, delega: "", enteVarioId: v.slice(6) }));
               } else {
-                setForm(f => ({ ...f, delega: v as Delega | "", categoriaVaria: "" }));
+                setForm(f => ({ ...f, delega: v as Delega | "", enteVarioId: "" }));
               }
             }}
             required
@@ -92,12 +101,26 @@ export default function NuovoProgettoPage() {
               ))}
             </optgroup>
             <optgroup label="Varie">
-              {(Object.keys(CATEGORIA_VARIA_LABEL) as CategoriaVaria[]).map(c => (
-                <option key={c} value={`varia:${c}`}>{CATEGORIA_VARIA_LABEL[c]}</option>
+              {entiVari.map(ente => (
+                <option key={ente.id} value={`varia:${ente.id}`}>{ente.nome}</option>
               ))}
+              <option value={`varia:${NUOVO_ENTE}`}>+ Nuovo ente…</option>
             </optgroup>
           </select>
         </div>
+
+        {form.enteVarioId === NUOVO_ENTE && (
+          <div>
+            <label className="text-xs text-gray-500">Nome del nuovo ente *</label>
+            <input
+              value={form.nuovoEnteNome}
+              onChange={e => setForm(f => ({ ...f, nuovoEnteNome: e.target.value }))}
+              placeholder="es. Questura della Spezia"
+              required
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        )}
 
         <div>
           <label className="text-xs text-gray-500">Descrizione</label>
@@ -150,7 +173,7 @@ export default function NuovoProgettoPage() {
 
         <button
           type="submit"
-          disabled={saving || !form.titolo.trim() || (!form.delega && !form.categoriaVaria)}
+          disabled={saving || !form.titolo.trim() || (!form.delega && !form.enteVarioId) || (form.enteVarioId === NUOVO_ENTE && !form.nuovoEnteNome.trim())}
           className="w-full bg-blue-600 text-white rounded-lg py-2.5 text-sm font-medium disabled:opacity-50 hover:bg-blue-700"
         >
           {saving ? "Salvataggio…" : "Salva progetto"}

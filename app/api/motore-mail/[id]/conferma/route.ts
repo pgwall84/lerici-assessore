@@ -7,6 +7,7 @@ import { etichettaPerCategoria, ALBERO_ETICHETTE_MAIL } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
 import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, eseguiCollegamentoAtto, eseguiProgettoVarie, eseguiDup, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { decodificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
+import { risolviEnteVarioId } from "@/lib/enti-vari";
 import type { MailImport } from "@/lib/gmail";
 import type { Delega, StatoAtto, StatoPratica, StatoProgetto, EsitoContestazione, TipoProgetto } from "@prisma/client";
 import { z } from "zod";
@@ -48,10 +49,14 @@ const schemaManuale = z.object({
   stato: z.string().optional(),
   // Solo per categoria "progetto": ipotesi Progetto/Attività, sempre sovrascrivibile a mano.
   tipoProgetto: z.enum(["PROGETTO", "ATTIVITA"]).optional(),
-  // "Varie" (evolutiva 2026-07-25): alternativa alla delega per progetto, mai entrambe — scelta
-  // dal tree-picker ("Varie/Comunicazioni" è l'unica raggiungibile da qui, ANCI/Regione/Governo
-  // hanno un proprio gestore Automatico e non passano da questo schema).
-  categoriaVaria: z.enum(["COMUNICAZIONI", "ANCI", "REGIONE", "GOVERNO"]).optional(),
+  // "Varie" (evolutiva 2026-07-25, da enum a modello EnteVario in Fase 2 sezione 5): alternativa
+  // alla delega per progetto, mai entrambe. enteVarioId sceglie un ente già noto (dalla lista
+  // caricata da /api/enti-vari, incluso "Comunicazioni" — l'unico raggiungibile dal tree-picker,
+  // ANCI/Regione/Governo hanno un proprio gestore Automatico e non passano da questo schema);
+  // nuovoEnteNome crea un ente al volo quando Marco digita un nome non ancora nella lista — mai
+  // entrambi insieme, enteVarioId vince se presente (vedi risolviEnteVarioId).
+  enteVarioId: z.string().min(1).optional(),
+  nuovoEnteNome: z.string().min(1).max(100).optional(),
 });
 
 // Azione esplicita per eseguire un gestore Automatico indipendentemente dal binario originale
@@ -120,7 +125,9 @@ async function applicaEtichetteFinali(rigaId: string, messageId: string, nomeEti
       // senza questo, restava con entrambe le etichette contemporaneamente. Vale per qualunque
       // cambio, non solo "Segnalazioni": confronta contro ALBERO_ETICHETTE_MAIL, la stessa lista
       // di categorie mostrata nel tree-picker.
-      const daRimuovere = etichetteAttuali.filter(e => e !== nomeEtichetta && ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === e));
+      // "Varie/<ente>" incluso anche quando l'ente non è uno dei 4 nodi statici dell'albero
+      // (Fase 2 sezione 5: un ente aggiunto al volo non ha un nodo fisso qui).
+      const daRimuovere = etichetteAttuali.filter(e => e !== nomeEtichetta && (ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === e) || e.startsWith("Varie/")));
       for (const e of daRimuovere) {
         try { await rimuoviEtichetta(messageId, e); } catch { /* comodo, non blocca l'esito */ }
       }
@@ -288,10 +295,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (d.categoria === "segnalazione" && !d.delega) {
     return NextResponse.json({ error: "Delega obbligatoria" }, { status: 400 });
   }
-  // "Varie" (evolutiva 2026-07-25): un progetto ha o una vera delega o una categoriaVaria, mai
-  // né entrambe né nessuna delle due.
-  if (d.categoria === "progetto" && !d.delega && !d.categoriaVaria) {
-    return NextResponse.json({ error: "Delega o categoria Varie obbligatoria" }, { status: 400 });
+  // "Varie" (evolutiva 2026-07-25, da enum a EnteVario in Fase 2 sezione 5): un progetto ha o una
+  // vera delega o un ente, mai né entrambi né nessuno dei due. Risolto una volta sola qui (trova
+  // o crea l'EnteVario se arriva un nome nuovo) e riusato sotto per creazione + etichetta.
+  const enteVarioIdRisolto = d.categoria === "progetto" && !d.delega
+    ? await risolviEnteVarioId({ enteVarioId: d.enteVarioId, nuovoEnteNome: d.nuovoEnteNome })
+    : undefined;
+  if (d.categoria === "progetto" && !d.delega && !enteVarioIdRisolto) {
+    return NextResponse.json({ error: "Delega o ente obbligatorio" }, { status: 400 });
   }
   if (d.categoria === "contestazione" && !d.gestoreId) {
     return NextResponse.json({ error: "Gestore obbligatorio" }, { status: 400 });
@@ -344,7 +355,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           descrizione: d.descrizione || null,
           messageId: mailOrigine.messageId,
           ...(d.delega ? { delega: d.delega as never } : {}),
-          ...(d.categoriaVaria ? { categoriaVaria: d.categoriaVaria as never } : {}),
+          ...(enteVarioIdRisolto ? { enteVarioId: enteVarioIdRisolto } : {}),
           ...(d.stato ? { stato: d.stato as StatoProgetto } : {}),
           ...(d.tipoProgetto ? { tipo: d.tipoProgetto as TipoProgetto } : {}),
         },
@@ -390,7 +401,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 
-  const etichettaScelta = etichettaPerCategoria(d.categoria, d.delega as Delega | undefined, d.categoriaVaria as never);
+  // Nome dell'ente per l'etichetta "Varie/<nome>" — se è stato digitato un nome nuovo lo si
+  // riusa direttamente (già noto), altrimenti una lettura del nome dell'ente scelto dalla lista
+  // (l'id da solo non basta a costruire l'etichetta).
+  const enteNomeScelto = enteVarioIdRisolto
+    ? d.nuovoEnteNome?.trim() || (await prisma.enteVario.findUnique({ where: { id: enteVarioIdRisolto } }))?.nome
+    : undefined;
+  const etichettaScelta = etichettaPerCategoria(d.categoria, d.delega as Delega | undefined, enteNomeScelto);
   await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: entitaId } });
   await applicaEtichetteFinali(id, riga.messageId, etichettaScelta, nomiEtichetteAttuali);
 

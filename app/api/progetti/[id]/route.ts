@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
+import { risolviEnteVarioId } from "@/lib/enti-vari";
 import { z } from "zod";
 
 const updateSchema = z.object({
@@ -9,7 +10,10 @@ const updateSchema = z.object({
     "VIABILITA","AMBIENTE","RIFIUTI","SISTEMA_IDRICO","ILLUMINAZIONE",
     "ACCESSIBILITA","CIMITERI","POLITICHE_ABITATIVE","DIGITALIZZAZIONE","MANUTENZIONE_PATRIMONIO",
   ]).nullable().optional(),
-  categoriaVaria: z.enum(["COMUNICAZIONI", "ANCI", "REGIONE", "GOVERNO"]).nullable().optional(),
+  // "Varie" (Fase 2 sezione 5: da enum a modello EnteVario) — enteVarioId=null azzera l'ente,
+  // enteVarioId="<id>" ne sceglie uno esistente, nuovoEnteNome ne crea uno al volo.
+  enteVarioId: z.string().min(1).nullable().optional(),
+  nuovoEnteNome: z.string().min(1).max(100).optional(),
   stato: z.enum(["IN_CORSO", "SOSPESO", "CONCLUSO", "ARCHIVIATO"]).optional(),
   tipo: z.enum(["PROGETTO", "ATTIVITA"]).optional(),
   priorita: z.enum(["BASSA", "MEDIA", "ALTA"]).nullable().optional(),
@@ -27,6 +31,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     where: { id },
     include: {
       responsabile: true,
+      enteVario: true,
       note: { orderBy: { createdAt: "asc" } },
       documenti: { orderBy: { createdAt: "asc" } },
     },
@@ -48,15 +53,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const existing = await prisma.progetto.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Non trovato" }, { status: 404 });
 
-  const data = { ...parsed.data };
-  // "Varie": delega e categoriaVaria sono mutuamente esclusive — impostarne una azzera l'altra.
-  if (data.delega) data.categoriaVaria = null;
-  else if (data.categoriaVaria) data.delega = null;
+  const { nuovoEnteNome, ...rest } = parsed.data;
+  const data: typeof rest & { enteVarioId?: string | null } = { ...rest };
+  if (nuovoEnteNome) data.enteVarioId = await risolviEnteVarioId({ nuovoEnteNome });
+  // "Varie": delega ed enteVarioId sono mutuamente esclusive — impostarne una azzera l'altra.
+  if (data.delega) data.enteVarioId = null;
+  else if (data.enteVarioId) data.delega = null;
 
   const progetto = await prisma.progetto.update({
     where: { id },
     data,
-    include: { responsabile: true },
+    include: { responsabile: true, enteVario: true },
   });
 
   return NextResponse.json(progetto);
