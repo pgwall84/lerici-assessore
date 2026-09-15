@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
-import { marcaNonRilevante, archiviaMail } from "@/lib/gmail";
+import { marcaNonRilevante, archiviaMail, rimuoviEtichetta } from "@/lib/gmail";
+import { ETICHETTA_INCERTO } from "@/lib/constants";
 
 // Override manuale dell'utente: stesso trattamento del binario NON_RILEVANTE automatico (vedi
 // classificaESalva in lib/motore-mail.ts) — etichetta dedicata + fuori INBOX, nessuna entità
@@ -25,6 +26,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     await marcaNonRilevante(riga.messageId);
     await archiviaMail(riga.messageId);
+    // Stesso bug di applicaEtichetteFinali (conferma/route.ts): se la riga era arrivata qui da
+    // binario INCERTO, "Incerto/Da classificare" resta sul messaggio a meno di rimuoverla
+    // esplicitamente — no-op innocuo se non era presente.
+    await rimuoviEtichetta(riga.messageId, ETICHETTA_INCERTO);
   } catch {
     // Etichetta/archiviazione di comodo: la riga è comunque COMPLETATO/NON_RILEVANTE nel DB.
     // Reso visibile, non solo tollerato: stesso principio dei contatori di estrazione Bandi.

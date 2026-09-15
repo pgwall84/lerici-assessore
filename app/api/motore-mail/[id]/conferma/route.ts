@@ -3,7 +3,7 @@ import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getMailPerId, marcaImportata, applicaEtichettaEArchivia, rimuoviEtichetta, getMappaEtichette, caricaAllegatiMail } from "@/lib/gmail";
 import { contentTypeDaNomeFile } from "@/lib/estrazione-documenti";
-import { etichettaPerCategoria, ALBERO_ETICHETTE_MAIL, ETICHETTE_SEGNALAZIONE } from "@/lib/constants";
+import { etichettaPerCategoria, ALBERO_ETICHETTE_MAIL, ETICHETTE_SEGNALAZIONE, ETICHETTA_INCERTO } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
 import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, eseguiCollegamentoAtto, eseguiProgettoVarie, eseguiDup, eseguiContestazioneGestore, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { decodificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
@@ -144,7 +144,13 @@ async function applicaEtichetteFinali(rigaId: string, messageId: string, nomeEti
       // "Istituzioni/<ente>" (chiamata "Varie" fino al 2026-09-15) incluso anche quando l'ente
       // non è uno dei 4 nodi statici dell'albero (Fase 2 sezione 5: un ente aggiunto al volo non
       // ha un nodo fisso qui).
-      const daRimuovere = etichetteAttuali.filter(e => e !== nomeEtichetta && (ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === e) || e.startsWith("Istituzioni/") || ETICHETTE_SEGNALAZIONE.includes(e)));
+      // "Incerto/Da classificare" (bug segnalato da Marco, 2026-09-15): applicata dallo scan
+      // quando la riga finisce in binario INCERTO, ma mai fatta rientrare in questo confronto —
+      // restava per sempre sul messaggio anche dopo che Marco la sistemava a mano, perché non è
+      // né nell'albero delle categorie né in ETICHETTE_SEGNALAZIONE. È di per sé un'etichetta di
+      // STATO (in attesa di classificazione), superata non appena una categoria viene confermata,
+      // quindi va rimossa qui esattamente come le altre etichette della tassonomia in conflitto.
+      const daRimuovere = etichetteAttuali.filter(e => e !== nomeEtichetta && (ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === e) || e.startsWith("Istituzioni/") || ETICHETTE_SEGNALAZIONE.includes(e) || e === ETICHETTA_INCERTO));
       for (const e of daRimuovere) {
         try { await rimuoviEtichetta(messageId, e); } catch { /* comodo, non blocca l'esito */ }
       }

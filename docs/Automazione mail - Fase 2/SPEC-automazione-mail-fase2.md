@@ -366,6 +366,12 @@ Nuovo modello `SottoTema` (non enum, per lo stesso motivo di `EnteVario`/`Gestor
 - Wired in: conferma mail (`/api/motore-mail/[id]/conferma`), creazione manuale (`/dashboard/nuova`), modifica pratica (`/dashboard/pratica/[id]`), filtri e badge della lista principale (`/dashboard`)
 - Nuovo endpoint `GET /api/sotto-temi` (opzionale `?delega=`)
 
+### Correzione collaterale (2026-09-15): "rifiuti"/"mancato ritiro" proponevano Ambiente, non Ciclo Rifiuti
+
+Indagando una mail reale ("Disservizi Via G.B. Zanelli" — "mancate raccolte dei rifiuti") emerso che `KEYWORDS` in `lib/classificatore.ts` teneva le parole generiche di rifiuti ("rifiuti", "mancato ritiro", "disservizio rifiuti", "abbandono rifiuti", "spazzatura", "bidoni") sotto la delega `AMBIENTE`, mentre `RIFIUTI` (etichetta "Ciclo Rifiuti") aveva solo termini stretti ("raccolta differenziata", "isola ecologica", "compostiera"...) che non includevano nemmeno la parola "rifiuti". Risultato: qualunque report generico di mancata raccolta vinceva sempre per Ambiente. **Decisione di Marco**: queste parole spostate su `RIFIUTI` — un report generico di rifiuti/mancato ritiro ora propone Ciclo Rifiuti. Ambiente resta per degrado/igiene ambientale non legato al servizio di raccolta (sfalci, derattizzazione, odori, discarica abusiva generica, cinghiali).
+
+Aggiunta contestuale, sempre su richiesta di Marco: `classificaSottoTema(delega, testo)` in `lib/classificatore.ts`, stessa euristica a parole chiave di `classificaDelega` ma filtrata per delega — copre solo i 4 sotto-temi già seedati (Rifiuti/Mancati Ritiri, Rifiuti/Ingombranti, Rifiuti/Degrado, Ambiente/Sfalci); un sotto-tema nuovo creato al volo da Marco non ha keyword finché non vengono aggiunte a mano, stesso limite già accettato per `classificaGestore`. Wired in `app/api/motore-mail/revisione/route.ts` (campo `sottoTemaSuggerito`, calcolato solo per righe che risolvono a "segnalazione") e in `import-mail/page.tsx` (pre-seleziona il sotto-tema, sempre editabile/rimovibile prima di confermare — mai vincolante).
+
 ---
 
 ## Ordine di implementazione consigliato

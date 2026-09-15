@@ -3,7 +3,7 @@ import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getMailPerId, getMappaEtichette } from "@/lib/gmail";
 import { trovaVoceTassonomia, calcolaEtichettaProposta } from "@/lib/motore-mail";
-import { classificaDelega, classificaGestore } from "@/lib/classificatore";
+import { classificaDelega, classificaGestore, classificaSottoTema } from "@/lib/classificatore";
 import { classificaZona } from "@/lib/claude";
 import { decodificaEntita, trovaMessaggioPrecedenteNonProcessato, trovaEntitaEsistenteNelThread } from "@/lib/continuazione";
 
@@ -67,6 +67,13 @@ export async function GET(req: NextRequest) {
       ? await classificaZona(`${mail.titolo} ${mail.descrizione}`).catch(() => null)
       : null;
 
+    // SottoTema (Fase 2, 2026-09-15): stessa euristica gratuita di delegaSuggerita/gestoreSuggerito
+    // (regex/parole chiave, nessuna chiamata AI) — solo un suggerimento pre-selezionato, mai
+    // vincolante, e solo quando la delega risolta ha sotto-temi noti (vedi classificaSottoTema).
+    const sottoTemaSuggerito = categoriaPerZona === "segnalazione"
+      ? classificaSottoTema(delegaSuggerita || null, `${mail.titolo} ${mail.descrizione}`)
+      : null;
+
     // Righe scansionate da Fase B in poi hanno già etichettaProposta persistita; per quelle più
     // vecchie si ricostruisce al volo — prima da un match di regola ancora valido su Gmail (più
     // affidabile), poi dalla categoria già salvata (nessuna nuova chiamata AI in ogni caso).
@@ -115,6 +122,7 @@ export async function GET(req: NextRequest) {
       nAllegati: mail.allegati.length,
       delegaSuggerita,
       zonaSuggerita,
+      sottoTemaSuggerito,
       gestoreSuggerito: classificaGestore(`${mail.mittente} ${mail.oggettoOriginale}`),
       entitaProposta,
       messaggioPrecedente: messaggioPrecedente

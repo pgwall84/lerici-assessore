@@ -105,6 +105,9 @@ type Voce = {
   // Zona/luogo suggerito da classificaZona (Fase 2 sezione 1), null se nessun riferimento
   // riconosciuto — calcolato dal server solo per righe che risolvono a "segnalazione".
   zonaSuggerita: string | null;
+  // Nome del SottoTema suggerito da classificaSottoTema (Fase 2, 2026-09-15), null se nessun
+  // match — risolto sull'id corrispondente in toVoce, stesso principio di gestoreSuggerito sotto.
+  sottoTemaSuggerito: string | null;
   // Nome del Gestore suggerito da classificaGestore (es. "ACAM Ambiente"), null se nessun match —
   // risolto sull'id corrispondente in toVoce, non più un valore direttamente selezionabile.
   gestoreSuggerito: string | null;
@@ -166,7 +169,7 @@ type CampiServer = Omit<Voce,
   "tipoCollegamento" | "ricercaTesto" | "risultatiRicerca" | "cercandoEntita" | "entitaSelezionata"
 >;
 
-function toVoce(r: CampiServer, gestoriByNome: Map<string, string>, entiByNome: Map<string, string>): Voce {
+function toVoce(r: CampiServer, gestoriByNome: Map<string, string>, entiByNome: Map<string, string>, sottoTemiByKey: Map<string, string>): Voce {
   const etichettaIniziale = r.etichettaProposta && ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === r.etichettaProposta)
     ? r.etichettaProposta
     : "";
@@ -179,7 +182,7 @@ function toVoce(r: CampiServer, gestoriByNome: Map<string, string>, entiByNome: 
     enteVarioId: (nodoIniziale?.enteNome && entiByNome.get(nodoIniziale.enteNome)) || "",
     nuovoEnteNome: "",
     gestoreId: (r.gestoreSuggerito && gestoriByNome.get(r.gestoreSuggerito)) || "",
-    sottoTemaId: "",
+    sottoTemaId: (r.sottoTemaSuggerito && r.delegaSuggerita && sottoTemiByKey.get(`${r.delegaSuggerita}|${r.sottoTemaSuggerito}`)) || "",
     nuovoSottoTemaNome: "",
     luogo: r.zonaSuggerita ?? "",
     stato: opzioniStato(categoriaIniziale)?.[0]?.value ?? "",
@@ -216,6 +219,7 @@ export default function ImportMailPage() {
   // SottoTema (Fase 2, 2026-09-15): caricati tutti una volta, filtrati per delega lato client nel
   // selettore sotto — stesso pattern di gestori/entiVari sopra.
   const [sottoTemi, setSottoTemi] = useState<SottoTema[]>([]);
+  const sottoTemiByKey = useMemo(() => new Map(sottoTemi.map(st => [`${st.delega}|${st.nome}`, st.id])), [sottoTemi]);
 
   useEffect(() => {
     fetch("/api/gestori").then(r => r.ok ? r.json() : []).then(setGestori).catch(() => {});
@@ -234,16 +238,16 @@ export default function ImportMailPage() {
     fetch(`/api/motore-mail/revisione?${params}`)
       .then(r => r.json())
       .then(data => {
-        setVoci(data.mails.map((r: CampiServer) => toVoce(r, gestoriByNome, entiByNome)));
+        setVoci(data.mails.map((r: CampiServer) => toVoce(r, gestoriByNome, entiByNome, sottoTemiByKey)));
         setCursor(data.nextCursor);
         setLoading(false);
       });
   }
 
-  // gestoriByNome/entiByNome tra le dipendenze: al primo mount le liste arrivano dopo questa
-  // mail-list (fetch separate), quindi si ricarica una volta in più quando arrivano, per risolvere
-  // gestoreSuggerito/enteNome sugli id giusti invece di lasciarli vuoti.
-  useEffect(() => { carica(filtro); caricaConteggi(); }, [filtro, gestoriByNome, entiByNome]);
+  // gestoriByNome/entiByNome/sottoTemiByKey tra le dipendenze: al primo mount le liste arrivano
+  // dopo questa mail-list (fetch separate), quindi si ricarica una volta in più quando arrivano,
+  // per risolvere gestoreSuggerito/enteNome/sottoTemaSuggerito sugli id giusti invece di lasciarli vuoti.
+  useEffect(() => { carica(filtro); caricaConteggi(); }, [filtro, gestoriByNome, entiByNome, sottoTemiByKey]);
 
   async function caricaAltre() {
     if (!cursor) return;
@@ -252,7 +256,7 @@ export default function ImportMailPage() {
     if (filtro) params.set("binario", filtro);
     const res = await fetch(`/api/motore-mail/revisione?${params}`);
     const data = await res.json();
-    setVoci(vs => [...vs, ...data.mails.map((r: CampiServer) => toVoce(r, gestoriByNome, entiByNome))]);
+    setVoci(vs => [...vs, ...data.mails.map((r: CampiServer) => toVoce(r, gestoriByNome, entiByNome, sottoTemiByKey))]);
     setCursor(data.nextCursor);
     setCaricandoAltre(false);
   }

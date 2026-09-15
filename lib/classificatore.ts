@@ -1,9 +1,15 @@
 const KEYWORDS: { delega: string; parole: string[] }[] = [
   {
     delega: "AMBIENTE",
+    // "rifiuti"/"mancato ritiro"/"disservizio rifiuti"/"abbandono rifiuti"/"spazzatura"/"bidoni"
+    // spostate su RIFIUTI (Ciclo Rifiuti) il 2026-09-15, su decisione esplicita di Marco: un report
+    // generico di mancata raccolta deve proporre Ciclo Rifiuti, non Ambiente (caso reale: mail
+    // "Disservizi Via G.B. Zanelli" — "mancate raccolte dei rifiuti" proponeva Ambiente perché
+    // "rifiuti" viveva solo qui, mentre RIFIUTI aveva solo termini stretti tipo "isola ecologica").
+    // Resta Ambiente: degrado/igiene ambientale generico non legato al servizio di raccolta.
     parole: [
-      "sfalcio", "taglio verde", "erba alta", "disservizio rifiuti", "mancato ritiro",
-      "pulizia", "bidoni", "rifiuti", "spazzatura", "abbandono rifiuti", "discarica",
+      "sfalcio", "taglio verde", "erba alta",
+      "pulizia", "discarica",
       "topi", "derattizzazione", "cinghiali", "odori", "puzza", "cestino pieno",
       "spazzamento", "verde pubblico",
     ],
@@ -50,8 +56,9 @@ const KEYWORDS: { delega: string; parole: string[] }[] = [
   {
     delega: "RIFIUTI",
     parole: [
-      "raccolta differenziata", "bidone", "compostiera", "ingombranti",
+      "raccolta differenziata", "bidone", "bidoni", "compostiera", "ingombranti",
       "etichette", "punto raccolta", "isola ecologica",
+      "rifiuti", "mancato ritiro", "disservizio rifiuti", "abbandono rifiuti", "spazzatura",
     ],
   },
   {
@@ -90,6 +97,52 @@ export function classificaDelega(testo: string): string | null {
   }
 
   return best.score > 0 ? best.delega : null;
+}
+
+// SottoTema (Fase 2, 2026-09-15): stessa euristica di classificaDelega, un livello più giù —
+// solo per delega/sotto-tema già seedati in DB (vedi migrazione 20260915130000_add_sotto_tema),
+// mai un nome inventato al volo: un sotto-tema nuovo creato da Marco nel form non ha keyword
+// finché non vengono aggiunte qui a mano, stesso limite già accettato per classificaGestore.
+// Filtrata per delega (non un punteggio globale come sopra): un sotto-tema ha senso solo dentro
+// la delega a cui appartiene, non in competizione con quelli di un'altra.
+const SOTTOTEMA_KEYWORDS: { delega: string; nome: string; parole: string[] }[] = [
+  {
+    delega: "RIFIUTI",
+    nome: "Mancati Ritiri",
+    parole: ["mancato ritiro", "mancata raccolta", "mancate raccolte", "non ritirano", "non è stato ritirato", "saltato il ritiro"],
+  },
+  {
+    delega: "RIFIUTI",
+    nome: "Ingombranti",
+    parole: ["ingombranti"],
+  },
+  {
+    delega: "RIFIUTI",
+    nome: "Degrado",
+    parole: ["abbandono rifiuti", "rifiuti abbandonati", "discarica abusiva", "cumulo di rifiuti"],
+  },
+  {
+    delega: "AMBIENTE",
+    nome: "Sfalci",
+    parole: ["sfalcio", "sfalci", "erba alta", "taglio erba", "taglio verde"],
+  },
+];
+
+// null quando nessuna parola chiave combacia o la delega non ha sotto-temi noti — sempre solo un
+// suggerimento pre-selezionato, mai vincolante (vedi risolviSottoTemaId: il client può sempre
+// cambiarlo o lasciarlo vuoto prima di confermare).
+export function classificaSottoTema(delega: string | null | undefined, testo: string): string | null {
+  if (!delega) return null;
+  const lower = testo.toLowerCase();
+  let best = { nome: "", score: 0 };
+
+  for (const { delega: d, nome, parole } of SOTTOTEMA_KEYWORDS) {
+    if (d !== delega) continue;
+    const score = parole.filter(p => lower.includes(p.toLowerCase())).length;
+    if (score > best.score) best = { nome, score };
+  }
+
+  return best.score > 0 ? best.nome : null;
 }
 
 // Ritorna il "nome" del Gestore (stesso valore seedato in DB, sezione 6.1) — non un id: questa
