@@ -1,7 +1,8 @@
 import { google } from "googleapis";
 import { simpleParser } from "mailparser";
 import { supabase } from "@/lib/supabase";
-import { ETICHETTA_INCERTO, ETICHETTA_NON_RILEVANTE, ETICHETTE_SEGNALAZIONE } from "@/lib/constants";
+import { ETICHETTA_INCERTO, ETICHETTA_NON_RILEVANTE, ETICHETTE_SEGNALAZIONE, etichettaSegnalazioneRisolta } from "@/lib/constants";
+import type { Delega } from "@prisma/client";
 import iconv from "iconv-lite";
 import he from "he";
 
@@ -400,22 +401,25 @@ export async function marcaNonRilevante(messageId: string): Promise<void> {
   return applicaEtichetta(messageId, ETICHETTA_NON_RILEVANTE);
 }
 
-export async function spostaInChiusa(messageId: string): Promise<void> {
+// Fase 2 (2026-09-15): la destinazione finale non è più l'unica "Segnalazioni/Chiusa" piatta ma
+// "Segnalazioni/<Delega>/Risolta" — resta filtrabile per delega anche da chiusa. `delega` è
+// obbligatoria (non opzionale con fallback silenzioso): il chiamante la conosce sempre, dato che
+// Pratica.delega non è mai nulla.
+export async function spostaInChiusa(messageId: string, delega: Delega): Promise<void> {
   const gmail = google.gmail({ version: "v1", auth: getAuth() });
-  const [labelsRes, msgRes] = await Promise.all([
-    gmail.users.labels.list({ userId: "me" }),
+  const [msgRes, idRisolta] = await Promise.all([
     gmail.users.messages.get({ userId: "me", id: messageId, format: "minimal" }),
+    getOrCreateLabel(etichettaSegnalazioneRisolta(delega)),
   ]);
+  const labelsRes = await gmail.users.labels.list({ userId: "me" });
   const labels = labelsRes.data.labels ?? [];
   const labelById = new Map(labels.map(l => [l.id, l.name]));
 
-  const labelChiusa = labels.find(l => l.name === "Segnalazioni/Chiusa");
   const labelImportata = labels.find(l => l.name === "Importata");
 
-  const addLabelIds: string[] = [];
+  const addLabelIds: string[] = [idRisolta];
   const removeLabelIds: string[] = [];
 
-  if (labelChiusa?.id) addLabelIds.push(labelChiusa.id);
   if (labelImportata?.id) removeLabelIds.push(labelImportata.id);
 
   // Fase 2 sezione 3: rimuove qualunque etichetta di classificazione "Segnalazioni" o

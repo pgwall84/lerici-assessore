@@ -392,6 +392,16 @@ function nomeEtichettaDelega(delega: Delega): string | undefined {
   return Object.entries(ETICHETTA_DELEGA).find(([, d]) => d === delega)?.[0];
 }
 
+// Sotto-etichetta di chiusura per delega (decisione di Marco, 2026-09-15): sostituisce la vecchia
+// "Segnalazioni/Chiusa" piatta — quando il tool chiude una Pratica, la sposta in
+// "Segnalazioni/<Delega>/Risolta" invece che in un'unica etichetta di stato indistinta, così
+// resta filtrabile per delega anche da chiusa. Fallback sulla vecchia piatta solo in caso
+// impossibile (delega non mappata — non dovrebbe mai succedere, Delega è un enum chiuso).
+export function etichettaSegnalazioneRisolta(delega: Delega): string {
+  const nome = nomeEtichettaDelega(delega);
+  return nome ? `Segnalazioni/${nome}/Risolta` : "Segnalazioni/Chiusa";
+}
+
 export function etichettaPerCategoria(categoria: string, delega?: Delega, enteNome?: string): string | null {
   // Fase 2 sezione 3: sotto-etichetta di delega in coesistenza con quelle di stato già esistenti
   // (Segnalazioni/Chiusa, Segnalazioni/In corso) — un messaggio può avere entrambe. "Segnalazioni"

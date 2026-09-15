@@ -69,11 +69,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     include: { persona: true, segnalante: true },
   });
 
-  // Quando si chiude una pratica importata da mail, spostala in Segnalazioni/Chiusa
+  // Quando si chiude una pratica importata da mail, spostala in Segnalazioni/<Delega>/Risolta
   if (stato === "CHIUSA" && existing.stato !== "CHIUSA" && existing.messageId) {
     try {
       const { spostaInChiusa } = await import("@/lib/gmail");
-      await spostaInChiusa(existing.messageId);
+      await spostaInChiusa(existing.messageId, pratica.delega);
     } catch { /* ignora errori Gmail — la pratica è già chiusa */ }
   }
 
