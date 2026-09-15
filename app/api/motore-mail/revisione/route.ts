@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getMailPerId, getMappaEtichette } from "@/lib/gmail";
 import { trovaVoceTassonomia, calcolaEtichettaProposta } from "@/lib/motore-mail";
 import { classificaDelega, classificaGestore } from "@/lib/classificatore";
+import { classificaZona } from "@/lib/claude";
 import { decodificaEntita, trovaMessaggioPrecedenteNonProcessato, trovaEntitaEsistenteNelThread } from "@/lib/continuazione";
 
 const TAKE = 10;
@@ -56,6 +57,16 @@ export async function GET(req: NextRequest) {
       ? voceNota.voce.delega
       : classificaDelega(`${mail.titolo} ${mail.descrizione}`) ?? "";
 
+    // Zona/luogo (Fase 2 sezione 1): a differenza di delegaSuggerita/gestoreSuggerito (regex,
+    // gratuite) questa è una vera chiamata Claude — calcolata solo per righe che risolvono a
+    // "segnalazione", non per ogni riga della pagina, per non sprecarla su Atti/Progetti/righe
+    // Automatico già risolte. Un errore qui (es. chiave non configurata) non deve mai bloccare la
+    // revisione: degrada a nessun suggerimento, come classificaMail in fase di scan.
+    const categoriaPerZona = voceNota && "categoria" in voceNota.voce ? voceNota.voce.categoria : r.categoriaProposta;
+    const zonaSuggerita = categoriaPerZona === "segnalazione"
+      ? await classificaZona(`${mail.titolo} ${mail.descrizione}`).catch(() => null)
+      : null;
+
     // Righe scansionate da Fase B in poi hanno già etichettaProposta persistita; per quelle più
     // vecchie si ricostruisce al volo — prima da un match di regola ancora valido su Gmail (più
     // affidabile), poi dalla categoria già salvata (nessuna nuova chiamata AI in ogni caso).
@@ -103,6 +114,7 @@ export async function GET(req: NextRequest) {
       hasAllegati: mail.allegati.length > 0,
       nAllegati: mail.allegati.length,
       delegaSuggerita,
+      zonaSuggerita,
       gestoreSuggerito: classificaGestore(`${mail.mittente} ${mail.oggettoOriginale}`),
       entitaProposta,
       messaggioPrecedente: messaggioPrecedente

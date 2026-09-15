@@ -137,6 +137,58 @@ export async function classificaTipoProgetto(oggetto: string, estratto: string):
   }
 }
 
+// Elenco chiuso di frazioni/località del Comune di Lerici (Fase 2 sezione 1, raccolto 2026-09-15
+// da Wikipedia) — ancoraggio per non generare un nome di via che suona plausibile ma è
+// allucinato, stesso principio di classificaDelega/classificaGestore ("un'incertezza visibile è
+// meglio di una falsa certezza"). L'elenco via-per-via completo (~166 nomi, raccolto da
+// OpenStreetMap) è stato scartato per ora perché mai verificato a campione — vedi
+// SPEC-automazione-mail-fase2.md sezione 1. Le frazioni restano comunque il livello di
+// ancoraggio più utile: i cittadini tendono a citare la zona più del nome esatto della via.
+const ZONE_NOTE_LERICI = [
+  "La Serra", "Muggiano", "Pozzuolo", "Pugliola", "San Terenzo", "Senato", "Tellaro",
+  "Bagnola", "Barcola", "Falconara", "Fiascherino", "Le Figarole", "Maralunga",
+  "Monti-San Lorenzo", "Pianelloni", "Tre Strade", "Venere Azzurra", "Solaro", "Rocchetta", "Zanego",
+];
+
+const PROMPT_ZONA = (testo: string) => `Sei un assistente che individua la zona/via citata in una segnalazione di un cittadino al Comune di Lerici.
+Elenco delle frazioni/località note del Comune di Lerici:
+${ZONE_NOTE_LERICI.join(", ")}
+
+Se il testo cita chiaramente una di queste frazioni/località (anche con piccole varianti di scrittura), rispondi con il nome esatto dall'elenco.
+Se il testo cita un riferimento geografico chiaro e specifico che NON è nell'elenco (es. un nome di via, un numero civico, un incrocio, un luogo noto), riportalo così com'è scritto nel testo.
+Se non c'è nessun riferimento di zona utilizzabile, rispondi con zona null.
+Rispondi SOLO con un oggetto JSON, nessun altro testo, nel formato esatto:
+{"zona": "..." | null}
+
+Testo: "${testo}"`;
+
+// Usata solo come suggerimento (mai vincolante) per il campo "luogo" di una Segnalazione, stesso
+// principio di classificaTipoProgetto — sempre sovrascrivibile a mano nella schermata di revisione.
+export async function classificaZona(testo: string): Promise<string | null> {
+  const t = testo.trim().slice(0, 3000);
+  if (!t) return null;
+
+  const msg = await getClient().messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 128,
+    messages: [{ role: "user", content: PROMPT_ZONA(t) }],
+  });
+
+  const blocco = msg.content.find(b => b.type === "text");
+  if (!blocco || blocco.type !== "text") return null;
+
+  const match = blocco.text.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+
+  try {
+    const parsed = JSON.parse(match[0]);
+    const zona = parsed?.zona;
+    return typeof zona === "string" && zona.trim() ? zona.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 // Usata dal motore di scansione mail (sezione 6) solo per i casi che le regole (etichette Gmail
 // note) non risolvono. Nessun output = tier Incerto, mai una forzatura verso una categoria a caso.
 export async function classificaMail(mittente: string, oggetto: string, estratto: string): Promise<ClassificazioneMail | null> {

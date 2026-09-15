@@ -99,6 +99,9 @@ type Voce = {
   hasAllegati: boolean;
   nAllegati: number;
   delegaSuggerita: string;
+  // Zona/luogo suggerito da classificaZona (Fase 2 sezione 1), null se nessun riferimento
+  // riconosciuto — calcolato dal server solo per righe che risolvono a "segnalazione".
+  zonaSuggerita: string | null;
   // Nome del Gestore suggerito da classificaGestore (es. "ACAM Ambiente"), null se nessun match —
   // risolto sull'id corrispondente in toVoce, non più un valore direttamente selezionabile.
   gestoreSuggerito: string | null;
@@ -169,7 +172,7 @@ function toVoce(r: CampiServer, gestoriByNome: Map<string, string>, entiByNome: 
     enteVarioId: (nodoIniziale?.enteNome && entiByNome.get(nodoIniziale.enteNome)) || "",
     nuovoEnteNome: "",
     gestoreId: (r.gestoreSuggerito && gestoriByNome.get(r.gestoreSuggerito)) || "",
-    luogo: "",
+    luogo: r.zonaSuggerita ?? "",
     stato: opzioniStato(categoriaIniziale)?.[0]?.value ?? "",
     tipoProgetto: "",
     tipoProgettoSuggerito: null,
