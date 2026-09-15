@@ -281,6 +281,34 @@ export async function eseguiProgettoVarie(m: MailImport, nomeEnte: string): Prom
 }
 
 /**
+ * Gestori in entrata (Fase 2 sezione 6.2): mail che arriva DA un gestore esterno, istradata per
+ * indirizzo mittente esatto (categoriaGestoreEntrataPerIndirizzo in lib/classificatore.ts), non
+ * in risposta a una Contestazione già tracciata (quel caso resta nel flusso esistente, invariato
+ * — vedi trovaContinuazioneForte). Decisione di Marco (2026-09-15): sempre una nuova entità
+ * tracciabile nel tool, mai solo l'etichetta Gmail — stessa logica già in uso per
+ * Contestazioni/Progetti, riusa il modello Contestazione (già legato a Gestore) invece di
+ * inventarne uno nuovo solo per questo caso. `nomeGestore` deve combaciare esattamente col campo
+ * "nome" del Gestore in DB (non con l'etichetta Gmail, che per alcuni gestori usa un casing
+ * diverso — vedi NOME_GESTORE_ENTRATA in lib/constants.ts).
+ */
+export async function eseguiContestazioneGestore(m: MailImport, nomeGestore: string): Promise<EsitoEsecuzione> {
+  try {
+    const gestore = await prisma.gestore.findUnique({ where: { nome: nomeGestore } });
+    if (!gestore) return { esito: "ERRORE", errore: `Gestore "${nomeGestore}" non trovato in DB` };
+    const contestazione = await prisma.contestazione.create({
+      data: { gestoreId: gestore.id, oggetto: m.titolo, descrizione: m.descrizione || null, messageId: m.messageId },
+    });
+    await Promise.all(m.allegati.map(async a => {
+      const url = await caricaFile(`contestazione-${contestazione.id}`, a.buffer, a.filename);
+      await prisma.documentoContestazione.create({ data: { contestazioneId: contestazione.id, nomeFile: a.filename, storageUrl: url } });
+    }));
+    return { esito: "COMPLETATO", entitaId: contestazione.id };
+  } catch (e) {
+    return { esito: "ERRORE", errore: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
  * Aggancia una mail a un'entità già nota (tipo+id espliciti, non ri-derivata) con una nota nel
  * diario + eventuali allegati — nessuna nuova entità creata. Condivisa da:
  * - `eseguiContinuazione`, per i match forti (protocollo/threadId), che prima ri-trova l'entità

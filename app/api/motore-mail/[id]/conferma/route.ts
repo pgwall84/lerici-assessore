@@ -5,7 +5,7 @@ import { getMailPerId, marcaImportata, applicaEtichettaEArchivia, rimuoviEtichet
 import { contentTypeDaNomeFile } from "@/lib/estrazione-documenti";
 import { etichettaPerCategoria, ALBERO_ETICHETTE_MAIL, ETICHETTE_SEGNALAZIONE } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
-import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, eseguiCollegamentoAtto, eseguiProgettoVarie, eseguiDup, type EsitoEsecuzione } from "@/lib/import-automatico";
+import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, eseguiCollegamentoAtto, eseguiProgettoVarie, eseguiDup, eseguiContestazioneGestore, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { decodificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
 import { risolviEnteVarioId } from "@/lib/enti-vari";
 import type { MailImport } from "@/lib/gmail";
@@ -93,6 +93,13 @@ const GESTORI_AUTOMATICO: Record<string, (m: MailImport, indiceOdgForzato?: numb
   // infrastruttura già usata per le altre categorie sopra.
   DUP: m => eseguiDup(m),
   BILANCIO: m => eseguiDup(m, "BILANCIO"),
+  // Gestori in entrata (Fase 2 sezione 6.2) — nome esatto del Gestore in DB, non l'etichetta Gmail.
+  GESTORE_ACAM_AMBIENTE: m => eseguiContestazioneGestore(m, "ACAM Ambiente"),
+  GESTORE_ACAM_ACQUE: m => eseguiContestazioneGestore(m, "ACAM Acque"),
+  GESTORE_ATC_ESERCIZIO: m => eseguiContestazioneGestore(m, "ATC Esercizio"),
+  GESTORE_ENEL: m => eseguiContestazioneGestore(m, "Enel"),
+  GESTORE_MARIS: m => eseguiContestazioneGestore(m, "Maris"),
+  GESTORE_ATO_RIFIUTI: m => eseguiContestazioneGestore(m, "Ato Rifiuti"),
 };
 
 async function caricaFile(cartella: string, buffer: Buffer, nomeFile: string): Promise<string> {

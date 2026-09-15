@@ -2,8 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { getMailsPaginato, getMappaEtichette, getMailPerId, marcaImportata, marcaIncerto, marcaNonRilevante, applicaEtichettaEArchivia, archiviaMail, rimuoviEtichetta, type MailImport } from "@/lib/gmail";
 import { classificaMail } from "@/lib/claude";
 import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria, ETICHETTA_NON_RILEVANTE, ETICHETTA_DELEGA_DA_SPECIFICARE, ALBERO_ETICHETTE_MAIL, ETICHETTE_SEGNALAZIONE, type VoceTassonomiaMail } from "@/lib/constants";
-import { classificaDelega, categoriaVariaPerDominio, classificaDup, classificaBilancio } from "@/lib/classificatore";
-import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiProgettoVarie, type EsitoEsecuzione } from "@/lib/import-automatico";
+import { classificaDelega, categoriaVariaPerDominio, classificaDup, classificaBilancio, categoriaGestoreEntrataPerIndirizzo } from "@/lib/classificatore";
+import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiProgettoVarie, eseguiContestazioneGestore, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { trovaContinuazioneForte, trovaContinuazioneDebole, codificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
 import type { Delega } from "@prisma/client";
 
@@ -131,6 +131,27 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
         oggetto: m.oggettoOriginale,
         categoriaProposta: categoriaVariaDominio,
         etichettaProposta: etichettaPerCategoria(categoriaVariaDominio),
+        confidenza: 1,
+        binario: "AUTOMATICO",
+      },
+    });
+    return "AUTOMATICO";
+  }
+
+  // Gestori in entrata (Fase 2 sezione 6.2): mail che arriva DA un gestore esterno, istradata per
+  // indirizzo mittente esatto — non in risposta a una Contestazione già tracciata (quel caso è
+  // già intercettato più sopra da trovaContinuazioneForte, prima di questa funzione). Stesso
+  // trattamento deterministico/Automatico di ANCI/Regione/Governo sopra.
+  const categoriaGestoreEntrata = categoriaGestoreEntrataPerIndirizzo(m.emailMittente);
+  if (categoriaGestoreEntrata) {
+    await prisma.mailProcessata.create({
+      data: {
+        messageId: m.messageId,
+        threadId: m.threadId || null,
+        mittente: m.mittente,
+        oggetto: m.oggettoOriginale,
+        categoriaProposta: categoriaGestoreEntrata,
+        etichettaProposta: etichettaPerCategoria(categoriaGestoreEntrata),
         confidenza: 1,
         binario: "AUTOMATICO",
       },
@@ -359,6 +380,14 @@ const GESTORI_AUTOMATICO: Record<string, (m: MailImport) => Promise<EsitoEsecuzi
   ANCI: m => eseguiProgettoVarie(m, "ANCI"),
   REGIONE: m => eseguiProgettoVarie(m, "REGIONE"),
   GOVERNO: m => eseguiProgettoVarie(m, "GOVERNO"),
+  // Gestori in entrata (Fase 2 sezione 6.2) — nome esatto del Gestore in DB, non l'etichetta Gmail
+  // (casing diverso per alcuni, vedi NOME_GESTORE_ENTRATA in lib/constants.ts).
+  GESTORE_ACAM_AMBIENTE: m => eseguiContestazioneGestore(m, "ACAM Ambiente"),
+  GESTORE_ACAM_ACQUE: m => eseguiContestazioneGestore(m, "ACAM Acque"),
+  GESTORE_ATC_ESERCIZIO: m => eseguiContestazioneGestore(m, "ATC Esercizio"),
+  GESTORE_ENEL: m => eseguiContestazioneGestore(m, "Enel"),
+  GESTORE_MARIS: m => eseguiContestazioneGestore(m, "Maris"),
+  GESTORE_ATO_RIFIUTI: m => eseguiContestazioneGestore(m, "Ato Rifiuti"),
 };
 
 export type RisultatoMotore = {

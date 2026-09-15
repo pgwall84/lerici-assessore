@@ -320,6 +320,19 @@ const NOME_ENTE_FISSO: Record<"ANCI" | "REGIONE" | "GOVERNO", string> = {
   GOVERNO: "Governo",
 };
 
+// Nomi Gestore per le categorie fisse istradate per indirizzo mittente esatto (Fase 2 sezione
+// 6.2, vedi categoriaGestoreEntrataPerIndirizzo in lib/classificatore.ts) — stessi nomi etichetta
+// "Gestori/<nome>" già confermati da Marco per la sezione 6.1, non sempre identici al campo
+// "nome" del modello Gestore in DB (es. "Acam Ambiente" qui vs "ACAM Ambiente" in DB).
+const NOME_GESTORE_ENTRATA: Record<string, string> = {
+  GESTORE_ACAM_AMBIENTE: "Acam Ambiente",
+  GESTORE_ACAM_ACQUE: "Acam Acque",
+  GESTORE_ATC_ESERCIZIO: "ATC esercizio",
+  GESTORE_ENEL: "Enel",
+  GESTORE_MARIS: "Maris",
+  GESTORE_ATO_RIFIUTI: "Ato Rifiuti",
+};
+
 // --- Motore di scansione mail (sezione 6 spec) ---
 
 // Etichetta Gmail -> regola di classificazione. Copre esattamente le stesse etichette già
@@ -443,6 +456,10 @@ export function etichettaPerCategoria(categoria: string, delega?: Delega, enteNo
   // un'etichetta Gmail preesistente — stesso trattamento di ANCI/REGIONE/GOVERNO sopra.
   if (categoria === "DUP") return "Giunta/Dup";
   if (categoria === "BILANCIO") return "Giunta/Bilancio";
+  // Gestori in entrata (Fase 2 sezione 6.2): istradati per indirizzo mittente esatto (vedi
+  // categoriaGestoreEntrataPerIndirizzo in lib/classificatore.ts), stesso ruolo di ANCI/REGIONE/
+  // GOVERNO sopra — categorie di primo livello senza una vera etichetta Gmail preesistente.
+  if (categoria in NOME_GESTORE_ENTRATA) return `Gestori/${NOME_GESTORE_ENTRATA[categoria]}`;
   for (const [etichetta, voce] of Object.entries(TASSONOMIA_MAIL)) {
     if ("fuoriScope" in voce) continue;
     if (categoriaProposta(voce) === categoria) return etichetta;
@@ -497,4 +514,13 @@ export const ALBERO_ETICHETTE_MAIL: NodoAlberoEtichette[] = [
   // trattamento di Varie/ANCI ecc. sopra.
   { etichetta: "Giunta/Dup", categoria: "DUP" },
   { etichetta: "Giunta/Bilancio", categoria: "BILANCIO" },
+  // Gestori in entrata (Fase 2 sezione 6.2): istradati per indirizzo mittente esatto, stesso
+  // ruolo di Istituzioni/ANCI ecc. sopra — nessuna vera etichetta Gmail preesistente in
+  // TASSONOMIA_MAIL, mappate qui direttamente.
+  { etichetta: "Gestori/Acam Ambiente", categoria: "GESTORE_ACAM_AMBIENTE" },
+  { etichetta: "Gestori/Acam Acque", categoria: "GESTORE_ACAM_ACQUE" },
+  { etichetta: "Gestori/ATC esercizio", categoria: "GESTORE_ATC_ESERCIZIO" },
+  { etichetta: "Gestori/Enel", categoria: "GESTORE_ENEL" },
+  { etichetta: "Gestori/Maris", categoria: "GESTORE_MARIS" },
+  { etichetta: "Gestori/Ato Rifiuti", categoria: "GESTORE_ATO_RIFIUTI" },
 ];

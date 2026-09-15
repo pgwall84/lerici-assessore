@@ -125,6 +125,37 @@ export function categoriaVariaPerDominio(emailMittente: string): "ANCI" | "REGIO
   return null;
 }
 
+// Istradamento in entrata per i Gestori (Fase 2 sezione 6.2, 2026-09-15): mail che arriva DA un
+// gestore esterno, non ancora agganciata a una Contestazione esistente (quel caso è già
+// intercettato prima di questa funzione da trovaContinuazioneForte, via protocollo/threadId — se
+// risponde a una contestazione tracciata resta in quel flusso, invariato). Match per INDIRIZZO
+// ESATTO, mai per dominio nudo: verificato raccogliendo gli indirizzi reali (2026-09-15) che
+// molti di questi domini sono condivisi tra più enti (pec.gruppoiren.it usato sia da ACAM
+// Ambiente che da ACAM Acque, legalmail.it condiviso da ATC Esercizio e Ato Rifiuti) o sono
+// provider PEC generici non esclusivi (pec.it usato da Maris). `categoria` è la stessa stringa
+// usata come chiave in GESTORI_AUTOMATICO (motore-mail.ts e conferma/route.ts) e in
+// NOME_GESTORE_ENTRATA (constants.ts, per l'etichetta "Gestori/<nome>") — un'unica fonte per gli
+// indirizzi, le altre due tabelle derivano da questa stessa categoria.
+const GESTORI_ENTRATA: { categoria: string; indirizzi: string[] }[] = [
+  {
+    categoria: "GESTORE_ACAM_AMBIENTE",
+    indirizzi: [
+      "acamambiente@pec.gruppoiren.it", "ccambiente@pec.gruppoiren.it",
+      "marco.salatino@gruppoiren.it", "diego.quarantiello@gruppoiren.it", "simone.merlo@gruppoiren.it",
+    ],
+  },
+  { categoria: "GESTORE_ACAM_ACQUE", indirizzi: ["acamacque@pec.gruppoiren.it"] },
+  { categoria: "GESTORE_ATC_ESERCIZIO", indirizzi: ["atceserciziospa@legalmail.it"] },
+  { categoria: "GESTORE_ENEL", indirizzi: ["e-distribuzione@pec.e-distribuzione.it"] },
+  { categoria: "GESTORE_MARIS", indirizzi: ["coopmaris@pec.it"] },
+  { categoria: "GESTORE_ATO_RIFIUTI", indirizzi: ["ato.rifiuti.provincia.laspezia@legalmail.it", "atorifiuti@provincia.sp.it"] },
+];
+
+export function categoriaGestoreEntrataPerIndirizzo(emailMittente: string): string | null {
+  const email = emailMittente.toLowerCase().trim();
+  return GESTORI_ENTRATA.find(g => g.indirizzi.includes(email))?.categoria ?? null;
+}
+
 // Riconoscimento Giunta/Dup (evolutiva 2026-07-26): parola chiave nell'oggetto, non un'etichetta
 // Gmail preesistente. Verificato dal vivo sul corpus reale (2026-07-26): un solo caso trovato,
 // oggetto esattamente "DUP" — segnale pulito ma campione troppo piccolo per fidarsi ciecamente,
