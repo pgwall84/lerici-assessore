@@ -320,6 +320,14 @@ Marco non sa se è un problema di classificazione (arriva nella sua casella ma v
 
 Il punto 6.2 (nuovo dominio-matching per i gestori) probabilmente risolve da solo una parte dei casi di classificazione — vale la pena implementare prima il punto 6 e poi rifare il conteggio del punto 1, invece di indagare e correggere due volte.
 
+### Conclusione (2026-09-15, dopo aver implementato la sezione 6.2)
+
+**Punto 1 — query reale sul DB**: 30 Progetti senza vera delega (19 Regione, 8 Comunicazioni, 2 Governo, 1 ANCI). Di questi, **solo 1** cita un gestore nel titolo/descrizione/documenti — ed è un caso legittimo, non un errore di classificazione: il verbale dell'assemblea societaria di ATC Esercizio (i Comuni soci lo ricevono per conoscenza, è correttamente "Comunicazioni", non una contestazione mal instradata). Numero effettivamente nullo, come previsto dal punto 2 come condizione per spostare il sospetto sulla visibilità.
+
+**Punto 2 — risposta di Marco**: le contestazioni "vere" (mancato ritiro, disservizi) le gestiscono **altri uffici comunali, senza coinvolgerlo**. Confermata quindi l'ipotesi di visibilità, non di classificazione — **nessuna modifica di classificazione può risolvere questo**, il tool semplicemente non vede mai queste mail perché non passano dalla casella tracciata.
+
+**Non risolvibile in questa fase**: serve una decisione organizzativa di Marco (es. farsi mettere sistematicamente in CC dagli altri uffici sulle comunicazioni con i gestori, o collegare in futuro una casella condivisa al tool) — non un problema che il codice può risolvere da solo. Sezione chiusa come indagine: nessun codice scritto, causa identificata.
+
 ---
 
 ## 9. Giustifiche — verifica, non modifica
