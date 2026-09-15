@@ -4,7 +4,7 @@ description: "Scoperte tecniche e gotcha emersi durante sviluppo/debug — da co
 metadata:
   node_type: note
   project: lerici-assessore
-  aggiornato: 2026-07-26
+  aggiornato: 2026-09-15
 ---
 
 # Note tecniche — scoperte importanti
@@ -263,3 +263,15 @@ async function main() {
 ```
 
 **Script già scritti col vecchio pattern (import statico) probabilmente affetti dallo stesso bug, non ancora verificati/corretti**: `scripts/test-motore-mail.ts`, `scripts/test-motore-mail-esecuzione.ts`. Da controllare/correggere allo stesso modo se rieseguiti e falliscono con lo stesso errore SASL.
+
+---
+
+## 23. Gmail tratta i nomi etichetta come case-insensitive per l'unicità — `getOrCreateLabel` no
+
+Scoperto il 2026-09-15 implementando `Segnalazioni/<Delega>` (Fase 2 sezione 3): creando le sotto-etichette per delega, `Segnalazioni/Lavori Pubblici` falliva con `GaxiosError 409 "Label name exists or conflicts"`. Il motivo: esisteva già `Segnalazioni/lavori pubblici` (minuscolo, residuo di un'organizzazione manuale precedente al tool), e Gmail considera i due nomi la stessa etichetta ai fini dell'unicità — ma `getOrCreateLabel()` (`lib/gmail.ts`) confrontava i nomi con `===` (case-sensitive), quindi non la trovava nella lista e provava a crearne una "nuova" che Gmail rifiutava come duplicato.
+
+**Fix**: confronto case-insensitive (`.toLowerCase()` su entrambi i lati) nella ricerca, più un retry sul 409 residuo (ri-cerca invece di far fallire il chiamante, per una race o una variante di maiuscole sfuggita alla prima lista).
+
+**Conseguenza pratica per rinominare un'etichetta esistente invece di crearne una nuova**: se due nomi differiscono solo per maiuscole/minuscole, `gmail.users.labels.create()` fallirà sempre con 409 — l'unico modo per ottenere il casing voluto è `gmail.users.labels.update({ id, requestBody: { name } })` sull'etichetta già esistente (stesso id, non un oggetto nuovo). Tentare "crea la nuova, sposta i messaggi, elimina la vecchia" per una differenza di solo casing fallisce anche sullo spostamento messaggi (`gmail.users.messages.modify` con lo stesso id sia in `addLabelIds` che `removeLabelIds` → 400 "Cannot both add and remove the same label", perché `getOrCreateLabel` corretto ritorna lo stesso id per entrambi i nomi).
+
+**Nota collaterale**: la casella Gmail di Marco aveva già una tassonomia `Segnalazioni/*` ad-hoc precedente al tool (etichette per argomento tipo `Sfalci`, `ingombranti`, `scarichi`, oltre a `Rifiuti` con nome diverso dalla delega `Ciclo Rifiuti`) — riorganizzata a mano (con script una tantum, non nel codice dell'app) in sotto-etichette annidate sotto la delega corretta (es. `Segnalazioni/Ambiente/Sfalci`, `Segnalazioni/Ciclo Rifiuti/Ingombranti`). Se emergono altre etichette "orfane" sotto `Segnalazioni/` non riconducibili a una delega, chiedere a Marco come nidificarle piuttosto che indovinare.
