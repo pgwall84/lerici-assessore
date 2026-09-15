@@ -5,13 +5,6 @@ import { useRouter } from "next/navigation";
 import type { Contestazione, DocumentoContestazione, EsitoContestazione, Gestore } from "@prisma/client";
 import { MailOriginaleButton } from "@/components/MailOriginaleButton";
 
-const GESTORE_LABEL: Record<Gestore, string> = {
-  ACAM_AMBIENTE: "ACAM Ambiente",
-  ACAM_ACQUE: "ACAM Acque",
-  ATC: "ATC",
-  ENEL: "ENEL",
-};
-
 const ESITO_LABEL: Record<EsitoContestazione, string> = {
   IN_ATTESA: "In attesa",
   RISOLTO: "Risolto",
@@ -28,7 +21,7 @@ const ESITO_COLORE: Record<EsitoContestazione, string> = {
 
 const ESITI: EsitoContestazione[] = ["IN_ATTESA", "RISOLTO", "RESPINTO", "SENZA_RISPOSTA"];
 
-type ContestazioneFull = Contestazione & { documenti: DocumentoContestazione[] };
+type ContestazioneFull = Contestazione & { documenti: DocumentoContestazione[]; gestore: Gestore };
 
 export default function ContestazionePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -37,13 +30,15 @@ export default function ContestazionePage({ params }: { params: Promise<{ id: st
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [modificaMode, setModificaMode] = useState(false);
-  const [formModifica, setFormModifica] = useState({ oggetto: "", descrizione: "", gestore: "" as Gestore | "", dataInvio: "", noteEsito: "" });
+  const [gestori, setGestori] = useState<Gestore[]>([]);
+  const [formModifica, setFormModifica] = useState({ oggetto: "", descrizione: "", gestoreId: "", dataInvio: "", noteEsito: "" });
 
   useEffect(() => {
     fetch(`/api/contestazioni/${id}`)
       .then(r => r.json())
       .then(data => { setContestazione(data); setLoading(false); })
       .catch(() => setLoading(false));
+    fetch("/api/gestori").then(r => r.ok ? r.json() : []).then(setGestori).catch(() => {});
   }, [id]);
 
   async function cambiaEsito(esito: EsitoContestazione) {
@@ -63,7 +58,7 @@ export default function ContestazionePage({ params }: { params: Promise<{ id: st
     setFormModifica({
       oggetto: contestazione.oggetto,
       descrizione: contestazione.descrizione ?? "",
-      gestore: contestazione.gestore,
+      gestoreId: contestazione.gestoreId,
       dataInvio: contestazione.dataInvio ? new Date(contestazione.dataInvio).toISOString().slice(0, 10) : "",
       noteEsito: contestazione.noteEsito ?? "",
     });
@@ -77,7 +72,7 @@ export default function ContestazionePage({ params }: { params: Promise<{ id: st
       body: JSON.stringify({
         oggetto: formModifica.oggetto,
         descrizione: formModifica.descrizione || null,
-        gestore: formModifica.gestore || undefined,
+        gestoreId: formModifica.gestoreId || undefined,
         dataInvio: formModifica.dataInvio ? new Date(formModifica.dataInvio).toISOString() : null,
         noteEsito: formModifica.noteEsito || null,
       }),
@@ -141,7 +136,7 @@ export default function ContestazionePage({ params }: { params: Promise<{ id: st
           {ESITO_LABEL[contestazione.esito]}
         </span>
         <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">
-          {GESTORE_LABEL[contestazione.gestore]}
+          {contestazione.gestore.nome}
         </span>
       </div>
 
@@ -232,12 +227,12 @@ export default function ContestazionePage({ params }: { params: Promise<{ id: st
             <div>
               <label className="text-xs text-gray-500">Gestore</label>
               <select
-                value={formModifica.gestore}
-                onChange={e => setFormModifica(f => ({ ...f, gestore: e.target.value as Gestore | "" }))}
+                value={formModifica.gestoreId}
+                onChange={e => setFormModifica(f => ({ ...f, gestoreId: e.target.value }))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                {(Object.keys(GESTORE_LABEL) as Gestore[]).map(g => (
-                  <option key={g} value={g}>{GESTORE_LABEL[g]}</option>
+                {gestori.map(g => (
+                  <option key={g.id} value={g.id}>{g.nome}</option>
                 ))}
               </select>
             </div>

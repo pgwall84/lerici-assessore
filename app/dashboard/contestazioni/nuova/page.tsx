@@ -1,37 +1,33 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Gestore } from "@prisma/client";
-
-const GESTORE_LABEL: Record<Gestore, string> = {
-  ACAM_AMBIENTE: "ACAM Ambiente",
-  ACAM_ACQUE: "ACAM Acque",
-  ATC: "ATC",
-  ENEL: "ENEL",
-};
-
-const GESTORI: Gestore[] = ["ACAM_AMBIENTE", "ACAM_ACQUE", "ATC", "ENEL"];
 
 export default function NuovaContestazionePage() {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
+  const [gestori, setGestori] = useState<Gestore[]>([]);
   const [form, setForm] = useState({
-    gestore: "" as Gestore | "",
+    gestoreId: "",
     oggetto: "",
     descrizione: "",
     dataInvio: "",
   });
 
+  useEffect(() => {
+    fetch("/api/gestori").then(r => r.ok ? r.json() : []).then(setGestori).catch(() => {});
+  }, []);
+
   async function salva(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.oggetto.trim() || !form.gestore) return;
+    if (!form.oggetto.trim() || !form.gestoreId) return;
     setSaving(true);
     const res = await fetch("/api/contestazioni", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        gestore: form.gestore,
+        gestoreId: form.gestoreId,
         oggetto: form.oggetto.trim(),
         descrizione: form.descrizione || undefined,
         dataInvio: form.dataInvio ? new Date(form.dataInvio).toISOString() : undefined,
@@ -58,14 +54,14 @@ export default function NuovaContestazionePage() {
         <div>
           <label className="text-xs text-gray-500">Gestore *</label>
           <select
-            value={form.gestore}
-            onChange={e => setForm(f => ({ ...f, gestore: e.target.value as Gestore | "" }))}
+            value={form.gestoreId}
+            onChange={e => setForm(f => ({ ...f, gestoreId: e.target.value }))}
             required
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">Seleziona…</option>
-            {GESTORI.map(g => (
-              <option key={g} value={g}>{GESTORE_LABEL[g]}</option>
+            {gestori.map(g => (
+              <option key={g.id} value={g.id}>{g.nome}</option>
             ))}
           </select>
         </div>
@@ -103,7 +99,7 @@ export default function NuovaContestazionePage() {
 
         <button
           type="submit"
-          disabled={saving || !form.oggetto.trim() || !form.gestore}
+          disabled={saving || !form.oggetto.trim() || !form.gestoreId}
           className="w-full bg-blue-600 text-white rounded-lg py-2.5 text-sm font-medium disabled:opacity-50 hover:bg-blue-700"
         >
           {saving ? "Salvataggio…" : "Salva contestazione"}

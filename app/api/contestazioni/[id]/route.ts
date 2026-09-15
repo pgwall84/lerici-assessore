@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
 const updateSchema = z.object({
-  gestore: z.enum(["ACAM_AMBIENTE", "ACAM_ACQUE", "ATC", "ENEL"]).optional(),
+  gestoreId: z.string().min(1).optional(),
   oggetto: z.string().min(1).max(200).optional(),
   descrizione: z.string().nullable().optional(),
   dataInvio: z.string().datetime().nullable().optional(),
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params;
   const contestazione = await prisma.contestazione.findUnique({
     where: { id },
-    include: { documenti: { orderBy: { createdAt: "asc" } } },
+    include: { documenti: { orderBy: { createdAt: "asc" } }, gestore: true },
   });
 
   if (!contestazione) return NextResponse.json({ error: "Non trovata" }, { status: 404 });
@@ -46,7 +46,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...rest,
       ...(dataInvio !== undefined ? { dataInvio: dataInvio ? new Date(dataInvio) : null } : {}),
     },
-    include: { documenti: { orderBy: { createdAt: "asc" } } },
+    include: { documenti: { orderBy: { createdAt: "asc" } }, gestore: true },
   });
 
   return NextResponse.json(contestazione);

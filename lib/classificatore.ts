@@ -92,16 +92,24 @@ export function classificaDelega(testo: string): string | null {
   return best.score > 0 ? best.delega : null;
 }
 
-const GESTORE_KEYWORDS: [RegExp, "ACAM_ACQUE" | "ACAM_AMBIENTE" | "ATC" | "ENEL"][] = [
-  [/acam.{0,3}acque/i, "ACAM_ACQUE"],
-  [/acam.{0,3}ambiente/i, "ACAM_AMBIENTE"],
-  [/\batc\b/i, "ATC"],
-  [/\benel\b/i, "ENEL"],
+// Ritorna il "nome" del Gestore (stesso valore seedato in DB, sezione 6.1) — non un id: questa
+// funzione resta sincrona e senza accesso al DB, la risoluzione nome->id avviene lato chiamante
+// (che ha già la lista Gestori caricata per popolare il selettore).
+const GESTORE_KEYWORDS: [RegExp, string][] = [
+  [/acam.{0,3}acque/i, "ACAM Acque"],
+  [/acam.{0,3}ambiente/i, "ACAM Ambiente"],
+  [/\batc\b/i, "ATC Esercizio"],
+  [/\benel\b/i, "Enel"],
+  [/\bmaris\b/i, "Maris"],
 ];
 
-export function classificaGestore(testo: string): "ACAM_ACQUE" | "ACAM_AMBIENTE" | "ATC" | "ENEL" {
-  for (const [re, gestore] of GESTORE_KEYWORDS) if (re.test(testo)) return gestore;
-  return "ACAM_AMBIENTE";
+// null quando nessuna parola chiave combacia — mai un default silenzioso (fino a Fase 2 sezione
+// 6.1 ritornava sempre "ACAM Ambiente" anche senza match: unico punto della codebase che violava
+// questo principio, scoperto leggendo il codice per questa stessa modifica). Un'incertezza
+// visibile è meglio di una falsa certezza, stesso principio di classificaDelega sopra.
+export function classificaGestore(testo: string): string | null {
+  for (const [re, nome] of GESTORE_KEYWORDS) if (re.test(testo)) return nome;
+  return null;
 }
 
 // Instradamento per dominio mittente (evolutiva "Varie" 2026-07-25): regola scritta nel codice,

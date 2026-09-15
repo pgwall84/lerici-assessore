@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
 const schema = z.object({
-  gestore: z.enum(["ACAM_AMBIENTE", "ACAM_ACQUE", "ATC", "ENEL"]),
+  gestoreId: z.string().min(1),
   oggetto: z.string().min(1).max(200),
   descrizione: z.string().optional(),
   dataInvio: z.string().datetime().optional(),
@@ -15,15 +15,15 @@ export async function GET(req: NextRequest) {
   if (!token) return NextResponse.json({ error: "Non autorizzato" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const gestore = searchParams.get("gestore");
+  const gestoreId = searchParams.get("gestoreId");
   const esito = searchParams.get("esito");
 
   const contestazioni = await prisma.contestazione.findMany({
     where: {
-      ...(gestore ? { gestore: gestore as never } : {}),
+      ...(gestoreId ? { gestoreId } : {}),
       ...(esito ? { esito: esito as never } : {}),
     },
-    include: { documenti: true },
+    include: { documenti: true, gestore: true },
     orderBy: [{ createdAt: "desc" }],
   });
 

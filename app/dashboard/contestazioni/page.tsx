@@ -8,16 +8,9 @@ import {
   ESITI_CONTESTAZIONE_OPERATIVA, ESITI_CONTESTAZIONE_ARCHIVIO,
 } from "@/lib/constants";
 
-const GESTORE_LABEL: Record<Gestore, string> = {
-  ACAM_AMBIENTE: "ACAM Ambiente",
-  ACAM_ACQUE: "ACAM Acque",
-  ATC: "ATC",
-  ENEL: "ENEL",
-};
-
-const GESTORI: Gestore[] = ["ACAM_AMBIENTE", "ACAM_ACQUE", "ATC", "ENEL"];
-
-type ContestazioneCard = Contestazione & { documenti: DocumentoContestazione[] };
+// Gestore ora è un modello, non un enum (Fase 2 sezione 6.1) — elenco caricato da /api/gestori
+// invece di una mappa statica, così un nuovo gestore appare qui senza toccare il codice.
+type ContestazioneCard = Contestazione & { documenti: DocumentoContestazione[]; gestore: Gestore };
 
 function meseAnno(data: string | Date): string {
   return new Date(data).toLocaleDateString("it-IT", { month: "short", year: "numeric" });
@@ -26,9 +19,10 @@ function meseAnno(data: string | Date): string {
 export default function ContestazioniPage() {
   const [contestazioni, setContestazioni] = useState<ContestazioneCard[]>([]);
   const [loading, setLoading] = useState(true);
+  const [gestori, setGestori] = useState<Gestore[]>([]);
   const [vista, setVista] = useState<"elenco" | "andamento">("elenco");
   const [vistaGruppo, setVistaGruppo] = useState<"operativa" | "archivio">("operativa");
-  const [filtroGestore, setFiltroGestore] = useState<Gestore | "">("");
+  const [filtroGestoreId, setFiltroGestoreId] = useState<string>("");
   const [filtroEsito, setFiltroEsito] = useState<EsitoContestazione | "">("");
 
   useEffect(() => {
@@ -36,6 +30,7 @@ export default function ContestazioniPage() {
       .then(r => r.json())
       .then(data => { setContestazioni(data); setLoading(false); })
       .catch(() => setLoading(false));
+    fetch("/api/gestori").then(r => r.ok ? r.json() : []).then(setGestori).catch(() => {});
   }, []);
 
   const esitiDelVista = vistaGruppo === "operativa" ? ESITI_CONTESTAZIONE_OPERATIVA : ESITI_CONTESTAZIONE_ARCHIVIO;
@@ -44,26 +39,28 @@ export default function ContestazioniPage() {
   const totaleArchivio = contestazioni.filter(c => ESITI_CONTESTAZIONE_ARCHIVIO.includes(c.esito)).length;
 
   const contestazioniFiltrate = contestazioniVista.filter(c =>
-    (!filtroGestore || c.gestore === filtroGestore) &&
+    (!filtroGestoreId || c.gestoreId === filtroGestoreId) &&
     (!filtroEsito || c.esito === filtroEsito)
   );
 
-  // Vista aggregata: conteggio per gestore, per mese (dal più recente), nell'ambito Operativa/Archivio corrente
+  // Vista aggregata: conteggio per gestore (per id, non più per chiave enum), per mese (dal più
+  // recente), nell'ambito Operativa/Archivio corrente.
   const andamento = useMemo(() => {
-    const mesi = new Map<string, Record<Gestore, number>>();
+    const mesi = new Map<string, Record<string, number>>();
     for (const c of contestazioniVista) {
       const chiave = meseAnno(c.createdAt);
-      if (!mesi.has(chiave)) mesi.set(chiave, { ACAM_AMBIENTE: 0, ACAM_ACQUE: 0, ATC: 0, ENEL: 0 });
-      mesi.get(chiave)![c.gestore]++;
+      if (!mesi.has(chiave)) mesi.set(chiave, Object.fromEntries(gestori.map(g => [g.id, 0])));
+      const riga = mesi.get(chiave)!;
+      riga[c.gestoreId] = (riga[c.gestoreId] ?? 0) + 1;
     }
     return Array.from(mesi.entries()).slice(0, 12);
-  }, [contestazioniVista]);
+  }, [contestazioniVista, gestori]);
 
   const totaliPerGestore = useMemo(() => {
-    const totali: Record<Gestore, number> = { ACAM_AMBIENTE: 0, ACAM_ACQUE: 0, ATC: 0, ENEL: 0 };
-    for (const c of contestazioniVista) totali[c.gestore]++;
+    const totali: Record<string, number> = Object.fromEntries(gestori.map(g => [g.id, 0]));
+    for (const c of contestazioniVista) totali[c.gestoreId] = (totali[c.gestoreId] ?? 0) + 1;
     return totali;
-  }, [contestazioniVista]);
+  }, [contestazioniVista, gestori]);
 
   return (
     <div className="space-y-4 pb-8">
@@ -124,20 +121,20 @@ export default function ContestazioniPage() {
           {/* Filtri */}
           <div className="flex gap-2 flex-wrap">
             <button
-              onClick={() => setFiltroGestore("")}
+              onClick={() => setFiltroGestoreId("")}
               className={`text-xs px-3 py-1.5 rounded-full border transition-colors
-                ${filtroGestore === "" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300"}`}
+                ${filtroGestoreId === "" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300"}`}
             >
               Tutti i gestori
             </button>
-            {GESTORI.map(g => (
+            {gestori.map(g => (
               <button
-                key={g}
-                onClick={() => setFiltroGestore(g === filtroGestore ? "" : g)}
+                key={g.id}
+                onClick={() => setFiltroGestoreId(g.id === filtroGestoreId ? "" : g.id)}
                 className={`text-xs px-3 py-1.5 rounded-full border transition-colors
-                  ${filtroGestore === g ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300"}`}
+                  ${filtroGestoreId === g.id ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300"}`}
               >
-                {GESTORE_LABEL[g]} {totaliPerGestore[g] > 0 && <span className="ml-1 opacity-70">{totaliPerGestore[g]}</span>}
+                {g.nome} {totaliPerGestore[g.id] > 0 && <span className="ml-1 opacity-70">{totaliPerGestore[g.id]}</span>}
               </button>
             ))}
             <select
@@ -172,7 +169,7 @@ export default function ContestazioniPage() {
                       {ESITO_LABEL[c.esito]}
                     </span>
                     <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                      {GESTORE_LABEL[c.gestore]}
+                      {c.gestore.nome}
                     </span>
                   </div>
                   <p className="text-sm font-medium text-gray-900 leading-snug">{c.oggetto}</p>
@@ -194,8 +191,8 @@ export default function ContestazioniPage() {
               <thead>
                 <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
                   <th className="py-2 pr-3 font-medium">Mese</th>
-                  {GESTORI.map(g => (
-                    <th key={g} className="py-2 px-3 font-medium text-right">{GESTORE_LABEL[g]}</th>
+                  {gestori.map(g => (
+                    <th key={g.id} className="py-2 px-3 font-medium text-right">{g.nome}</th>
                   ))}
                 </tr>
               </thead>
@@ -203,9 +200,9 @@ export default function ContestazioniPage() {
                 {andamento.map(([mese, conteggi]) => (
                   <tr key={mese} className="border-b border-gray-50">
                     <td className="py-2 pr-3 text-gray-700 capitalize">{mese}</td>
-                    {GESTORI.map(g => (
-                      <td key={g} className={`py-2 px-3 text-right font-mono ${conteggi[g] >= 5 ? "text-red-600 font-semibold" : "text-gray-600"}`}>
-                        {conteggi[g] || "—"}
+                    {gestori.map(g => (
+                      <td key={g.id} className={`py-2 px-3 text-right font-mono ${conteggi[g.id] >= 5 ? "text-red-600 font-semibold" : "text-gray-600"}`}>
+                        {conteggi[g.id] || "—"}
                       </td>
                     ))}
                   </tr>
@@ -214,8 +211,8 @@ export default function ContestazioniPage() {
               <tfoot>
                 <tr className="border-t-2 border-gray-200">
                   <td className="py-2 pr-3 font-semibold text-gray-800">Totale</td>
-                  {GESTORI.map(g => (
-                    <td key={g} className="py-2 px-3 text-right font-mono font-semibold text-gray-800">{totaliPerGestore[g]}</td>
+                  {gestori.map(g => (
+                    <td key={g.id} className="py-2 px-3 text-right font-mono font-semibold text-gray-800">{totaliPerGestore[g.id]}</td>
                   ))}
                 </tr>
               </tfoot>

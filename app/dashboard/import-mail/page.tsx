@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DELEGHE_LABEL, ALBERO_ETICHETTE_MAIL, STATO_LABEL, STATI_PER_TIPO,
   STATO_PROGETTO_LABEL, STATO_ATTO_LABEL, ESITO_CONTESTAZIONE_LABEL, TIPO_PROGETTO_LABEL,
@@ -72,12 +72,9 @@ const TIPO_ENTITA_LABEL: Record<string, string> = {
   atto: "🏛️ Atto",
 };
 
-const GESTORE_LABEL: Record<string, string> = {
-  ACAM_AMBIENTE: "ACAM Ambiente",
-  ACAM_ACQUE: "ACAM Acque",
-  ATC: "ATC",
-  ENEL: "ENEL",
-};
+// Gestore ora è un modello, non un enum (Fase 2 sezione 6.1) — l'elenco si carica da /api/gestori
+// invece di una mappa statica, così un nuovo gestore appare qui senza toccare il codice.
+type GestoreOpzione = { id: string; nome: string };
 
 type Voce = {
   mailProcessataId: string;
@@ -98,7 +95,9 @@ type Voce = {
   hasAllegati: boolean;
   nAllegati: number;
   delegaSuggerita: string;
-  gestoreSuggerito: string;
+  // Nome del Gestore suggerito da classificaGestore (es. "ACAM Ambiente"), null se nessun match —
+  // risolto sull'id corrispondente in toVoce, non più un valore direttamente selezionabile.
+  gestoreSuggerito: string | null;
   entitaProposta: { tipo: string; id: string; titolo: string; ambiguo: boolean } | null;
   // Messaggio precedente nello stesso thread, mai processato, trovato dal server — già usato per
   // titolo/descrizione/corpoCompleto sopra (redesign 2026-07-25). Solo per mostrare l'avviso.
@@ -113,7 +112,7 @@ type Voce = {
   // "Varie" (evolutiva 2026-07-25): alternativa alla delega per un Progetto — es. "Varie/ANCI"
   // scelta dal picker, oppure "Varie/Comunicazioni" per la creazione manuale.
   categoriaVaria: CategoriaVaria | "";
-  gestore: string;
+  gestoreId: string;
   luogo: string;
   // stato iniziale scelto per il tipo risultante (StatoPratica/StatoProgetto/StatoAtto/EsitoContestazione)
   stato: string;
@@ -145,12 +144,12 @@ const FILTRI: { value: Binario | ""; label: string }[] = [
 ];
 
 type CampiServer = Omit<Voce,
-  "etichettaScelta" | "delega" | "categoriaVaria" | "gestore" | "luogo" | "stato" | "tipoProgetto" | "tipoProgettoSuggerito" |
+  "etichettaScelta" | "delega" | "categoriaVaria" | "gestoreId" | "luogo" | "stato" | "tipoProgetto" | "tipoProgettoSuggerito" |
   "caricandoTipoProgetto" | "candidatiOdg" | "indiceOdgScelto" | "modalitaProposta" | "modalitaManuale" |
   "tipoCollegamento" | "ricercaTesto" | "risultatiRicerca" | "cercandoEntita" | "entitaSelezionata"
 >;
 
-function toVoce(r: CampiServer): Voce {
+function toVoce(r: CampiServer, gestoriByNome: Map<string, string>): Voce {
   const etichettaIniziale = r.etichettaProposta && ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === r.etichettaProposta)
     ? r.etichettaProposta
     : "";
@@ -161,7 +160,7 @@ function toVoce(r: CampiServer): Voce {
     etichettaScelta: etichettaIniziale,
     delega: r.delegaSuggerita,
     categoriaVaria: nodoIniziale?.categoriaVaria ?? "",
-    gestore: r.gestoreSuggerito,
+    gestoreId: (r.gestoreSuggerito && gestoriByNome.get(r.gestoreSuggerito)) || "",
     luogo: "",
     stato: opzioniStato(categoriaIniziale)?.[0]?.value ?? "",
     tipoProgetto: "",
@@ -188,6 +187,14 @@ export default function ImportMailPage() {
   const [confermando, setConfermando] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<Binario | "">("");
   const [conteggi, setConteggi] = useState({ manuale: 0, incerto: 0, automatico: 0, propostaContinuazione: 0 });
+  // Gestore ora è un modello, non un enum (Fase 2 sezione 6.1) — caricato da /api/gestori invece
+  // di una mappa statica, così un nuovo gestore appare qui senza toccare il codice.
+  const [gestori, setGestori] = useState<GestoreOpzione[]>([]);
+  const gestoriByNome = useMemo(() => new Map(gestori.map(g => [g.nome, g.id])), [gestori]);
+
+  useEffect(() => {
+    fetch("/api/gestori").then(r => r.ok ? r.json() : []).then(setGestori).catch(() => {});
+  }, []);
 
   function caricaConteggi() {
     fetch("/api/motore-mail").then(r => r.ok ? r.json() : null).then(d => { if (d) setConteggi(d); }).catch(() => {});
@@ -200,13 +207,16 @@ export default function ImportMailPage() {
     fetch(`/api/motore-mail/revisione?${params}`)
       .then(r => r.json())
       .then(data => {
-        setVoci(data.mails.map(toVoce));
+        setVoci(data.mails.map((r: CampiServer) => toVoce(r, gestoriByNome)));
         setCursor(data.nextCursor);
         setLoading(false);
       });
   }
 
-  useEffect(() => { carica(filtro); caricaConteggi(); }, [filtro]);
+  // gestoriByNome tra le dipendenze: al primo mount la lista gestori arriva dopo questa mail-list
+  // (fetch separata), quindi si ricarica una volta in più quando arriva, per risolvere
+  // gestoreSuggerito sull'id giusto invece di lasciarlo vuoto.
+  useEffect(() => { carica(filtro); caricaConteggi(); }, [filtro, gestoriByNome]);
 
   async function caricaAltre() {
     if (!cursor) return;
@@ -215,7 +225,7 @@ export default function ImportMailPage() {
     if (filtro) params.set("binario", filtro);
     const res = await fetch(`/api/motore-mail/revisione?${params}`);
     const data = await res.json();
-    setVoci(vs => [...vs, ...data.mails.map(toVoce)]);
+    setVoci(vs => [...vs, ...data.mails.map((r: CampiServer) => toVoce(r, gestoriByNome))]);
     setCursor(data.nextCursor);
     setCaricandoAltre(false);
   }
@@ -321,7 +331,7 @@ export default function ImportMailPage() {
         delega: v.delega || undefined,
         // "Varie" (evolutiva 2026-07-25): alternativa alla delega per progetto — mai entrambe.
         categoriaVaria: categoriaRisolta === "progetto" ? (v.categoriaVaria || undefined) : undefined,
-        gestore: v.gestore || undefined,
+        gestoreId: v.gestoreId || undefined,
         luogo: v.luogo || undefined,
         nomeMittente: v.nomeMittente || undefined,
         emailMittente: v.emailMittente || undefined,
@@ -672,12 +682,13 @@ export default function ImportMailPage() {
                         <div>
                           <label className="text-xs text-gray-500">Gestore</label>
                           <select
-                            value={v.gestore}
-                            onChange={e => aggiorna(v.mailProcessataId, "gestore", e.target.value)}
+                            value={v.gestoreId}
+                            onChange={e => aggiorna(v.mailProcessataId, "gestoreId", e.target.value)}
                             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
                           >
-                            {Object.keys(GESTORE_LABEL).map(g => (
-                              <option key={g} value={g}>{GESTORE_LABEL[g]}</option>
+                            <option value="">— da specificare —</option>
+                            {gestori.map(g => (
+                              <option key={g.id} value={g.id}>{g.nome}</option>
                             ))}
                           </select>
                         </div>

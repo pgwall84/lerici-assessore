@@ -234,11 +234,29 @@ enum StatoRiunione {
 }
 
 // ---------------------------------------------------------------------------
+// GESTORE — utenze esterne contestabili (ACAM Ambiente, ACAM Acque, ATC Esercizio, Enel, Maris...)
+// modello, non enum (Fase 2 sezione 6.1, 2026-09-15): un enum richiede una migration ogni volta
+// che se ne aggiunge uno — stesso ragionamento già applicato a CategoriaSegnalazione su Pratica.
+// ---------------------------------------------------------------------------
+model Gestore {
+  id            String          @id @default(cuid())
+  nome          String          @unique
+  // Non unico di proposito: molti gestori condividono lo stesso dominio PEC (es.
+  // pec.gruppoiren.it usato sia da ACAM Ambiente che da ACAM Acque) — il riconoscimento per mail
+  // in entrata (sezione 6.2) andrà fatto per indirizzo esatto, non per dominio. Non ancora
+  // popolato in questa sezione.
+  dominio       String?
+  createdAt     DateTime        @default(now())
+  contestazioni Contestazione[]
+}
+
+// ---------------------------------------------------------------------------
 // CONTESTAZIONE — mail del Comune verso i gestori per mancato ritiro/servizio
 // ---------------------------------------------------------------------------
 model Contestazione {
   id          String                   @id @default(cuid())
-  gestore     Gestore
+  gestoreId   String
+  gestore     Gestore                  @relation(fields: [gestoreId], references: [id])
   oggetto     String
   descrizione String?
   dataInvio   DateTime?
@@ -258,13 +276,6 @@ model NotaContestazione {
   contestazione   Contestazione @relation(fields: [contestazioneId], references: [id], onDelete: Cascade)
   testo           String
   createdAt       DateTime      @default(now())
-}
-
-enum Gestore {
-  ACAM_AMBIENTE
-  ACAM_ACQUE
-  ATC
-  ENEL
 }
 
 enum EsitoContestazione {

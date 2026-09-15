@@ -31,7 +31,10 @@ const schemaManuale = z.object({
   titolo: z.string().min(1).max(200),
   descrizione: z.string().optional(),
   delega: z.enum(DELEGHE).optional(),
-  gestore: z.enum(["ACAM_AMBIENTE", "ACAM_ACQUE", "ATC", "ENEL"]).optional(),
+  // Gestore ora è un modello (Fase 2 sezione 6.1), non un enum: il client manda l'id scelto dalla
+  // lista caricata da /api/gestori, validato qui solo come stringa non vuota (la FK su
+  // Contestazione fa da vincolo reale).
+  gestoreId: z.string().min(1).optional(),
   luogo: z.string().optional(),
   nomeMittente: z.string().optional(),
   emailMittente: z.string().optional(),
@@ -290,7 +293,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (d.categoria === "progetto" && !d.delega && !d.categoriaVaria) {
     return NextResponse.json({ error: "Delega o categoria Varie obbligatoria" }, { status: 400 });
   }
-  if (d.categoria === "contestazione" && !d.gestore) {
+  if (d.categoria === "contestazione" && !d.gestoreId) {
     return NextResponse.json({ error: "Gestore obbligatorio" }, { status: 400 });
   }
 
@@ -361,7 +364,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     } else {
       const contestazione = await prisma.contestazione.create({
         data: {
-          gestore: d.gestore as never,
+          gestoreId: d.gestoreId as string,
           oggetto: d.titolo,
           descrizione: d.descrizione || null,
           messageId: mailOrigine.messageId,
