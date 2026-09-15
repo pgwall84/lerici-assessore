@@ -5,7 +5,7 @@ import {
   DELEGHE_LABEL, ALBERO_ETICHETTE_MAIL, STATO_LABEL, STATI_PER_TIPO,
   STATO_PROGETTO_LABEL, STATO_ATTO_LABEL, ESITO_CONTESTAZIONE_LABEL, TIPO_PROGETTO_LABEL,
 } from "@/lib/constants";
-import type { Delega, StatoProgetto, StatoAtto, EsitoContestazione, TipoProgetto, EnteVario } from "@prisma/client";
+import type { Delega, StatoProgetto, StatoAtto, EsitoContestazione, TipoProgetto, EnteVario, SottoTema } from "@prisma/client";
 
 type Binario = "AUTOMATICO" | "MANUALE" | "INCERTO" | "PROPOSTA_CONTINUAZIONE";
 
@@ -80,6 +80,9 @@ type GestoreOpzione = { id: string; nome: string };
 // reale (i cuid di EnteVario non usano questa forma).
 const NUOVO_ENTE = "__nuovo__";
 
+// Stessa sentinella, stesso principio, per il selettore SottoTema (Fase 2, 2026-09-15).
+const NUOVO_SOTTOTEMA = "__nuovo__";
+
 type Voce = {
   mailProcessataId: string;
   binario: Binario;
@@ -123,6 +126,10 @@ type Voce = {
   enteVarioId: string;
   nuovoEnteNome: string;
   gestoreId: string;
+  // SottoTema (Fase 2, 2026-09-15): livello facoltativo sotto la Delega, solo per "segnalazione" —
+  // stesso principio di enteVarioId/nuovoEnteNome sopra, mai entrambi valorizzati insieme.
+  sottoTemaId: string;
+  nuovoSottoTemaNome: string;
   luogo: string;
   // stato iniziale scelto per il tipo risultante (StatoPratica/StatoProgetto/StatoAtto/EsitoContestazione)
   stato: string;
@@ -154,7 +161,7 @@ const FILTRI: { value: Binario | ""; label: string }[] = [
 ];
 
 type CampiServer = Omit<Voce,
-  "etichettaScelta" | "delega" | "enteVarioId" | "nuovoEnteNome" | "gestoreId" | "luogo" | "stato" | "tipoProgetto" | "tipoProgettoSuggerito" |
+  "etichettaScelta" | "delega" | "enteVarioId" | "nuovoEnteNome" | "gestoreId" | "sottoTemaId" | "nuovoSottoTemaNome" | "luogo" | "stato" | "tipoProgetto" | "tipoProgettoSuggerito" |
   "caricandoTipoProgetto" | "candidatiOdg" | "indiceOdgScelto" | "modalitaProposta" | "modalitaManuale" |
   "tipoCollegamento" | "ricercaTesto" | "risultatiRicerca" | "cercandoEntita" | "entitaSelezionata"
 >;
@@ -172,6 +179,8 @@ function toVoce(r: CampiServer, gestoriByNome: Map<string, string>, entiByNome: 
     enteVarioId: (nodoIniziale?.enteNome && entiByNome.get(nodoIniziale.enteNome)) || "",
     nuovoEnteNome: "",
     gestoreId: (r.gestoreSuggerito && gestoriByNome.get(r.gestoreSuggerito)) || "",
+    sottoTemaId: "",
+    nuovoSottoTemaNome: "",
     luogo: r.zonaSuggerita ?? "",
     stato: opzioniStato(categoriaIniziale)?.[0]?.value ?? "",
     tipoProgetto: "",
@@ -204,10 +213,14 @@ export default function ImportMailPage() {
   const gestoriByNome = useMemo(() => new Map(gestori.map(g => [g.nome, g.id])), [gestori]);
   const [entiVari, setEntiVari] = useState<EnteVario[]>([]);
   const entiByNome = useMemo(() => new Map(entiVari.map(e => [e.nome, e.id])), [entiVari]);
+  // SottoTema (Fase 2, 2026-09-15): caricati tutti una volta, filtrati per delega lato client nel
+  // selettore sotto — stesso pattern di gestori/entiVari sopra.
+  const [sottoTemi, setSottoTemi] = useState<SottoTema[]>([]);
 
   useEffect(() => {
     fetch("/api/gestori").then(r => r.ok ? r.json() : []).then(setGestori).catch(() => {});
     fetch("/api/enti-vari").then(r => r.ok ? r.json() : []).then(setEntiVari).catch(() => {});
+    fetch("/api/sotto-temi").then(r => r.ok ? r.json() : []).then(setSottoTemi).catch(() => {});
   }, []);
 
   function caricaConteggi() {
@@ -277,6 +290,10 @@ export default function ImportMailPage() {
     // "Varie" (evolutiva 2026-07-25): stessa logica della delega — solo il nodo "Varie/Comunicazioni" la porta.
     aggiorna(v.mailProcessataId, "enteVarioId", (nodo?.enteNome && entiByNome.get(nodo.enteNome)) || "");
     aggiorna(v.mailProcessataId, "nuovoEnteNome", "");
+    // SottoTema è legato alla delega precedente — se cambia etichetta/delega, una scelta fatta
+    // prima non ha più senso (stesso principio di enteVarioId sopra).
+    aggiorna(v.mailProcessataId, "sottoTemaId", "");
+    aggiorna(v.mailProcessataId, "nuovoSottoTemaNome", "");
     aggiorna(v.mailProcessataId, "stato", opzioniStato(categoria)?.[0]?.value ?? "");
     if (categoria === "progetto") {
       if (v.tipoProgettoSuggerito === null && !v.caricandoTipoProgetto) {
@@ -350,6 +367,10 @@ export default function ImportMailPage() {
         enteVarioId: categoriaRisolta === "progetto" && v.enteVarioId !== NUOVO_ENTE ? (v.enteVarioId || undefined) : undefined,
         nuovoEnteNome: categoriaRisolta === "progetto" && v.enteVarioId === NUOVO_ENTE ? (v.nuovoEnteNome.trim() || undefined) : undefined,
         gestoreId: v.gestoreId || undefined,
+        // SottoTema (Fase 2, 2026-09-15): sempre facoltativo, solo per segnalazione — stesso
+        // principio di enteVarioId/nuovoEnteNome sopra.
+        sottoTemaId: categoriaRisolta === "segnalazione" && v.sottoTemaId && v.sottoTemaId !== NUOVO_SOTTOTEMA ? v.sottoTemaId : undefined,
+        nuovoSottoTemaNome: categoriaRisolta === "segnalazione" && v.sottoTemaId === NUOVO_SOTTOTEMA ? (v.nuovoSottoTemaNome.trim() || undefined) : undefined,
         luogo: v.luogo || undefined,
         nomeMittente: v.nomeMittente || undefined,
         emailMittente: v.emailMittente || undefined,
@@ -715,7 +736,11 @@ export default function ImportMailPage() {
                           <label className="text-xs text-gray-500">Delega</label>
                           <select
                             value={v.delega}
-                            onChange={e => aggiorna(v.mailProcessataId, "delega", e.target.value)}
+                            onChange={e => {
+                              aggiorna(v.mailProcessataId, "delega", e.target.value);
+                              aggiorna(v.mailProcessataId, "sottoTemaId", "");
+                              aggiorna(v.mailProcessataId, "nuovoSottoTemaNome", "");
+                            }}
                             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
                           >
                             <option value="">— da specificare —</option>
@@ -725,6 +750,30 @@ export default function ImportMailPage() {
                           </select>
                           {!v.delega && (
                             <p className="text-[11px] text-orange-600 mt-1">Nessuna ipotesi — scegli tu prima di confermare.</p>
+                          )}
+                          {v.delega && (
+                            <div className="mt-2">
+                              <label className="text-xs text-gray-500">Sotto-tema (facoltativo)</label>
+                              <select
+                                value={v.sottoTemaId}
+                                onChange={e => aggiorna(v.mailProcessataId, "sottoTemaId", e.target.value)}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
+                              >
+                                <option value="">— nessuno —</option>
+                                {sottoTemi.filter(st => st.delega === v.delega).map(st => (
+                                  <option key={st.id} value={st.id}>{st.nome}</option>
+                                ))}
+                                <option value={NUOVO_SOTTOTEMA}>+ Nuovo sotto-tema…</option>
+                              </select>
+                              {v.sottoTemaId === NUOVO_SOTTOTEMA && (
+                                <input
+                                  value={v.nuovoSottoTemaNome}
+                                  onChange={e => aggiorna(v.mailProcessataId, "nuovoSottoTemaNome", e.target.value)}
+                                  placeholder="es. Mancati Ritiri"
+                                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              )}
+                            </div>
                           )}
                         </div>
                       ) : categoriaRisolta === "progetto" && !v.delega ? (
@@ -795,6 +844,7 @@ export default function ImportMailPage() {
                         ? !v.entitaSelezionata
                         : !v.etichettaScelta
                           || (categoriaRisolta === "segnalazione" && !v.delega)
+                          || (categoriaRisolta === "segnalazione" && v.sottoTemaId === NUOVO_SOTTOTEMA && !v.nuovoSottoTemaNome.trim())
                           || (categoriaRisolta === "progetto" && !v.delega && (!v.enteVarioId || (v.enteVarioId === NUOVO_ENTE && !v.nuovoEnteNome.trim()))))
                     }
                     className={`w-full text-white rounded-lg py-2 text-sm font-medium disabled:opacity-50 ${

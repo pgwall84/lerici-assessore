@@ -347,6 +347,27 @@ Il modello `Giustifica` e `eseguiGiustifica()` risultano corretti leggendo il co
 
 ---
 
+## 10. SottoTema — livello facoltativo sotto Delega/Segnalazioni (richiesta emersa a lavori in corso)
+
+### Richiesta di Marco
+
+Su Gmail esistevano già sotto-etichette manuali sotto alcuni rami `Segnalazioni/<Delega>` (es. "Ciclo Rifiuti/Mancati Ritiri", "Ambiente/Sfalci"), create e gestite a mano, mai rappresentate nel tool. Marco ha chiesto di poterle scegliere anche dal tool ("si può estendere alla delega la 'sotto delega'?"), estendibili al volo come Enti/Gestori e sempre facoltative — mai un secondo campo obbligatorio.
+
+### Decisione presa
+
+Nuovo modello `SottoTema` (non enum, per lo stesso motivo di `EnteVario`/`Gestore`: un nuovo sotto-tema non deve richiedere una migration) — `{ id, delega, nome }`, vincolo unico su `(delega, nome)`. Seed con i 4 sotto-tema già in uso manualmente su Gmail. Campo opzionale `Pratica.sottoTemaId`.
+
+### Implementazione
+
+- `lib/sotto-temi.ts`: `trovaOCreaSottoTema`/`risolviSottoTemaId`, stesso pattern di `lib/enti-vari.ts`
+- `etichettaPerCategoria` (`lib/constants.ts`) accetta un 4° parametro `sottoTemaNome` e produce `Segnalazioni/<Delega>/<SottoTema>` quando presente
+- `spostaInChiusa` (`lib/gmail.ts`) non ha richiesto modifiche: riconosce già genericamente qualunque sotto-etichetta più specifica presente sul messaggio (introdotto per l'organizzazione manuale di Marco) e la usa anche per le etichette scritte dal tool
+- `riconciliaSegnalazione` (`lib/motore-mail.ts`, sezione 4) esteso per allineare anche `sottoTemaId` quando Marco cambia/aggiunge la sotto-etichetta a mano su Gmail — ambiguo (più nomi distinti sotto la stessa delega) non blocca l'aggiornamento della delega, semplicemente non tocca il sotto-tema
+- Wired in: conferma mail (`/api/motore-mail/[id]/conferma`), creazione manuale (`/dashboard/nuova`), modifica pratica (`/dashboard/pratica/[id]`), filtri e badge della lista principale (`/dashboard`)
+- Nuovo endpoint `GET /api/sotto-temi` (opzionale `?delega=`)
+
+---
+
 ## Ordine di implementazione consigliato
 
 1. **Sezione 6.1** (Gestori: enum → modello, aggiunta Maris, fix default silenzioso di `classificaGestore`) — piccolo, autonomo, corregge un bug reale (default silenzioso)

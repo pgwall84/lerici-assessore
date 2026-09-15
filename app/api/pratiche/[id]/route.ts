@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
+import { risolviSottoTemaId } from "@/lib/sotto-temi";
+import type { Delega } from "@prisma/client";
 import { z } from "zod";
 
 const updateSchema = z.object({
@@ -16,6 +18,11 @@ const updateSchema = z.object({
   luogo: z.string().nullable().optional(),
   delega: z.enum(["VIABILITA","AMBIENTE","RIFIUTI","SISTEMA_IDRICO","ILLUMINAZIONE","ACCESSIBILITA","CIMITERI","POLITICHE_ABITATIVE","DIGITALIZZAZIONE","MANUTENZIONE_PATRIMONIO"]).optional(),
   personaId: z.number().int().nullable().optional(),
+  // SottoTema (Fase 2, 2026-09-15): sempre facoltativo. sottoTemaId="" (stringa vuota, non
+  // omesso) rimuove la scelta esistente — l'unico modo per un client di esprimere "nessuno" con
+  // un update parziale; nuovoSottoTemaNome ne crea uno al volo, mai insieme a sottoTemaId non vuoto.
+  sottoTemaId: z.string().optional(),
+  nuovoSottoTemaNome: z.string().min(1).max(100).optional(),
 });
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -33,6 +40,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       storico: { orderBy: { createdAt: "asc" } },
       appuntamenti: { orderBy: { dataOra: "asc" } },
       mailInviate: { orderBy: { sentAt: "desc" } },
+      sottoTema: true,
     },
   });
 
@@ -52,12 +60,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const existing = await prisma.pratica.findUnique({ where: { id: Number(id) } });
   if (!existing) return NextResponse.json({ error: "Non trovata" }, { status: 404 });
 
-  const { stato, ...rest } = parsed.data;
+  const { stato, sottoTemaId, nuovoSottoTemaNome, ...rest } = parsed.data;
+
+  // SottoTema: "" esplicito rimuove la scelta, un id o un nome nuovo la risolve/crea (stesso
+  // helper usato in POST /api/pratiche e nella conferma mail), omesso lascia il campo invariato.
+  let sottoTemaData: { sottoTemaId: string | null } | Record<string, never> = {};
+  if (sottoTemaId === "") {
+    sottoTemaData = { sottoTemaId: null };
+  } else if (sottoTemaId || nuovoSottoTemaNome) {
+    const delegaRisolta = (rest.delega ?? existing.delega) as Delega;
+    const risolto = await risolviSottoTemaId({ sottoTemaId, nuovoSottoTemaNome, delega: delegaRisolta });
+    if (risolto) sottoTemaData = { sottoTemaId: risolto };
+  }
 
   const pratica = await prisma.pratica.update({
     where: { id: Number(id) },
     data: {
       ...rest,
+      ...sottoTemaData,
       ...(stato ? { stato } : {}),
       ...(stato === "CHIUSA" && existing.stato !== "CHIUSA" ? { chiusaAt: new Date() } : {}),
       ...(stato && stato !== existing.stato ? {
@@ -66,7 +86,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         },
       } : {}),
     },
-    include: { persona: true, segnalante: true },
+    include: { persona: true, segnalante: true, sottoTema: true },
   });
 
   // Quando si chiude una pratica importata da mail, spostala in Segnalazioni/<Delega>/Risolta

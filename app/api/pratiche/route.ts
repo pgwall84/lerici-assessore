@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { STATO_INIZIALE } from "@/lib/constants";
+import { risolviSottoTemaId } from "@/lib/sotto-temi";
+import type { Delega } from "@prisma/client";
 import { z } from "zod";
 
 const schema = z.object({
@@ -15,6 +17,11 @@ const schema = z.object({
   luogo: z.string().optional(),
   priorita: z.enum(["BASSA", "MEDIA", "ALTA"]).default("MEDIA"),
   personaId: z.number().int().optional(),
+  // SottoTema (Fase 2, 2026-09-15): sempre facoltativo, stesso principio di risolviSottoTemaId
+  // già usato in /api/motore-mail/[id]/conferma — sottoTemaId sceglie un sotto-tema già noto,
+  // nuovoSottoTemaNome ne crea uno al volo, mai entrambi (sottoTemaId vince se presente).
+  sottoTemaId: z.string().min(1).optional(),
+  nuovoSottoTemaNome: z.string().min(1).max(100).optional(),
   segnalante: z.object({
     nome: z.string().optional(),
     telefono: z.string().optional(),
@@ -30,6 +37,7 @@ export async function GET(req: NextRequest) {
   const tipo = searchParams.get("tipo") as string | null;
   const delega = searchParams.get("delega") as string | null;
   const stato = searchParams.get("stato") as string | null;
+  const sottoTemaId = searchParams.get("sottoTemaId") as string | null;
   const q = searchParams.get("q");
 
   const vista = searchParams.get("vista"); // "operativa" | "archivio"
@@ -40,6 +48,7 @@ export async function GET(req: NextRequest) {
     where: {
       ...(tipo ? { tipo: tipo as never } : { tipo: { not: "PROGETTO" as never } }),
       ...(delega ? { delega: delega as never } : {}),
+      ...(sottoTemaId ? { sottoTemaId } : {}),
       ...(stato ? { stato: stato as never } :
         vista === "operativa" ? { stato: { in: STATI_OPERATIVA as never[] } } :
         vista === "archivio" ? { stato: { in: STATI_ARCHIVIO as never[] } } :
@@ -54,6 +63,7 @@ export async function GET(req: NextRequest) {
       segnalante: true,
       foto: true,
       note: { orderBy: { createdAt: "desc" }, take: 1 },
+      sottoTema: true,
     },
     orderBy: [{ priorita: "desc" }, { updatedAt: "desc" }],
   });
@@ -69,19 +79,23 @@ export async function POST(req: NextRequest) {
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
-  const { tipo, segnalante, ...rest } = parsed.data;
+  const { tipo, segnalante, sottoTemaId, nuovoSottoTemaNome, ...rest } = parsed.data;
   const statoIniziale = STATO_INIZIALE[tipo];
+  const sottoTemaIdRisolto = tipo === "SEGNALAZIONE"
+    ? await risolviSottoTemaId({ sottoTemaId, nuovoSottoTemaNome, delega: rest.delega as Delega })
+    : undefined;
 
   const pratica = await prisma.pratica.create({
     data: {
       tipo,
       stato: statoIniziale,
       ...rest,
+      ...(sottoTemaIdRisolto ? { sottoTemaId: sottoTemaIdRisolto } : {}),
       ...(segnalante && tipo === "SEGNALAZIONE" ? {
         segnalante: { create: segnalante },
       } : {}),
     },
-    include: { persona: true, segnalante: true },
+    include: { persona: true, segnalante: true, sottoTema: true },
   });
 
   return NextResponse.json(pratica, { status: 201 });

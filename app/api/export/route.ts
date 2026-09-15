@@ -13,12 +13,14 @@ export async function GET(req: NextRequest) {
   const tipo = searchParams.get("tipo");
   const delega = searchParams.get("delega");
   const stato = searchParams.get("stato");
+  const sottoTemaId = searchParams.get("sottoTemaId");
   const q = searchParams.get("q");
 
   const pratiche = await prisma.pratica.findMany({
     where: {
       ...(tipo ? { tipo: tipo as never } : { tipo: { not: "PROGETTO" as never } }),
       ...(delega ? { delega: delega as never } : {}),
+      ...(sottoTemaId ? { sottoTemaId } : {}),
       ...(stato ? { stato: stato as never } : { stato: { not: "ARCHIVIATA" as never } }),
       ...(q ? { OR: [
         { titolo: { contains: q, mode: "insensitive" } },

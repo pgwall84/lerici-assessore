@@ -422,15 +422,18 @@ export function etichettaSegnalazioneRisolta(delega: Delega): string {
   return nome ? `Segnalazioni/${nome}/Risolta` : "Segnalazioni/Chiusa";
 }
 
-export function etichettaPerCategoria(categoria: string, delega?: Delega, enteNome?: string): string | null {
+export function etichettaPerCategoria(categoria: string, delega?: Delega, enteNome?: string, sottoTemaNome?: string): string | null {
   // Fase 2 sezione 3: sotto-etichetta di delega in coesistenza con quelle di stato già esistenti
   // (Segnalazioni/Chiusa, Segnalazioni/In corso) — un messaggio può avere entrambe. "Segnalazioni"
   // piatta resta solo il fallback quando la delega non è ancora nota (in pratica mai in scrittura,
   // dato che Pratica.delega è obbligatoria — ma la funzione può essere chiamata senza per un badge).
+  // sottoTemaNome (2026-09-15, facoltativo): un livello in più quando Marco lo sceglie — es.
+  // "Segnalazioni/Ciclo Rifiuti/Mancati Ritiri" — mai senza una delega valida sopra.
   if (categoria === "segnalazione") {
     if (!delega) return "Segnalazioni";
     const nomeEtichetta = nomeEtichettaDelega(delega);
-    return nomeEtichetta ? `Segnalazioni/${nomeEtichetta}` : "Segnalazioni";
+    if (!nomeEtichetta) return "Segnalazioni";
+    return sottoTemaNome ? `Segnalazioni/${nomeEtichetta}/${sottoTemaNome}` : `Segnalazioni/${nomeEtichetta}`;
   }
   if (categoria === "contestazione") return "Contestazioni";
   if (categoria === "giustifica") return "Giustifica"; // scelta manuale da Incerto — minuscolo, diverso da "GIUSTIFICA" (Automatico)

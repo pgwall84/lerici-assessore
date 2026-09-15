@@ -6,6 +6,7 @@ import { classificaDelega, categoriaVariaPerDominio, classificaDup, classificaBi
 import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiProgettoVarie, eseguiContestazioneGestore, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { trovaContinuazioneForte, trovaContinuazioneDebole, codificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
 import { trovaOCreaEnteVario } from "@/lib/enti-vari";
+import { trovaOCreaSottoTema } from "@/lib/sotto-temi";
 import type { Delega } from "@prisma/client";
 
 const SOGLIA_CONFIDENZA = 0.6;
@@ -448,8 +449,32 @@ async function riconciliaSegnalazione(entitaCreataId: string, nomiEtichette: str
   if (delegheTrovate.size > 1) return "conflitto";
 
   const [delega] = delegheTrovate;
-  if (delega === pratica.delega) return "nessuna";
-  await prisma.pratica.update({ where: { id: praticaId }, data: { delega } });
+
+  // Sotto-tema (Fase 2, 2026-09-15): se tra le etichette "Segnalazioni/<Delega>/<SottoTema>" (non
+  // "/Risolta", già gestita sopra) c'è un terzo livello per la delega appena risolta, allinea anche
+  // il campo — stesso trova-o-crea-al-volo usato in conferma mail, mai indovinato se più di un nome
+  // distinto compare (stesso principio conflict-safety di sopra, ma qui semplicemente non tocca il
+  // campo invece di bloccare tutto: la delega resta comunque aggiornabile).
+  const nomeEtichettaDelegaGmail = etichetteSegnalazioni.find(e => (ETICHETTA_DELEGA[e.split("/")[1]] ?? undefined) === delega)!.split("/")[1];
+  const nomiSottoTema = new Set(
+    etichetteSegnalazioni
+      .filter(e => e.split("/")[1] === nomeEtichettaDelegaGmail)
+      .map(e => e.split("/")[2])
+      .filter((n): n is string => !!n)
+  );
+  const sottoTemaIdRisolto = nomiSottoTema.size === 1 ? (await trovaOCreaSottoTema(delega, [...nomiSottoTema][0])).id : undefined;
+
+  const delegaCambiata = delega !== pratica.delega;
+  const sottoTemaCambiato = sottoTemaIdRisolto !== undefined && sottoTemaIdRisolto !== pratica.sottoTemaId;
+  if (!delegaCambiata && !sottoTemaCambiato) return "nessuna";
+
+  await prisma.pratica.update({
+    where: { id: praticaId },
+    data: {
+      ...(delegaCambiata ? { delega } : {}),
+      ...(sottoTemaCambiato ? { sottoTemaId: sottoTemaIdRisolto } : {}),
+    },
+  });
   return "aggiornata";
 }
 

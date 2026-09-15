@@ -38,8 +38,9 @@ Menu principale: Segnalazioni, Nuova, Mail, Dashboard, Politica, Riunioni. Menu 
 Modello `Pratica` (tipi: SEGNALAZIONE, e storicamente MIA_IDEA — quest'ultimo tipo ormai svuotato, le idee promosse sono migrate a Progetto).
 
 - Sidebar con le 10 deleghe, conteggi per delega
+- **`SottoTema`** (Fase 2, 2026-09-15): livello facoltativo sotto la Delega, modello DB (non enum) estendibile al volo dal form — stesso principio di `Gestore`/`EnteVario`. Rispecchia i sotto-temi che Marco gestiva a mano solo su Gmail (es. "Segnalazioni/Ciclo Rifiuti/Mancati Ritiri"). Mai obbligatorio. Selezionabile in conferma mail, creazione manuale ("Nuova") e modifica pratica; filtrabile anche nella lista principale (appare solo quando è già scelta una delega con sotto-temi noti)
 - Tab Operativa/Archivio
-- Filtri per delega, tipo e stato; ordinamento anche per priorità
+- Filtri per delega, sotto-tema, tipo e stato; ordinamento anche per priorità
 - Diario evoluzioni (note in ordine cronologico inverso)
 - Foto/documenti allegati
 - Referente con pulsanti Telegram/Email/WhatsApp (componente condiviso `ReferenteBox`, riusato anche da Progetti e Atti)

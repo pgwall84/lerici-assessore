@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, eseguiCollegamentoAtto, eseguiProgettoVarie, eseguiDup, eseguiContestazioneGestore, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { decodificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
 import { risolviEnteVarioId } from "@/lib/enti-vari";
+import { risolviSottoTemaId } from "@/lib/sotto-temi";
 import type { MailImport } from "@/lib/gmail";
 import type { Delega, StatoAtto, StatoPratica, StatoProgetto, EsitoContestazione, TipoProgetto } from "@prisma/client";
 import { z } from "zod";
@@ -57,6 +58,12 @@ const schemaManuale = z.object({
   // entrambi insieme, enteVarioId vince se presente (vedi risolviEnteVarioId).
   enteVarioId: z.string().min(1).optional(),
   nuovoEnteNome: z.string().min(1).max(100).optional(),
+  // SottoTema (Fase 2, 2026-09-15): sempre facoltativo, valido solo per categoria "segnalazione"
+  // (richiede una delega). sottoTemaId sceglie uno già noto (lista caricata da /api/sotto-temi,
+  // filtrata per la delega scelta), nuovoSottoTemaNome ne crea uno al volo — mai entrambi insieme,
+  // sottoTemaId vince se presente (vedi risolviSottoTemaId).
+  sottoTemaId: z.string().min(1).optional(),
+  nuovoSottoTemaNome: z.string().min(1).max(100).optional(),
 });
 
 // Azione esplicita per eseguire un gestore Automatico indipendentemente dal binario originale
@@ -317,6 +324,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (d.categoria === "contestazione" && !d.gestoreId) {
     return NextResponse.json({ error: "Gestore obbligatorio" }, { status: 400 });
   }
+  // SottoTema: sempre facoltativo, ha senso solo per segnalazione (richiede la delega già validata
+  // sopra per risolvere l'unique [delega, nome] in caso di creazione al volo).
+  const sottoTemaIdRisolto = d.categoria === "segnalazione"
+    ? await risolviSottoTemaId({ sottoTemaId: d.sottoTemaId, nuovoSottoTemaNome: d.nuovoSottoTemaNome, delega: d.delega as Delega | undefined })
+    : undefined;
 
   // Prima di creare una nuova entità (umano presente su questa schermata): verifica dal vivo —
   // dati vivi, non fidarsi di quanto mostrato in precedenza — se esiste un messaggio precedente
@@ -343,6 +355,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           priorita: "MEDIA",
           messageId: mailOrigine.messageId,
           delega: d.delega as never,
+          ...(sottoTemaIdRisolto ? { sottoTemaId: sottoTemaIdRisolto } : {}),
           ...(d.nomeMittente ? { segnalante: { create: { nome: d.nomeMittente, email: d.emailMittente || null } } } : {}),
         },
       });
@@ -417,7 +430,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const enteNomeScelto = enteVarioIdRisolto
     ? d.nuovoEnteNome?.trim() || (await prisma.enteVario.findUnique({ where: { id: enteVarioIdRisolto } }))?.nome
     : undefined;
-  const etichettaScelta = etichettaPerCategoria(d.categoria, d.delega as Delega | undefined, enteNomeScelto);
+  // Stesso principio: se il nome è nuovo lo si riusa direttamente, altrimenti una lettura del
+  // sotto-tema scelto dalla lista (l'id da solo non basta a costruire l'etichetta Gmail).
+  const sottoTemaNomeScelto = sottoTemaIdRisolto
+    ? d.nuovoSottoTemaNome?.trim() || (await prisma.sottoTema.findUnique({ where: { id: sottoTemaIdRisolto } }))?.nome
+    : undefined;
+  const etichettaScelta = etichettaPerCategoria(d.categoria, d.delega as Delega | undefined, enteNomeScelto, sottoTemaNomeScelto);
   await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: entitaId } });
   await applicaEtichetteFinali(id, riga.messageId, etichettaScelta, nomiEtichetteAttuali);
 

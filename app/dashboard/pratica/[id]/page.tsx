@@ -6,9 +6,13 @@ import {
   DELEGHE_LABEL, STATO_COLORE, STATO_INIZIALE, STATO_LABEL, STATI_PER_TIPO,
   TIPO_COLORE, TIPO_LABEL
 } from "@/lib/constants";
-import type { Appuntamento, Delega, Foto, MailInviata, Nota, Pratica, StatoPratica, StoricoStato, TipoPratica } from "@prisma/client";
+import type { Appuntamento, Delega, Foto, MailInviata, Nota, Pratica, SottoTema, StatoPratica, StoricoStato, TipoPratica } from "@prisma/client";
 import { MailOriginaleButton } from "@/components/MailOriginaleButton";
 import { ReferenteBox } from "@/components/ReferenteBox";
+
+// Sentinella per l'opzione "nuovo sotto-tema" (Fase 2, 2026-09-15) — stesso principio già usato
+// per Gestore/EnteVario nella pagina di conferma mail.
+const NUOVO_SOTTOTEMA = "__nuovo__";
 
 type PraticaFull = Pratica & {
   persona: { id: number; nome: string; cognome: string; ruolo: string | null; telefono: string | null; email: string | null } | null;
@@ -18,6 +22,7 @@ type PraticaFull = Pratica & {
   storico: StoricoStato[];
   appuntamenti: Appuntamento[];
   mailInviate: MailInviata[];
+  sottoTema: SottoTema | null;
 };
 
 export default function PraticaPage({ params }: { params: Promise<{ id: string }> }) {
@@ -32,7 +37,8 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
   const [fotoIngrandita, setFotoIngrandita] = useState<string | null>(null);
   const [persone, setPersone] = useState<{ id: number; nome: string; cognome: string; ruolo: string | null }[]>([]);
   const [modificaMode, setModificaMode] = useState(false);
-  const [formModifica, setFormModifica] = useState({ titolo: "", descrizione: "", luogo: "", priorita: "MEDIA", delega: "", tipo: "SEGNALAZIONE", stato: "APERTA" });
+  const [formModifica, setFormModifica] = useState({ titolo: "", descrizione: "", luogo: "", priorita: "MEDIA", delega: "", tipo: "SEGNALAZIONE", stato: "APERTA", sottoTemaId: "", nuovoSottoTemaNome: "" });
+  const [sottoTemi, setSottoTemi] = useState<SottoTema[]>([]);
   const [promozionePopup, setPromozionePopup] = useState(false);
   const [formProgetto, setFormProgetto] = useState({ titolo: "", descrizione: "" });
   const [showAppForm, setShowAppForm] = useState(false);
@@ -52,6 +58,10 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
     fetch("/api/persone")
       .then(r => r.json())
       .then(setPersone)
+      .catch(() => {});
+    fetch("/api/sotto-temi")
+      .then(r => r.ok ? r.json() : [])
+      .then(setSottoTemi)
       .catch(() => {});
   }, [id]);
 
@@ -90,6 +100,8 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
       delega: pratica.delega,
       tipo: pratica.tipo,
       stato: pratica.stato,
+      sottoTemaId: pratica.sottoTemaId ?? "",
+      nuovoSottoTemaNome: "",
     });
     setModificaMode(true);
   }
@@ -106,6 +118,10 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
         delega: formModifica.delega,
         tipo: formModifica.tipo,
         stato: formModifica.stato,
+        // SottoTema (Fase 2, 2026-09-15): "" esplicito rimuove la scelta esistente — vedi
+        // gestione lato server in PATCH /api/pratiche/[id].
+        sottoTemaId: formModifica.tipo === "SEGNALAZIONE" && formModifica.sottoTemaId !== NUOVO_SOTTOTEMA ? formModifica.sottoTemaId : "",
+        nuovoSottoTemaNome: formModifica.tipo === "SEGNALAZIONE" && formModifica.sottoTemaId === NUOVO_SOTTOTEMA ? (formModifica.nuovoSottoTemaNome.trim() || undefined) : undefined,
       }),
     });
     if (res.ok) {
@@ -368,6 +384,11 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
         <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">
           {DELEGHE_LABEL[pratica.delega]}
         </span>
+        {pratica.sottoTema && (
+          <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-500">
+            {pratica.sottoTema.nome}
+          </span>
+        )}
         <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${STATO_COLORE[pratica.stato]}`}>
           {STATO_LABEL[pratica.stato]}
         </span>
@@ -541,7 +562,7 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
                   onChange={e => {
                     const nuovoTipo = e.target.value as TipoPratica;
                     const statoIniziale = STATO_INIZIALE[nuovoTipo];
-                    setFormModifica(f => ({ ...f, tipo: nuovoTipo, stato: statoIniziale }));
+                    setFormModifica(f => ({ ...f, tipo: nuovoTipo, stato: statoIniziale, ...(nuovoTipo !== "SEGNALAZIONE" ? { sottoTemaId: "", nuovoSottoTemaNome: "" } : {}) }));
                   }}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
                 >
@@ -575,7 +596,7 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
               <label className="text-xs text-gray-500">Delega</label>
               <select
                 value={formModifica.delega}
-                onChange={e => setFormModifica(f => ({ ...f, delega: e.target.value }))}
+                onChange={e => setFormModifica(f => ({ ...f, delega: e.target.value, sottoTemaId: "", nuovoSottoTemaNome: "" }))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
               >
                 {(Object.keys(DELEGHE_LABEL) as Delega[]).map(d => (
@@ -583,6 +604,30 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
                 ))}
               </select>
             </div>
+            {formModifica.tipo === "SEGNALAZIONE" && (
+              <div>
+                <label className="text-xs text-gray-500">Sotto-tema <span className="text-gray-400">(facoltativo)</span></label>
+                <select
+                  value={formModifica.sottoTemaId}
+                  onChange={e => setFormModifica(f => ({ ...f, sottoTemaId: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none"
+                >
+                  <option value="">— nessuno —</option>
+                  {sottoTemi.filter(st => st.delega === formModifica.delega).map(st => (
+                    <option key={st.id} value={st.id}>{st.nome}</option>
+                  ))}
+                  <option value={NUOVO_SOTTOTEMA}>+ Nuovo sotto-tema…</option>
+                </select>
+                {formModifica.sottoTemaId === NUOVO_SOTTOTEMA && (
+                  <input
+                    value={formModifica.nuovoSottoTemaNome}
+                    onChange={e => setFormModifica(f => ({ ...f, nuovoSottoTemaNome: e.target.value }))}
+                    placeholder="es. Mancati Ritiri"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                )}
+              </div>
+            )}
             <div>
               <label className="text-xs text-gray-500">Priorità</label>
               <select

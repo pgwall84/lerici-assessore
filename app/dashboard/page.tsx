@@ -7,13 +7,14 @@ import {
   PRIORITA_LABEL, PRIORITA_COLORE, STATI_OPERATIVA, STATI_ARCHIVIO,
 } from "@/lib/constants";
 import { ordinaPerPriorita } from "@/lib/ordinamento";
-import type { Delega, Pratica, Priorita, StatoPratica, TipoPratica } from "@prisma/client";
+import type { Delega, Pratica, Priorita, SottoTema, StatoPratica, TipoPratica } from "@prisma/client";
 
 type PraticaCard = Pratica & {
   persona: { nome: string; cognome: string } | null;
   segnalante: { nome: string | null } | null;
   foto: { id: number; path: string }[];
   note: { testo: string; createdAt: string }[];
+  sottoTema: { id: string; nome: string } | null;
 };
 
 type Stats = { operativa: Record<string, number>; archivio: Record<string, number> };
@@ -26,6 +27,11 @@ export default function DashboardPage() {
   const [filtroDelega, setFiltroDelega] = useState<string>("");
   const [filtroTipo, setFiltroTipo] = useState<string>("");
   const [filtroStato, setFiltroStato] = useState<string>("");
+  // SottoTema (Fase 2, 2026-09-15): filtro facoltativo, disponibile solo quando è già scelta una
+  // delega (un sotto-tema è sempre legato a una) — lista completa caricata una volta, filtrata
+  // lato client per la delega attiva, stesso pattern di gestori/entiVari altrove.
+  const [filtroSottoTema, setFiltroSottoTema] = useState<string>("");
+  const [sottoTemi, setSottoTemi] = useState<SottoTema[]>([]);
   const [q, setQ] = useState("");
   const [ordinamento, setOrdinamento] = useState("priorita");
   const [vistaCompatta, setVistaCompatta] = useState(() => {
@@ -48,20 +54,25 @@ export default function DashboardPage() {
     if (filtroTipo) params.set("tipo", filtroTipo);
     if (filtroDelega) params.set("delega", filtroDelega);
     if (filtroStato) params.set("stato", filtroStato);
+    if (filtroSottoTema) params.set("sottoTemaId", filtroSottoTema);
     if (q) params.set("q", q);
     const res = await fetch(`/api/pratiche?${params}`);
     if (res.ok) setPratiche(await res.json());
     setLoading(false);
-  }, [vista, filtroTipo, filtroDelega, filtroStato, q]);
+  }, [vista, filtroTipo, filtroDelega, filtroStato, filtroSottoTema, q]);
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
   useEffect(() => { setFiltroStato(""); fetchPratiche(); }, [fetchPratiche]);
+  useEffect(() => {
+    fetch("/api/sotto-temi").then(r => r.ok ? r.json() : []).then(setSottoTemi).catch(() => {});
+  }, []);
 
   function esporta(formato: "xlsx" | "pdf") {
     const params = new URLSearchParams({ vista });
     if (filtroTipo) params.set("tipo", filtroTipo);
     if (filtroDelega) params.set("delega", filtroDelega);
     if (filtroStato) params.set("stato", filtroStato);
+    if (filtroSottoTema) params.set("sottoTemaId", filtroSottoTema);
     if (q) params.set("q", q);
     params.set("formato", formato);
     window.open(`/api/export?${params}`, "_blank");
@@ -87,7 +98,7 @@ export default function DashboardPage() {
       {/* Sidebar deleghe — desktop */}
       <aside className="hidden md:flex flex-col gap-0.5 w-44 shrink-0 pt-1">
         <button
-          onClick={() => setFiltroDelega("")}
+          onClick={() => { setFiltroDelega(""); setFiltroSottoTema(""); }}
           className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex justify-between items-center
             ${filtroDelega === "" ? "bg-blue-600 text-white font-semibold" : "text-gray-700 hover:bg-gray-100"}`}
         >
@@ -102,7 +113,7 @@ export default function DashboardPage() {
           return (
             <button
               key={d}
-              onClick={() => setFiltroDelega(d === filtroDelega ? "" : d)}
+              onClick={() => { setFiltroDelega(d === filtroDelega ? "" : d); setFiltroSottoTema(""); }}
               className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex justify-between items-center gap-1
                 ${attiva ? "bg-blue-600 text-white font-semibold" : n === 0 ? "text-gray-300 hover:bg-gray-50" : "text-gray-700 hover:bg-gray-100"}`}
             >
@@ -113,6 +124,18 @@ export default function DashboardPage() {
             </button>
           );
         })}
+        {filtroDelega && sottoTemi.some(st => st.delega === filtroDelega) && (
+          <select
+            value={filtroSottoTema}
+            onChange={e => setFiltroSottoTema(e.target.value)}
+            className="mt-1 w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-600 focus:outline-none"
+          >
+            <option value="">Tutti i sotto-temi</option>
+            {sottoTemi.filter(st => st.delega === filtroDelega).map(st => (
+              <option key={st.id} value={st.id}>{st.nome}</option>
+            ))}
+          </select>
+        )}
       </aside>
 
       {/* Main */}
@@ -145,7 +168,7 @@ export default function DashboardPage() {
         {/* Deleghe mobile (scroll orizzontale) */}
         <div className="md:hidden flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
           <button
-            onClick={() => setFiltroDelega("")}
+            onClick={() => { setFiltroDelega(""); setFiltroSottoTema(""); }}
             className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors
               ${filtroDelega === "" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300"}`}
           >
@@ -157,7 +180,7 @@ export default function DashboardPage() {
             return (
               <button
                 key={d}
-                onClick={() => setFiltroDelega(d === filtroDelega ? "" : d)}
+                onClick={() => { setFiltroDelega(d === filtroDelega ? "" : d); setFiltroSottoTema(""); }}
                 className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors
                   ${filtroDelega === d ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300"}`}
               >
@@ -166,6 +189,20 @@ export default function DashboardPage() {
             );
           })}
         </div>
+        {filtroDelega && sottoTemi.some(st => st.delega === filtroDelega) && (
+          <div className="md:hidden -mt-2">
+            <select
+              value={filtroSottoTema}
+              onChange={e => setFiltroSottoTema(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-600 focus:outline-none"
+            >
+              <option value="">Tutti i sotto-temi</option>
+              {sottoTemi.filter(st => st.delega === filtroDelega).map(st => (
+                <option key={st.id} value={st.id}>{st.nome}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Filtri */}
         <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-3">
@@ -266,6 +303,11 @@ export default function DashboardPage() {
                       <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
                         {DELEGHE_LABEL[p.delega]}
                       </span>
+                      {p.sottoTema && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+                          {p.sottoTema.nome}
+                        </span>
+                      )}
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITA_COLORE[p.priorita]}`}>
                         {PRIORITA_LABEL[p.priorita]}
                       </span>

@@ -13,6 +13,11 @@ model Pratica {
   id             Int          @id @default(autoincrement())
   tipo           TipoPratica
   delega         Delega
+  // Fase 2 (2026-09-15, richiesta di Marco): livello facoltativo sotto la delega — rispecchia i
+  // sotto-temi che Marco gestiva solo a mano su Gmail (Segnalazioni/<Delega>/<SottoTema>, es.
+  // "Ciclo Rifiuti/Mancati Ritiri"). Mai obbligatorio: la sola delega resta valida come oggi.
+  sottoTemaId    String?
+  sottoTema      SottoTema?   @relation(fields: [sottoTemaId], references: [id])
   titolo         String
   descrizione    String?
   luogo          String?
@@ -33,6 +38,23 @@ model Pratica {
   appuntamenti Appuntamento[]
   storico      StoricoStato[]
   mailInviate  MailInviata[]
+}
+
+// ---------------------------------------------------------------------------
+// SOTTO TEMA — livello facoltativo sotto una Delega (Fase 2, 2026-09-15) — modello, non enum
+// legato alla delega, per poterne aggiungere uno al volo senza migration, stesso pattern già
+// usato per EnteVario e Gestore. Un nome può ripetersi su deleghe diverse (es. "Mancati Ritiri"
+// avrebbe senso solo sotto Ciclo Rifiuti, ma non c'è vincolo tecnico che lo impedisca altrove),
+// univoco solo all'interno della stessa delega.
+// ---------------------------------------------------------------------------
+model SottoTema {
+  id        String    @id @default(cuid())
+  delega    Delega
+  nome      String
+  createdAt DateTime  @default(now())
+  pratiche  Pratica[]
+
+  @@unique([delega, nome])
 }
 
 // ---------------------------------------------------------------------------

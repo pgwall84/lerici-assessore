@@ -3,7 +3,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DELEGHE_LABEL, SOTTOCATEGORIE } from "@/lib/constants";
-import type { Delega, TipoPratica } from "@prisma/client";
+import type { Delega, TipoPratica, SottoTema } from "@prisma/client";
+
+// Sentinella per l'opzione "nuovo sotto-tema" (Fase 2, 2026-09-15) — stesso principio già usato
+// per Gestore/EnteVario nella pagina di conferma mail.
+const NUOVO_SOTTOTEMA = "__nuovo__";
 
 type Persona = { id: number; nome: string; cognome: string; ruolo: string | null };
 
@@ -53,12 +57,18 @@ export default function NuovaPraticaPage() {
     segnalantNome: "",
     segnalantTel: "",
     segnalantEmail: "",
+    // SottoTema (Fase 2, 2026-09-15): livello facoltativo sotto la Delega, ha senso solo per
+    // SEGNALAZIONE (mai per MIA_IDEA, che non ha una controparte nella tassonomia Gmail).
+    sottoTemaId: "",
+    nuovoSottoTemaNome: "",
   });
 
   const [nuovaPersona, setNuovaPersona] = useState({ nome: "", cognome: "", ruolo: "", telefono: "", email: "" });
+  const [sottoTemi, setSottoTemi] = useState<SottoTema[]>([]);
 
   useEffect(() => {
     fetch("/api/persone").then(r => r.json()).then(setPersone).catch(() => {});
+    fetch("/api/sotto-temi").then(r => r.ok ? r.json() : []).then(setSottoTemi).catch(() => {});
   }, []);
 
   // Sottocategorie disponibili per la delega selezionata
@@ -69,8 +79,9 @@ export default function NuovaPraticaPage() {
   }
 
   function cambiaDelega(delega: string) {
-    // Resetta il titolo se era una sottocategoria della vecchia delega
-    setForm(f => ({ ...f, delega: delega as Delega | "", titolo: "" }));
+    // Resetta il titolo se era una sottocategoria della vecchia delega; il SottoTema (vero campo
+    // salvato, non l'autocompilazione del titolo) è legato alla delega precedente, quindi resetta.
+    setForm(f => ({ ...f, delega: delega as Delega | "", titolo: "", sottoTemaId: "", nuovoSottoTemaNome: "" }));
   }
 
   async function aggiungiPersona() {
@@ -119,6 +130,8 @@ export default function NuovaPraticaPage() {
       luogo: form.luogo || undefined,
       priorita: form.priorita,
       personaId: form.personaId ? Number(form.personaId) : undefined,
+      sottoTemaId: tipo === "SEGNALAZIONE" && form.sottoTemaId && form.sottoTemaId !== NUOVO_SOTTOTEMA ? form.sottoTemaId : undefined,
+      nuovoSottoTemaNome: tipo === "SEGNALAZIONE" && form.sottoTemaId === NUOVO_SOTTOTEMA ? (form.nuovoSottoTemaNome.trim() || undefined) : undefined,
     };
 
     if (tipo === "SEGNALAZIONE" && (form.segnalantNome || form.segnalantTel || form.segnalantEmail)) {
@@ -238,6 +251,33 @@ export default function NuovaPraticaPage() {
             className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
+
+        {/* Sotto-tema (Fase 2, 2026-09-15) — solo per Segnalazione, sempre facoltativo */}
+        {tipo === "SEGNALAZIONE" && form.delega && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Sotto-tema <span className="text-gray-400 font-normal">(facoltativo)</span></label>
+            <select
+              value={form.sottoTemaId}
+              onChange={e => setForm(f => ({ ...f, sottoTemaId: e.target.value }))}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">— nessuno —</option>
+              {sottoTemi.filter(st => st.delega === form.delega).map(st => (
+                <option key={st.id} value={st.id}>{st.nome}</option>
+              ))}
+              <option value={NUOVO_SOTTOTEMA}>+ Nuovo sotto-tema…</option>
+            </select>
+            {form.sottoTemaId === NUOVO_SOTTOTEMA && (
+              <input
+                type="text"
+                value={form.nuovoSottoTemaNome}
+                onChange={e => field("nuovoSottoTemaNome", e.target.value)}
+                placeholder="es. Mancati Ritiri"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm mt-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            )}
+          </div>
+        )}
 
         {/* Luogo */}
         <div>
