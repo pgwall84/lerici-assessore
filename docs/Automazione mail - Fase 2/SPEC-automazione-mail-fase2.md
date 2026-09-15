@@ -226,6 +226,9 @@ model EnteVario {
 
 Nota: tutti i Carabinieri condividono il dominio `pec.carabinieri.it` (come già visto per `legalmail.it`/`pec.it`) — matching per indirizzo locale esatto, non per dominio. Stesso discorso per i tre indirizzi Vigili del Fuoco su `cert.vigilfuoco.it`.
 
+**Raccolto il 2026-09-15 — scuole**, aggiunta subito come `EnteVario` (richiesta esplicita di Marco):
+- **ISA 10** (istituto scolastico): `spic806007@pec.istruzione.it`
+
 **Attenzione — l'assunzione `*.gov.it` nel codice attuale (`categoriaVariaPerDominio`) non copre questi indirizzi reali**: nessuno dei domini sopra (`pec.regione.liguria.it`, `legalmail.it`, `pec.anci.it`, `pec.it`, `pec.interno.it`, `postacert.istruzione.it`) termina in `.gov.it` — è il dominio del sito istituzionale (es. `interno.gov.it`) a usare quel TLD, non necessariamente il dominio della casella PEC/mail usata per comunicare. Il riconoscimento va quindi costruito su un elenco esplicito di domini/indirizzi noti per ente, esattamente come per i Gestori (sezione 6), non su un pattern di TLD.
 
 Etichetta Gmail: resta `Varie/<nome ente>`, `getOrCreateLabel()` (già esistente, generico) la crea al volo se manca — nessuna modifica lato Gmail necessaria, solo lato classificazione/dati.
