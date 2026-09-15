@@ -171,6 +171,14 @@ async function parseMessaggioPerId(
     corpoCompleto = estraiCorpoPrincipale(data.payload).slice(0, 20000);
     descrizione = corpoCompleto.slice(0, 1500);
 
+    // Fase 2 sezione 2: mail inoltrata da un capo settore per conto di un cittadino — il vero
+    // mittente sostituisce quello dell'header From solo se l'estrazione riesce davvero.
+    const mittenteInoltrato = estraiMittenteInoltrato(corpoCompleto);
+    if (mittenteInoltrato) {
+      nomeMittente = mittenteInoltrato.nome;
+      emailMittente = mittenteInoltrato.email;
+    }
+
     const partiAllegato = trovaPartiAllegato(data.payload)
       .filter(p => TIPI_ALLEGATO_AMMESSI.includes(p.mimeType))
       .slice(0, 5);
@@ -483,6 +491,29 @@ function estraiNomeMittente(from: string): string {
 function estraiEmailMittente(from: string): string {
   const m = from.match(/<(.+?)>/);
   return m?.[1] ?? from;
+}
+
+// Fase 2 sezione 2: quando un capo settore inoltra (mail Gmail normale, non PEC) il messaggio di
+// un cittadino, il vero mittente è nell'intestazione inoltrata dentro il corpo, non nell'header
+// From (che resta quello di chi ha inoltrato) — stesso principio già in uso per "Mittente:"/"Mail
+// mittente:" nella busta di certificazione PEC sopra, esteso al caso Gmail-nativo. Tentativo
+// best-effort, non una garanzia: i formati di inoltro variano da client a client (Gmail, Outlook,
+// ecc. citano l'intestazione in modi leggermente diversi). Se il pattern non matcha, o matcha ma
+// l'estrazione fallisce, nessun default silenzioso — il chiamante mantiene l'header From con la
+// certezza di partenza.
+const PATTERN_INOLTRO = /(?:-{3,}\s*(?:messaggio inoltrato|forwarded message)\s*-{3,}|^Da\s*:|^From\s*:)/im;
+const PATTERN_DA_INOLTRATO = /^(?:Da|From)\s*:\s*(.+)$/im;
+
+function estraiMittenteInoltrato(corpo: string): { nome: string; email: string } | null {
+  if (!PATTERN_INOLTRO.test(corpo)) return null;
+  const match = corpo.match(PATTERN_DA_INOLTRATO);
+  if (!match?.[1]) return null;
+  const riga = match[1].trim();
+  const email = estraiEmailMittente(riga);
+  // estraiEmailMittente ritorna la stringa intera quando non trova "<...>" — se quella stringa non
+  // contiene comunque una "@" l'estrazione è fallita davvero, non un'email scritta senza parentesi.
+  if (!email.includes("@")) return null;
+  return { nome: estraiNomeMittente(riga), email };
 }
 
 function trovaParte(payload: any, filename: string): any {
