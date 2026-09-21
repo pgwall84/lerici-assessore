@@ -26,6 +26,8 @@ La Fase 1 (vedi `SPEC-riorganizzazione-riunioni-automazione-mail.md`) ha costrui
 
 Ogni sezione è indipendente dalle altre e può essere implementata (e testata) da sola.
 
+> **Stato al 2026-09-21: tutte le sezioni sono implementate e in produzione** (9 chiusa senza modifiche, 8 chiusa come indagine). Le frasi "oggi assente / oggi non succede mai" nell'elenco qui sopra e nei blocchi "Stato attuale" delle singole sezioni descrivono la situazione di **partenza** del 2026-09-15, non quella di oggi: ogni sezione ha in fondo un blocco **Stato implementazione** con cosa è stato fatto davvero. Aggiunte emerse a lavori in corso: sezione 10 (SottoTema) e sezione 11 (memoria del mittente).
+
 ---
 
 ## 1. Estrazione zona (luogo) per Segnalazioni
@@ -72,6 +74,10 @@ Wiring: la funzione va chiamata dove oggi si calcola `delegaSuggerita` (in `app/
 
 Costo: stesso ordine di grandezza delle altre chiamate Haiku già in produzione (frazioni di centesimo a chiamata).
 
+### Stato implementazione (2026-09-21)
+
+Fatto. `classificaZona()` in `lib/claude.ts` (Claude Haiku ancorata alle frazioni/località di Lerici — l'elenco completo delle vie sopra resta solo in questa spec, non nel prompt) è chiamata da `app/api/motore-mail/revisione/route.ts` per le righe che risolvono a "segnalazione" (campo `zonaSuggerita`), e da `/api/motore-mail/[id]/suggerimenti-segnalazione` quando Marco sceglie "Segnalazione" su una riga che non nasceva come tale. Il campo `luogo` del form parte da quel valore, sempre modificabile. Fino al 2026-09-15 in produzione falliva in silenzio per `ANTHROPIC_API_KEY` mancante su Vercel (NOTE-TECNICHE #25).
+
 ---
 
 ## 2. Vero mittente per mail non-PEC inoltrate
@@ -93,6 +99,10 @@ const PATTERN_INOLTRO = /(?:-{3,}\s*(?:messaggio inoltrato|forwarded message)\s*
 Se il pattern non matcha, nessun cambiamento — resta l'header From come oggi. Se matcha ma l'estrazione del nome/email fallisce, stesso trattamento: nessun default silenzioso, resta l'header From con la certezza di partenza.
 
 Questo è un miglioramento incrementale, non un caso da risolvere al 100%: i formati di inoltro variano (client mail diversi citano l'intestazione in modi leggermente diversi), quindi va trattato come un tentativo best-effort, mai come garanzia.
+
+### Stato implementazione (2026-09-21)
+
+Fatto. In `lib/gmail.ts` (ramo non-PEC) il nome/email del mittente vengono sostituiti da quelli dell'inoltrato quando il corpo ha un pattern di inoltro; `estraiMittenteReale()` in `lib/inoltro.ts` (nata dal caso Pratica #41) alimenta anche il popup "Mail originale" (`/api/mail-originale/[messageId]`, `MailOriginaleButton`). Best-effort come da spec: se il pattern non matcha resta l'header From.
 
 ---
 
@@ -121,6 +131,10 @@ export function etichettaPerCategoria(categoria: string, delega?: Delega, catego
 Da verificare in fase di implementazione: le etichette Gmail nidificate usano già lo stesso nome delega (`DELEGHE_LABEL`) usato da `Deleghe/<nome>` — coerente, una sola tabella nomi da mantenere, non una seconda mappatura parallela.
 
 Impatto su `spostaInChiusa()` (`lib/gmail.ts`): oggi rimuove l'etichetta `Segnalazioni` piatta. Va aggiornata per rimuovere `Segnalazioni/<Delega>` (qualunque essa sia sul messaggio), non la stringa fissa `"Segnalazioni"`.
+
+### Stato implementazione (2026-09-21)
+
+Fatto. `etichettaPerCategoria("segnalazione", delega)` produce `Segnalazioni/<Delega>` usando i nomi reali di `ETICHETTA_DELEGA` (non `DELEGHE_LABEL`, che differisce per 3 deleghe). Su decisione di Marco la vecchia `Segnalazioni/Chiusa` piatta è stata sostituita da una sotto-etichetta `Risolta` per delega (`spostaInChiusa`), e `getOrCreateLabel` è ora case-insensitive (NOTE-TECNICHE #23). Esteso dal SottoTema (sezione 10): `Segnalazioni/<Delega>/<SottoTema>`.
 
 ---
 
@@ -294,6 +308,11 @@ Nota: Ato Rifiuti (Ambito Territoriale Ottimale rifiuti, Provincia della Spezia)
 
 **Decisione di Marco (2026-09-15, superata per i gestori in entrata — vedi sopra)**: sì, sempre un'entità nel tool — nessuna mail deve avere solo l'etichetta Gmail senza corrispondenza nel DB. Principio generale, non solo per questa sezione: vale per Gestori (6.2), per gli enti istituzionali/forze dell'ordine (sezione 5) e per qualunque categoria futura. Dove oggi manca una corrispondenza (es. mail "Gestori/<nome>" che oggi cadrebbe solo come etichetta), va creata un'entità leggera — stessa logica già in uso per Contestazioni/Progetti, non un canale a parte "solo etichetta".
 
+### Stato implementazione (2026-09-21)
+
+- **6.1 fatto**: `Gestore` è un modello (seed ACAM Ambiente, ACAM Acque, ATC Esercizio, Enel, Maris, poi Ato Rifiuti), `Contestazione.gestoreId` FK, estendibile al volo; `classificaGestore` non ha più il default silenzioso su ACAM Ambiente.
+- **6.2 fatto e poi rivisto**: riconoscimento per indirizzo esatto (`GESTORI_ENTRATA`, `categoriaGestoreEntrataPerIndirizzo`, chiamata in `classificaESalva`) e etichette `Gestori/<nome>`. Il 2026-09-21 Marco ha corretto il comportamento: la mail di un gestore non è una contestazione, quindi riceve **solo l'etichetta** (`eseguiMailGestore`), nessuna Contestazione creata — vedi la revisione in questa sezione. Le risposte a una nostra contestazione aperta restano agganciate a quella dalla continuazione forte.
+
 ---
 
 ## 7. Bilancio — nuovo TipoAtto
@@ -323,6 +342,10 @@ export function classificaBilancio(oggetto: string): boolean {
 ```
 
 Binario **Manuale** (non Automatico), stesso ragionamento già applicato a DUP: segnale testuale pulito ma campione troppo piccolo per fidarsi ciecamente. Etichetta `Giunta/Bilancio` (accanto a `Giunta/Dup`, stesso livello). Estrazione testo: come DUP, nessuna riformattazione Claude — un documento di bilancio è già strutturato di suo.
+
+### Stato implementazione (2026-09-21)
+
+Fatto. `TipoAtto.BILANCIO`, `classificaBilancio()` (parola chiave nell'oggetto), `eseguiDup(m, "BILANCIO")`, etichetta `Giunta/Bilancio`; binario Manuale come DUP.
 
 ---
 
