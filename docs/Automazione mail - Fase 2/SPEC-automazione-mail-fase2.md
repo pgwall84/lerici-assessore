@@ -378,6 +378,21 @@ Aggiunta contestuale, sempre su richiesta di Marco: `classificaSottoTema(delega,
 
 ---
 
+## 11. Memoria del mittente (2026-09-21, richiesta di Marco: estendere l'automatismo il più possibile)
+
+Un mittente che Marco ha sempre sistemato allo stesso modo diventa un segnale deterministico per le sue mail successive, senza raccogliere a mano indirizzi come per Gestori/Enti.
+
+- **Dati**: `MailProcessata.emailMittente` (minuscolo) e `MailProcessata.etichettaFinale` (etichetta di classificazione effettivamente scelta, normalizzata: sotto-tema e `/Risolta` tolti). Migration `20260921120000_memoria_mittente`. `etichettaFinale` si scrive su decisioni di una persona (conferma mail, "Non rilevante" a mano) e sui "non rilevante" decisi dall'AI con confidenza ≥ 0.9 (unica evidenza disponibile per le newsletter ricorrenti); mai su esecuzioni automatiche di regole, su righe smaltite dalla memoria stessa né su aggancio a entità esistenti (continuazione/collega): niente auto-conferma dei propri errori. Una decisione diversa di Marco sullo stesso mittente rompe l'unanimità e disattiva la regola. La storia è stata ricostruita da Gmail per le righe già sistemate a mano.
+- **Regola** (`lib/memoria-mittente.ts`, chiamata in `classificaESalva` dopo le regole esplicite di indirizzo/dominio e prima di DUP/Bilancio/AI): unanimità (un solo esito diverso nella storia annulla tutto) + soglia minima — 2 mail per `Istituzioni/*` e `Gestori/*`, 3 per `Non rilevante`, Segnalazioni, Deleghe, Contestazioni. Caselle interne del Comune escluse (`@comune.lerici.sp.it`, `comunedilerici@postecert.it`).
+- **Effetto**: `Istituzioni/*`/`Gestori/*` → Automatico (stessa esecuzione delle regole per indirizzo); `Non rilevante` → smaltita subito (etichetta + fuori INBOX, come il ramo AI, funzione `smaltisciNonRilevante`); Segnalazioni/Deleghe/Contestazioni → Manuale già pre-compilata (confidenza 0.95), la creazione dell'entità resta a conferma.
+- **Sostituisce** l'idea di una lista statica di mittenti "sempre non rilevanti": la lista si costruisce da sola dalle scelte di Marco.
+
+### Correzione collaterale: ente "REGIONE" duplicato
+
+`eseguiProgettoVarie(m, "REGIONE")` (e `"GOVERNO"`) creava un ente diverso da quello seed "Regione"/"Governo" perché `trovaOCreaEnteVario` cercava per nome esatto. Ora il confronto è case-insensitive; i due enti "Regione"/"REGIONE" sono stati uniti (4 progetti spostati).
+
+---
+
 ## Ordine di implementazione consigliato
 
 1. **Sezione 6.1** (Gestori: enum → modello, aggiunta Maris, fix default silenzioso di `classificaGestore`) — piccolo, autonomo, corregge un bug reale (default silenzioso)

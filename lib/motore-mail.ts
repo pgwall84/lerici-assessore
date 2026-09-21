@@ -7,6 +7,7 @@ import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, 
 import { trovaContinuazioneForte, trovaContinuazioneDebole, codificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
 import { trovaOCreaEnteVario } from "@/lib/enti-vari";
 import { trovaOCreaSottoTema } from "@/lib/sotto-temi";
+import { propostaDaMemoriaMittente } from "@/lib/memoria-mittente";
 import type { Delega } from "@prisma/client";
 
 const SOGLIA_CONFIDENZA = 0.6;
@@ -53,6 +54,52 @@ export function calcolaEtichettaProposta(categoria: string | null, testoPerDeleg
 }
 
 type Esito = "AUTOMATICO" | "MANUALE" | "INCERTO" | "NON_RILEVANTE" | "PROPOSTA_CONTINUAZIONE" | "FUORI_SCOPE";
+
+// Smaltimento di una mail fuori scope (nessuna entità): riga già COMPLETATO, etichetta dedicata,
+// tassonomia in conflitto ripulita, fuori INBOX. Usata sia dal ramo AI (classificaESalva) sia dalla
+// memoria del mittente (lib/memoria-mittente.ts).
+async function smaltisciNonRilevante(m: MailImport, nomiEtichette: string[], categoriaProposta: string, confidenza: number, memorizza = true): Promise<Esito> {
+  const rigaCreata = await prisma.mailProcessata.create({
+    data: {
+      messageId: m.messageId,
+      threadId: m.threadId || null,
+      mittente: m.mittente,
+      oggetto: m.oggettoOriginale,
+      categoriaProposta,
+      // Mai mostrata in UI (completa subito, mai in coda) — persistita solo per coerenza/audit.
+      etichettaProposta: ETICHETTA_NON_RILEVANTE,
+      // Conta come esito per la memoria del mittente solo se deciso dall'AI: una riga smaltita dalla
+      // memoria stessa non deve auto-confermarsi.
+      etichettaFinale: memorizza ? ETICHETTA_NON_RILEVANTE : null,
+      confidenza,
+      binario: "NON_RILEVANTE",
+      esito: "COMPLETATO",
+    },
+  });
+  try {
+    await marcaNonRilevante(m.messageId);
+    // Rimuove eventuali etichette di tassonomia già presenti (es. "Segnalazioni" da un
+    // filtro Gmail troppo largo) che l'AI ha giudicato non pertinenti — stesso principio del
+    // fix sul tree-picker (diagnosi 2026-07-25): mai lasciare due etichette di categoria in
+    // conflitto sullo stesso messaggio, qui come lì.
+    // "Istituzioni/<ente>" (chiamata "Varie" fino al 2026-09-15) incluso anche quando l'ente
+    // non è uno dei 4 nodi statici dell'albero (Fase 2 sezione 5: un ente aggiunto al volo non
+    // ha un nodo fisso qui) — qualunque etichetta sotto "Istituzioni/" è comunque di
+    // competenza di questa tassonomia.
+    const daRimuovere = nomiEtichette.filter(e => ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === e) || e.startsWith("Istituzioni/") || ETICHETTE_SEGNALAZIONE.includes(e));
+    for (const e of daRimuovere) {
+      try { await rimuoviEtichetta(m.messageId, e); } catch { /* comodo, non blocca l'esito */ }
+    }
+    // Solo dopo l'etichetta con successo: fuori INBOX, non più da leggere (sessione 2, mail).
+    await archiviaMail(m.messageId);
+  } catch {
+    // Etichetta/archiviazione di comodo: un fallimento qui non blocca lo scan né retrocede
+    // l'esito (l'entità — qui: nessuna — è comunque "gestita" secondo il binario). Va però
+    // reso visibile, non solo tollerato: stesso principio dei contatori di estrazione Bandi.
+    await prisma.mailProcessata.update({ where: { id: rigaCreata.id }, data: { archiviazioneFallita: true } }).catch(() => {});
+  }
+  return "NON_RILEVANTE";
+}
 
 // Scrive (al più) una riga MailProcessata per la mail — mai un'azione sull'entità né
 // un'etichetta "Importata"/di categoria: quelle restano legate a un esito COMPLETATO di
@@ -180,6 +227,27 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
     return "AUTOMATICO";
   }
 
+  // Memoria del mittente (2026-09-21): un mittente che Marco ha sempre sistemato allo stesso modo
+  // (unanimità, soglia minima per tipo — vedi lib/memoria-mittente.ts) riceve la stessa
+  // classificazione. Dopo le regole esplicite (indirizzi/domini noti), prima di DUP/Bilancio e AI.
+  const memoria = await propostaDaMemoriaMittente(m.emailMittente);
+  if (memoria) {
+    if (memoria.binario === "NON_RILEVANTE") return smaltisciNonRilevante(m, nomiEtichette, memoria.categoriaProposta, 0.95, false);
+    await prisma.mailProcessata.create({
+      data: {
+        messageId: m.messageId,
+        threadId: m.threadId || null,
+        mittente: m.mittente,
+        oggetto: m.oggettoOriginale,
+        categoriaProposta: memoria.categoriaProposta,
+        etichettaProposta: memoria.etichettaProposta,
+        confidenza: 0.95,
+        binario: memoria.binario,
+      },
+    });
+    return memoria.binario;
+  }
+
   // Giunta/Dup (evolutiva 2026-07-26): parola chiave nell'oggetto, non un'etichetta Gmail —
   // stesso principio deterministico delle regole sopra, controllato prima dell'AI. Binario
   // MANUALE (non Automatico, a differenza di ANCI/REGIONE/GOVERNO): il segnale è pulito sul
@@ -233,43 +301,7 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
       // accumulare in Incerto insieme ai casi genuinamente ambigui. Nota: questo esito
       // COMPLETATO salta di proposito il gate primaEsecuzione() (vedi commento su quella
       // funzione più sotto) — non è un'azione reale su cui serva prima una conferma umana.
-      const rigaCreata = await prisma.mailProcessata.create({
-        data: {
-          messageId: m.messageId,
-          threadId: m.threadId || null,
-          mittente: m.mittente,
-          oggetto: m.oggettoOriginale,
-          categoriaProposta: classificazione.categoria,
-          // Mai mostrata in UI (completa subito, mai in coda) — persistita solo per coerenza/audit.
-          etichettaProposta: ETICHETTA_NON_RILEVANTE,
-          confidenza: classificazione.confidenza,
-          binario: "NON_RILEVANTE",
-          esito: "COMPLETATO",
-        },
-      });
-      try {
-        await marcaNonRilevante(m.messageId);
-        // Rimuove eventuali etichette di tassonomia già presenti (es. "Segnalazioni" da un
-        // filtro Gmail troppo largo) che l'AI ha giudicato non pertinenti — stesso principio del
-        // fix sul tree-picker (diagnosi 2026-07-25): mai lasciare due etichette di categoria in
-        // conflitto sullo stesso messaggio, qui come lì.
-        // "Istituzioni/<ente>" (chiamata "Varie" fino al 2026-09-15) incluso anche quando l'ente
-        // non è uno dei 4 nodi statici dell'albero (Fase 2 sezione 5: un ente aggiunto al volo non
-        // ha un nodo fisso qui) — qualunque etichetta sotto "Istituzioni/" è comunque di
-        // competenza di questa tassonomia.
-        const daRimuovere = nomiEtichette.filter(e => ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === e) || e.startsWith("Istituzioni/") || ETICHETTE_SEGNALAZIONE.includes(e));
-        for (const e of daRimuovere) {
-          try { await rimuoviEtichetta(m.messageId, e); } catch { /* comodo, non blocca l'esito */ }
-        }
-        // Solo dopo l'etichetta con successo: fuori INBOX, non più da leggere (sessione 2, mail).
-        await archiviaMail(m.messageId);
-      } catch {
-        // Etichetta/archiviazione di comodo: un fallimento qui non blocca lo scan né retrocede
-        // l'esito (l'entità — qui: nessuna — è comunque "gestita" secondo il binario). Va però
-        // reso visibile, non solo tollerato: stesso principio dei contatori di estrazione Bandi.
-        await prisma.mailProcessata.update({ where: { id: rigaCreata.id }, data: { archiviazioneFallita: true } }).catch(() => {});
-      }
-      return "NON_RILEVANTE";
+      return smaltisciNonRilevante(m, nomiEtichette, classificazione.categoria, classificazione.confidenza);
     }
     // Confidenza insufficiente per la soglia più alta di non_rilevante: NON deve cadere nel ramo
     // Manuale sotto ("non_rilevante" non è una categoria selezionabile in quel form) — va dritta
@@ -354,6 +386,8 @@ export async function scansionaMail(pageToken?: string, maxResults = 25): Promis
 
     const nomiEtichette = m.labelIds.map(id => mappaEtichette.get(id)).filter((n): n is string => !!n);
     const esito = await classificaESalva(m, nomiEtichette);
+    // Indirizzo del mittente sulla riga (no-op se non è stata scritta, es. fuori scope): base della memoria del mittente.
+    await prisma.mailProcessata.updateMany({ where: { messageId: m.messageId }, data: { emailMittente: m.emailMittente.toLowerCase().trim() } }).catch(() => {});
 
     risultato.processate++;
     if (esito === "AUTOMATICO") risultato.automatico++;

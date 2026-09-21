@@ -314,7 +314,7 @@ export const ENTE_VARIO_COLORE = "bg-indigo-100 text-indigo-700";
 // Nomi fissi noti al codice (istradati per dominio mittente, vedi categoriaVariaPerDominio in
 // lib/classificatore.ts) — usati solo per ricostruire l'etichetta "Varie/<nome>" quando la
 // categoria arriva come stringa fissa ANCI/REGIONE/GOVERNO, non per un elenco chiuso di enti.
-const NOME_ENTE_FISSO: Record<"ANCI" | "REGIONE" | "GOVERNO", string> = {
+export const NOME_ENTE_FISSO: Record<"ANCI" | "REGIONE" | "GOVERNO", string> = {
   ANCI: "ANCI",
   REGIONE: "Regione",
   GOVERNO: "Governo",
@@ -324,7 +324,7 @@ const NOME_ENTE_FISSO: Record<"ANCI" | "REGIONE" | "GOVERNO", string> = {
 // 6.2, vedi categoriaGestoreEntrataPerIndirizzo in lib/classificatore.ts) — stessi nomi etichetta
 // "Gestori/<nome>" già confermati da Marco per la sezione 6.1, non sempre identici al campo
 // "nome" del modello Gestore in DB (es. "Acam Ambiente" qui vs "ACAM Ambiente" in DB).
-const NOME_GESTORE_ENTRATA: Record<string, string> = {
+export const NOME_GESTORE_ENTRATA: Record<string, string> = {
   GESTORE_ACAM_AMBIENTE: "Acam Ambiente",
   GESTORE_ACAM_ACQUE: "Acam Acque",
   GESTORE_ATC_ESERCIZIO: "ATC esercizio",

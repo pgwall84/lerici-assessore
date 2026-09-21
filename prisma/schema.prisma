@@ -450,8 +450,17 @@ model MailProcessata {
   // silenzio, così un aumento nel tempo emerge invece di restare un mistero su perché l'INBOX
   // non si svuota come previsto.
   archiviazioneFallita Boolean          @default(false)
+  // Memoria del mittente (2026-09-21): indirizzo email del mittente (minuscolo) e etichetta di
+  // classificazione con cui la mail è stata effettivamente sistemata (decisione finale, non la
+  // proposta), normalizzata (es. "Segnalazioni/Ambiente", "Istituzioni/ISA 10"). Un mittente
+  // sempre sistemato allo stesso modo diventa un segnale deterministico — vedi
+  // lib/memoria-mittente.ts. Null per le righe mai completate o non di classificazione.
+  emailMittente     String?
+  etichettaFinale   String?
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
+
+  @@index([emailMittente])
 }
 
 enum BinarioMail {

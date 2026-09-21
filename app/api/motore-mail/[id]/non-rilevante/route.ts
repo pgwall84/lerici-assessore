@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
-import { marcaNonRilevante, archiviaMail, rimuoviEtichetta } from "@/lib/gmail";
-import { ETICHETTA_INCERTO } from "@/lib/constants";
+import { marcaNonRilevante, archiviaMail, rimuoviEtichetta, getMailPerId } from "@/lib/gmail";
+import { ETICHETTA_INCERTO, ETICHETTA_NON_RILEVANTE } from "@/lib/constants";
 
 // Override manuale dell'utente: stesso trattamento del binario NON_RILEVANTE automatico (vedi
 // classificaESalva in lib/motore-mail.ts) — etichetta dedicata + fuori INBOX, nessuna entità
@@ -18,9 +18,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!riga) return NextResponse.json({ error: "Non trovata" }, { status: 404 });
   if (riga.esito !== "IN_ATTESA") return NextResponse.json({ error: "Questa riga è già stata gestita" }, { status: 409 });
 
+  const emailMittente = (await getMailPerId(riga.messageId).catch(() => null))?.emailMittente.toLowerCase().trim();
   await prisma.mailProcessata.update({
     where: { id },
-    data: { esito: "COMPLETATO", binario: "NON_RILEVANTE", entitaCreataId: null },
+    // etichettaFinale: decisione presa da una persona, alimenta la memoria del mittente.
+    data: { esito: "COMPLETATO", binario: "NON_RILEVANTE", entitaCreataId: null, etichettaFinale: ETICHETTA_NON_RILEVANTE, ...(emailMittente ? { emailMittente } : {}) },
   });
 
   try {

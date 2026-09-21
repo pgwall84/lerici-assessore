@@ -301,3 +301,9 @@ Scoperto il 2026-09-15 indagando perché una mail con oggetto chiarissimo ("Rifi
 **Fix**: `cat <chiave> | npx vercel env add ANTHROPIC_API_KEY production`, poi redeploy (commit vuoto + push, non `vercel --prod` da locale — vedi nota #20) per applicarla. Stesso pattern esatto delle note #1 e #17 (env var presente in locale ma mai sincronizzata su Vercel) — **terza occorrenza dello stesso tipo di bug** con chiavi/secret diverse: controllare `npx vercel env ls production` è ormai il primo sospetto quando qualcosa "sembra non funzionare mai" in produzione ma va bene in locale, prima di cercare altrove.
 
 **Da fare ancora**: le 216 righe già finite in Incerto con categoria/confidenza null non vengono ri-scansionate automaticamente (`scansionaMail()` salta per sempre i messaggi già in `MailProcessata`) — restano bloccate finché non vengono confermate a mano da Marco, o finché non si scrive uno script mirato che richiama `classificaMail()` su queste righe specifiche e aggiorna `categoriaProposta`/`confidenza`/`etichettaProposta` senza toccare `esito`/`entitaCreataId`.
+
+---
+
+## 26. `trovaOCreaEnteVario` cercava per nome esatto: "REGIONE" e "Regione" diventavano due enti
+
+Scoperto il 2026-09-21. Il binario Automatico chiamava `eseguiProgettoVarie(m, "REGIONE")` (chiave della categoria, maiuscola) mentre l'ente seed si chiama "Regione": l'upsert per nome esatto creava un secondo ente "REGIONE", con Progetti spezzati tra i due (19 + 4) e nomi diversi tra DB e etichetta Gmail `Istituzioni/Regione` (`NOME_ENTE_FISSO`). Stesso rischio latente per "GOVERNO". **Fix**: ricerca case-insensitive (`findFirst` con `mode: "insensitive"`, poi create) in `lib/enti-vari.ts`; doppione unito a mano. Vale come per le etichette Gmail (#23): i nomi vanno sempre confrontati senza distinzione di maiuscole.
