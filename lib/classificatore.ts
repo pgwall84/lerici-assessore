@@ -172,10 +172,38 @@ export function classificaGestore(testo: string): string | null {
 // affidabile — resta fuori da questa funzione, sempre a classificazione manuale.
 export function categoriaVariaPerDominio(emailMittente: string): "ANCI" | "REGIONE" | "GOVERNO" | null {
   const email = emailMittente.toLowerCase().trim();
-  if (email.endsWith("@anci.it")) return "ANCI";
+  // Oltre al dominio nudo anci.it, le caselle reali (PEC nazionale, ANCI Liguria) usano altri
+  // domini — elenco esplicito degli indirizzi raccolti il 2026-09-15 (spec Fase 2 sezione 5).
+  if (email.endsWith("@anci.it") || email.endsWith("@pec.anci.it") || email.endsWith("@anciliguria.eu") || email === "anciliguria@pec.it") return "ANCI";
   if (email.includes("regione.liguria.it")) return "REGIONE";
-  if (email.endsWith(".gov.it")) return "GOVERNO";
+  // Le caselle reali di Prefettura/Ministeri non finiscono in .gov.it (è il TLD del sito, non
+  // della PEC): elenco esplicito, stesso principio.
+  if (email.endsWith(".gov.it") || email.endsWith("@pec.interno.it") || email === "prefettura.laspezia@interno.it" || email === "pnrr@postacert.istruzione.it") return "GOVERNO";
   return null;
+}
+
+// Enti istituzionali/forze dell'ordine/scuole riconosciuti per INDIRIZZO ESATTO (2026-09-21):
+// come per i Gestori, i domini PEC sono condivisi (pec.carabinieri.it per tutte le stazioni,
+// cert.vigilfuoco.it per tutte le caselle dei Vigili del Fuoco), quindi mai per dominio nudo.
+// `nome` deve combaciare esattamente con EnteVario.nome in DB. Indirizzi raccolti il 2026-09-15
+// (vedi spec Fase 2 sezione 5). Stesso trattamento Automatico di ANCI/Regione/Governo: Progetto
+// (Attività) sotto quell'ente, etichetta Istituzioni/<nome>.
+const ENTI_ENTRATA: { nome: string; indirizzi: string[] }[] = [
+  { nome: "Questura della Spezia", indirizzi: ["gab.quest.sp@pecps.poliziadistato.it", "dipps177.00f0@pecps.poliziadistato.it"] },
+  { nome: "Carabinieri — Stazione di Lerici", indirizzi: ["tsp25829@pec.carabinieri.it"] },
+  { nome: "Carabinieri — Stazione di Sarzana", indirizzi: ["tsp25711@pec.carabinieri.it"] },
+  { nome: "Carabinieri — Comando Provinciale La Spezia", indirizzi: ["tsp22304@pec.carabinieri.it"] },
+  { nome: "Carabinieri — Stazione La Spezia", indirizzi: ["tsp24770@pec.carabinieri.it"] },
+  {
+    nome: "Vigili del Fuoco — Comando di La Spezia",
+    indirizzi: ["com.laspezia@cert.vigilfuoco.it", "com.salaop.laspezia@cert.vigilfuoco.it", "com.prev.laspezia@cert.vigilfuoco.it"],
+  },
+  { nome: "ISA 10", indirizzi: ["spic806007@pec.istruzione.it"] },
+];
+
+export function enteEntrataPerIndirizzo(emailMittente: string): string | null {
+  const email = emailMittente.toLowerCase().trim();
+  return ENTI_ENTRATA.find(e => e.indirizzi.includes(email))?.nome ?? null;
 }
 
 // Istradamento in entrata per i Gestori (Fase 2 sezione 6.2, 2026-09-15): mail che arriva DA un

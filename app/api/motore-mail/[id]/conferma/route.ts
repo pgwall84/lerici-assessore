@@ -5,7 +5,7 @@ import { getMailPerId, marcaImportata, applicaEtichettaEArchivia, rimuoviEtichet
 import { contentTypeDaNomeFile } from "@/lib/estrazione-documenti";
 import { etichettaPerCategoria, ALBERO_ETICHETTE_MAIL, ETICHETTE_SEGNALAZIONE, ETICHETTA_INCERTO } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
-import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, eseguiCollegamentoAtto, eseguiProgettoVarie, eseguiDup, eseguiMailGestore, type EsitoEsecuzione } from "@/lib/import-automatico";
+import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, eseguiCollegamentoAtto, eseguiProgettoVarie, eseguiDup, eseguiMailGestore, gestoreAutomaticoEnte, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { decodificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
 import { risolviEnteVarioId } from "@/lib/enti-vari";
 import { risolviSottoTemaId } from "@/lib/sotto-temi";
@@ -202,7 +202,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const parsedEseguiAutomatico = schemaEseguiAutomatico.safeParse(body);
   if (parsedEseguiAutomatico.success) {
     const { categoria, indiceOdgForzato, statoIniziale } = parsedEseguiAutomatico.data;
-    const gestore = GESTORI_AUTOMATICO[categoria];
+    const gestore = GESTORI_AUTOMATICO[categoria] ?? gestoreAutomaticoEnte(categoria);
     if (!gestore) return NextResponse.json({ error: "Categoria non riconosciuta" }, { status: 400 });
 
     // Atti/Giustifica non hanno un diario dove far confluire il messaggio corrente come nota —
@@ -236,7 +236,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const parsed = schemaAutomatico.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
-    const gestore = riga.categoriaProposta ? GESTORI_AUTOMATICO[riga.categoriaProposta] : undefined;
+    const gestore = riga.categoriaProposta ? (GESTORI_AUTOMATICO[riga.categoriaProposta] ?? gestoreAutomaticoEnte(riga.categoriaProposta)) : undefined;
     if (!gestore) return NextResponse.json({ error: "Categoria Automatico non riconosciuta" }, { status: 500 });
 
     // CONTINUAZIONE esclusa: lì ci si aggancia a un'entità già esistente, non se ne crea una

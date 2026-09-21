@@ -295,6 +295,15 @@ export async function eseguiMailGestore(): Promise<EsitoEsecuzione> {
 }
 
 /**
+ * Gestore Automatico per le categorie "ENTE:<nome>" (enti riconosciuti per indirizzo esatto,
+ * enteEntrataPerIndirizzo in lib/classificatore.ts): stesso comportamento di ANCI/Regione/Governo.
+ * undefined per qualunque altra categoria.
+ */
+export function gestoreAutomaticoEnte(categoria: string): ((m: MailImport) => Promise<EsitoEsecuzione>) | undefined {
+  return categoria.startsWith("ENTE:") ? (m => eseguiProgettoVarie(m, categoria.slice(5))) : undefined;
+}
+
+/**
  * Aggancia una mail a un'entità già nota (tipo+id espliciti, non ri-derivata) con una nota nel
  * diario + eventuali allegati — nessuna nuova entità creata. Condivisa da:
  * - `eseguiContinuazione`, per i match forti (protocollo/threadId), che prima ri-trova l'entità

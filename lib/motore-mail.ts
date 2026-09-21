@@ -2,8 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { getMailsPaginato, getMappaEtichette, getMailPerId, marcaImportata, marcaIncerto, marcaNonRilevante, applicaEtichettaEArchivia, archiviaMail, rimuoviEtichetta, type MailImport } from "@/lib/gmail";
 import { classificaMail } from "@/lib/claude";
 import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria, ETICHETTA_NON_RILEVANTE, ETICHETTA_DELEGA_DA_SPECIFICARE, ALBERO_ETICHETTE_MAIL, ETICHETTE_SEGNALAZIONE, ETICHETTA_DELEGA, type VoceTassonomiaMail } from "@/lib/constants";
-import { classificaDelega, categoriaVariaPerDominio, classificaDup, classificaBilancio, categoriaGestoreEntrataPerIndirizzo } from "@/lib/classificatore";
-import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiProgettoVarie, eseguiMailGestore, type EsitoEsecuzione } from "@/lib/import-automatico";
+import { classificaDelega, categoriaVariaPerDominio, classificaDup, classificaBilancio, categoriaGestoreEntrataPerIndirizzo, enteEntrataPerIndirizzo } from "@/lib/classificatore";
+import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiProgettoVarie, eseguiMailGestore, gestoreAutomaticoEnte, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { trovaContinuazioneForte, trovaContinuazioneDebole, codificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
 import { trovaOCreaEnteVario } from "@/lib/enti-vari";
 import { trovaOCreaSottoTema } from "@/lib/sotto-temi";
@@ -154,6 +154,25 @@ async function classificaESalva(m: MailImport, nomiEtichette: string[]): Promise
         oggetto: m.oggettoOriginale,
         categoriaProposta: categoriaGestoreEntrata,
         etichettaProposta: etichettaPerCategoria(categoriaGestoreEntrata),
+        confidenza: 1,
+        binario: "AUTOMATICO",
+      },
+    });
+    return "AUTOMATICO";
+  }
+
+  // Enti istituzionali/forze dell'ordine/scuole per indirizzo esatto (2026-09-21): stesso
+  // trattamento deterministico/Automatico di ANCI/Regione/Governo sopra (Progetto sotto l'ente).
+  const enteEntrata = enteEntrataPerIndirizzo(m.emailMittente);
+  if (enteEntrata) {
+    await prisma.mailProcessata.create({
+      data: {
+        messageId: m.messageId,
+        threadId: m.threadId || null,
+        mittente: m.mittente,
+        oggetto: m.oggettoOriginale,
+        categoriaProposta: `ENTE:${enteEntrata}`,
+        etichettaProposta: etichettaPerCategoria(`ENTE:${enteEntrata}`),
         confidenza: 1,
         binario: "AUTOMATICO",
       },
@@ -595,7 +614,7 @@ export async function eseguiMotoreMail(maxPagineScan = 20, maxEsecuzioni = 15): 
     });
 
     for (const riga of daEseguire) {
-      const gestore = riga.categoriaProposta ? GESTORI_AUTOMATICO[riga.categoriaProposta] : undefined;
+      const gestore = riga.categoriaProposta ? (GESTORI_AUTOMATICO[riga.categoriaProposta] ?? gestoreAutomaticoEnte(riga.categoriaProposta)) : undefined;
       if (!gestore) { inAttesa++; continue; } // non dovrebbe succedere, ma non blocca il resto del giro
 
       const mail = await getMailPerId(riga.messageId);

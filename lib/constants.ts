@@ -457,6 +457,9 @@ export function etichettaPerCategoria(categoria: string, delega?: Delega, enteNo
   // DUP/Bilancio (evolutiva 2026-07-26, Bilancio Fase 2 sezione 7): riconoscimento per parola
   // chiave nell'oggetto (classificaDup/classificaBilancio in lib/classificatore.ts), non
   // un'etichetta Gmail preesistente — stesso trattamento di ANCI/REGIONE/GOVERNO sopra.
+  // Enti riconosciuti per indirizzo esatto (enteEntrataPerIndirizzo): la categoria porta il nome
+  // esatto dell'EnteVario dopo il prefisso "ENTE:" — nessuna tabella parallela da tenere allineata.
+  if (categoria.startsWith("ENTE:")) return `Istituzioni/${categoria.slice(5)}`;
   if (categoria === "DUP") return "Giunta/Dup";
   if (categoria === "BILANCIO") return "Giunta/Bilancio";
   // Gestori in entrata (Fase 2 sezione 6.2): istradati per indirizzo mittente esatto (vedi
@@ -512,6 +515,16 @@ export const ALBERO_ETICHETTE_MAIL: NodoAlberoEtichette[] = [
   { etichetta: "Istituzioni/Regione", categoria: "REGIONE" },
   { etichetta: "Istituzioni/Governo", categoria: "GOVERNO" },
   { etichetta: "Istituzioni/Comunicazioni", categoria: "progetto", enteNome: "Comunicazioni" },
+  // Enti riconosciuti per indirizzo esatto (enteEntrataPerIndirizzo, 2026-09-21): stesso schema di
+  // Comunicazioni — Progetto Manuale sotto l'ente. Servono qui perché il form pre-seleziona l'ente
+  // solo se l'etichetta proposta è un nodo dell'albero.
+  { etichetta: "Istituzioni/Questura della Spezia", categoria: "progetto", enteNome: "Questura della Spezia" },
+  { etichetta: "Istituzioni/Carabinieri — Stazione di Lerici", categoria: "progetto", enteNome: "Carabinieri — Stazione di Lerici" },
+  { etichetta: "Istituzioni/Carabinieri — Stazione di Sarzana", categoria: "progetto", enteNome: "Carabinieri — Stazione di Sarzana" },
+  { etichetta: "Istituzioni/Carabinieri — Comando Provinciale La Spezia", categoria: "progetto", enteNome: "Carabinieri — Comando Provinciale La Spezia" },
+  { etichetta: "Istituzioni/Carabinieri — Stazione La Spezia", categoria: "progetto", enteNome: "Carabinieri — Stazione La Spezia" },
+  { etichetta: "Istituzioni/Vigili del Fuoco — Comando di La Spezia", categoria: "progetto", enteNome: "Vigili del Fuoco — Comando di La Spezia" },
+  { etichetta: "Istituzioni/ISA 10", categoria: "progetto", enteNome: "ISA 10" },
   // DUP/Bilancio (evolutiva 2026-07-26, Bilancio Fase 2 sezione 7): riconoscimento per parola
   // chiave nell'oggetto (classificaDup/classificaBilancio), non un'etichetta Gmail — stesso
   // trattamento di Varie/ANCI ecc. sopra.
