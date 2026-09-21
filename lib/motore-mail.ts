@@ -3,7 +3,7 @@ import { getMailsPaginato, getMappaEtichette, getMailPerId, marcaImportata, marc
 import { classificaMail } from "@/lib/claude";
 import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria, ETICHETTA_NON_RILEVANTE, ETICHETTA_DELEGA_DA_SPECIFICARE, ALBERO_ETICHETTE_MAIL, ETICHETTE_SEGNALAZIONE, ETICHETTA_DELEGA, type VoceTassonomiaMail } from "@/lib/constants";
 import { classificaDelega, categoriaVariaPerDominio, classificaDup, classificaBilancio, categoriaGestoreEntrataPerIndirizzo } from "@/lib/classificatore";
-import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiProgettoVarie, eseguiContestazioneGestore, type EsitoEsecuzione } from "@/lib/import-automatico";
+import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiProgettoVarie, eseguiMailGestore, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { trovaContinuazioneForte, trovaContinuazioneDebole, codificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
 import { trovaOCreaEnteVario } from "@/lib/enti-vari";
 import { trovaOCreaSottoTema } from "@/lib/sotto-temi";
@@ -384,12 +384,12 @@ const GESTORI_AUTOMATICO: Record<string, (m: MailImport) => Promise<EsitoEsecuzi
   GOVERNO: m => eseguiProgettoVarie(m, "GOVERNO"),
   // Gestori in entrata (Fase 2 sezione 6.2) — nome esatto del Gestore in DB, non l'etichetta Gmail
   // (casing diverso per alcuni, vedi NOME_GESTORE_ENTRATA in lib/constants.ts).
-  GESTORE_ACAM_AMBIENTE: m => eseguiContestazioneGestore(m, "ACAM Ambiente"),
-  GESTORE_ACAM_ACQUE: m => eseguiContestazioneGestore(m, "ACAM Acque"),
-  GESTORE_ATC_ESERCIZIO: m => eseguiContestazioneGestore(m, "ATC Esercizio"),
-  GESTORE_ENEL: m => eseguiContestazioneGestore(m, "Enel"),
-  GESTORE_MARIS: m => eseguiContestazioneGestore(m, "Maris"),
-  GESTORE_ATO_RIFIUTI: m => eseguiContestazioneGestore(m, "Ato Rifiuti"),
+  GESTORE_ACAM_AMBIENTE: () => eseguiMailGestore(),
+  GESTORE_ACAM_ACQUE: () => eseguiMailGestore(),
+  GESTORE_ATC_ESERCIZIO: () => eseguiMailGestore(),
+  GESTORE_ENEL: () => eseguiMailGestore(),
+  GESTORE_MARIS: () => eseguiMailGestore(),
+  GESTORE_ATO_RIFIUTI: () => eseguiMailGestore(),
 };
 
 export type RisultatoMotore = {

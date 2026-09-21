@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DELEGHE_LABEL, ALBERO_ETICHETTE_MAIL, STATO_LABEL, STATI_PER_TIPO,
   STATO_PROGETTO_LABEL, STATO_ATTO_LABEL, ESITO_CONTESTAZIONE_LABEL, TIPO_PROGETTO_LABEL,
@@ -326,7 +326,9 @@ export default function ImportMailPage() {
     aggiorna(v.mailProcessataId, "etichettaScelta", etichetta);
     // La delega di un ramo Deleghe/* diverso non deve restare "appiccicata" a un'altra categoria
     // (es. Segnalazioni) — meglio vuota e da scegliere che una delega di un altro ramo lasciata lì.
-    aggiorna(v.mailProcessataId, "delega", nodo?.delega ?? "");
+    // Eccezione: per una Segnalazione la delega non è mai un nodo dell'albero, quindi riparte dal
+    // suggerimento già calcolato dal server invece che da vuoto.
+    aggiorna(v.mailProcessataId, "delega", nodo?.delega ?? (categoria === "segnalazione" ? v.delegaSuggerita : ""));
     // "Varie" (evolutiva 2026-07-25): stessa logica della delega — solo il nodo "Varie/Comunicazioni" la porta.
     aggiorna(v.mailProcessataId, "enteVarioId", (nodo?.enteNome && entiByNome.get(nodo.enteNome)) || "");
     aggiorna(v.mailProcessataId, "nuovoEnteNome", "");
@@ -342,6 +344,29 @@ export default function ImportMailPage() {
         aggiorna(v.mailProcessataId, "tipoProgetto", v.tipoProgettoSuggerito ?? "PROGETTO");
       }
     }
+    if (categoria === "segnalazione") caricaSuggerimentiSegnalazione(v);
+  }
+
+  // Righe ricategorizzate a mano come Segnalazione (2026-09-21): la lista calcola luogo/sotto-tema
+  // solo per le righe già proposte come segnalazione all'origine — qui li recupera al momento della
+  // scelta, e riempie solo i campi ancora vuoti (mai sovrascrive quanto già scritto/scelto).
+  const suggerimentiSegnalazioneCaricati = useRef(new Set<string>());
+  async function caricaSuggerimentiSegnalazione(v: Voce) {
+    if (suggerimentiSegnalazioneCaricati.current.has(v.mailProcessataId)) return;
+    suggerimentiSegnalazioneCaricati.current.add(v.mailProcessataId);
+    const res = await fetch(`/api/motore-mail/${v.mailProcessataId}/suggerimenti-segnalazione`).catch(() => null);
+    const data = res?.ok ? await res.json().catch(() => null) : null;
+    if (!data) { suggerimentiSegnalazioneCaricati.current.delete(v.mailProcessataId); return; }
+    setVoci(vs => vs.map(x => {
+      if (x.mailProcessataId !== v.mailProcessataId) return x;
+      const delega = x.delega || data.delega || "";
+      return {
+        ...x,
+        luogo: x.luogo || data.zona || "",
+        delega,
+        sottoTemaId: x.sottoTemaId || (data.sottoTema && delega && sottoTemiByKey.get(`${delega}|${data.sottoTema}`)) || "",
+      };
+    }));
   }
 
   async function cercaEntita(v: Voce) {
