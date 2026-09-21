@@ -99,6 +99,8 @@ type Voce = {
   corpoCompleto: string;
   protocollo: string;
   dataProtocollo: string;
+  // Data di ricezione (ISO), null se l'header Date non è leggibile — mostrata al posto del protocollo quando manca.
+  dataRicezione: string | null;
   hasAllegati: boolean;
   nAllegati: number;
   delegaSuggerita: string;
@@ -537,7 +539,9 @@ export default function ImportMailPage() {
                   <p className="text-sm font-medium text-gray-900 truncate">{v.titolo}</p>
                   <p className="text-xs text-gray-500 truncate">{v.nomeMittente}</p>
                   <div className="flex gap-2 flex-wrap">
-                    {v.protocollo && <p className="text-xs text-gray-400">Prot. {v.protocollo} del {v.dataProtocollo}</p>}
+                    {v.protocollo
+                      ? <p className="text-xs text-gray-400">Prot. {v.protocollo} del {v.dataProtocollo}</p>
+                      : v.dataRicezione && <p className="text-xs text-gray-400">Ricevuta il {new Date(v.dataRicezione).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</p>}
                     {v.hasAllegati && <p className="text-xs text-blue-500">📎 {v.nAllegati} allegati</p>}
                   </div>
                 </div>

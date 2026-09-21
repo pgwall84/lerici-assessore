@@ -122,6 +122,8 @@ export async function GET(req: NextRequest) {
       descrizione: mailBase.descrizione,
       protocollo: mail.protocollo,
       dataProtocollo: mail.dataProtocollo,
+      // Data di ricezione (header Date, ISO): il dato di riferimento per le mail senza protocollo.
+      dataRicezione: (() => { const d = new Date(mail.data); return isNaN(d.getTime()) ? null : d.toISOString(); })(),
       hasAllegati: mail.allegati.length > 0,
       nAllegati: mail.allegati.length,
       delegaSuggerita,
