@@ -228,6 +228,9 @@ export default function ImportMailPage() {
   const [pannelloAltraDelega, setPannelloAltraDelega] = useState<string | null>(null);
   const [altraDelegaSel, setAltraDelegaSel] = useState("");
   const [altraDelegaNuova, setAltraDelegaNuova] = useState("");
+  // Modalità del pannello: "varie" = Varie/<nome> (sola etichetta), "istituzione" = Istituzioni/<ente>
+  // (ente esistente o nuovo, stesso trattamento delle mail di enti riconosciuti: Progetto sotto l'ente).
+  const [modalitaPannello, setModalitaPannello] = useState<"varie" | "istituzione">("varie");
   const sottoTemiByKey = useMemo(() => new Map(sottoTemi.map(st => [`${st.delega}|${st.nome}`, st.id])), [sottoTemi]);
 
   useEffect(() => {
@@ -408,10 +411,15 @@ export default function ImportMailPage() {
     const nome = altraDelegaSel === NUOVA_ALTRA_DELEGA ? altraDelegaNuova.trim() : altraDelegaSel;
     if (!nome) return;
     setConfermando(v.mailProcessataId);
+    // Istituzione: stessa esecuzione delle mail di enti riconosciuti (categoria "ENTE:<nome>") —
+    // l'ente nasce al volo nel DB se nuovo (trovaOCreaEnteVario), poi l'etichetta Istituzioni/<nome>.
+    const body = modalitaPannello === "istituzione"
+      ? { azione: "esegui_automatico", categoria: `ENTE:${nome}` }
+      : { azione: "altra_delega", nome };
     const res = await fetch(`/api/motore-mail/${v.mailProcessataId}/conferma`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ azione: "altra_delega", nome }),
+      body: JSON.stringify(body),
     });
     setConfermando(null);
     if (res.ok) {
@@ -420,6 +428,7 @@ export default function ImportMailPage() {
       setAltraDelegaNuova("");
       rimuovi(v.mailProcessataId);
       fetch("/api/altre-deleghe").then(r => r.ok ? r.json() : []).then(setAltreDeleghe).catch(() => {});
+      fetch("/api/enti-vari").then(r => r.ok ? r.json() : []).then(setEntiVari).catch(() => {});
       return;
     }
     const err = await res.json().catch(() => ({}));
@@ -578,11 +587,11 @@ export default function ImportMailPage() {
                 <div className="flex flex-col items-end gap-1 shrink-0">
                   <div className="flex gap-2">
                     <button
-                      onClick={() => { setPannelloAltraDelega(pannelloAltraDelega === v.mailProcessataId ? null : v.mailProcessataId); setAltraDelegaSel(""); setAltraDelegaNuova(""); }}
+                      onClick={() => { setPannelloAltraDelega(pannelloAltraDelega === v.mailProcessataId ? null : v.mailProcessataId); setAltraDelegaSel(""); setAltraDelegaNuova(""); setModalitaPannello("varie"); }}
                       disabled={confermando === v.mailProcessataId}
                       className="text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
                     >
-                      🏷️ Altra delega
+                      🏷️ Altra delega / istituzione
                     </button>
                     <button
                       onClick={() => nonRilevante(v)}
@@ -607,21 +616,36 @@ export default function ImportMailPage() {
 
               {pannelloAltraDelega === v.mailProcessataId && (
                 <div className="border-t border-gray-100 p-3 space-y-2 bg-gray-50">
-                  <p className="text-xs text-gray-600">Mail non attinente alle tue deleghe: viene solo etichettata su Gmail come <strong>Varie / …</strong> (nessuna pratica creata).</p>
+                  <div className="flex gap-2">
+                    {(["varie", "istituzione"] as const).map(m => (
+                      <button
+                        key={m}
+                        onClick={() => { setModalitaPannello(m); setAltraDelegaSel(""); setAltraDelegaNuova(""); }}
+                        className={`flex-1 text-xs py-1.5 rounded-lg border ${modalitaPannello === m ? "bg-gray-700 text-white border-gray-700" : "bg-white text-gray-600 border-gray-300"}`}
+                      >
+                        {m === "varie" ? "Fuori dalle deleghe (Varie)" : "Istituzione"}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-600">
+                    {modalitaPannello === "varie"
+                      ? <>Mail non attinente alle tue deleghe: viene solo etichettata su Gmail come <strong>Varie / …</strong> (nessuna pratica creata).</>
+                      : <>Etichetta <strong>Istituzioni / …</strong> su Gmail e un Progetto sotto quell'ente (come per le mail degli enti già riconosciuti). Se l'ente non c'è, lo crei qui.</>}
+                  </p>
                   <select
                     value={altraDelegaSel}
                     onChange={e => setAltraDelegaSel(e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none"
                   >
                     <option value="">— scegli —</option>
-                    {altreDeleghe.map(a => <option key={a.id} value={a.nome}>{a.nome}</option>)}
+                    {(modalitaPannello === "varie" ? altreDeleghe : entiVari).map(a => <option key={a.id} value={a.nome}>{a.nome}</option>)}
                     <option value={NUOVA_ALTRA_DELEGA}>+ Nuova…</option>
                   </select>
                   {altraDelegaSel === NUOVA_ALTRA_DELEGA && (
                     <input
                       value={altraDelegaNuova}
                       onChange={e => setAltraDelegaNuova(e.target.value)}
-                      placeholder="es. Urbanistica"
+                      placeholder={modalitaPannello === "varie" ? "es. Urbanistica" : "es. Guardia di Finanza"}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   )}
@@ -630,7 +654,7 @@ export default function ImportMailPage() {
                     disabled={confermando === v.mailProcessataId || !altraDelegaSel || (altraDelegaSel === NUOVA_ALTRA_DELEGA && !altraDelegaNuova.trim())}
                     className="w-full bg-gray-700 hover:bg-gray-800 text-white rounded-lg py-2 text-sm font-medium disabled:opacity-50"
                   >
-                    {altraDelegaSel === NUOVA_ALTRA_DELEGA ? "Crea etichetta e conferma" : "Etichetta come altra delega"}
+                    {altraDelegaSel === NUOVA_ALTRA_DELEGA ? "Crea etichetta e conferma" : modalitaPannello === "varie" ? "Etichetta come Varie" : "Etichetta come istituzione"}
                   </button>
                 </div>
               )}
