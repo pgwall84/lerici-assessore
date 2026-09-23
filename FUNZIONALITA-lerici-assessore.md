@@ -54,7 +54,7 @@ Modello `Pratica` (tipi: SEGNALAZIONE, e storicamente MIA_IDEA — quest'ultimo 
 Modello `Progetto` — separato da Segnalazioni, per iniziative amministrative più strutturate.
 
 - **Campo `tipo`**: `PROGETTO` (iniziativa con inizio/fine) o `ATTIVITA` (operatività corrente legata a una delega, senza necessariamente un traguardo definito) — badge visivo, filtro dedicato
-- **Campo `delega`** (opzionale) oppure **`enteVarioId`** (modello `EnteVario`, non più un enum): mutuamente esclusivi. Seed: Comunicazioni, ANCI, Regione, Governo, Questura della Spezia, Carabinieri (Lerici, Sarzana, Comando Provinciale, La Spezia), Vigili del Fuoco — e **estendibile al volo** dai form ("+ Nuovo ente…") senza migration. Su Gmail l'albero è `Istituzioni/<ente>` (in origine `Varie/<ente>`, rinominato il 2026-09-15). Le mail di ANCI/Regione/Governo sono instradate per dominio mittente
+- **Campo `delega`** (opzionale) oppure **`enteVarioId`** (modello `EnteVario`, non più un enum): mutuamente esclusivi. Seed: Comunicazioni, ANCI, Regione, Governo, Questura della Spezia, Carabinieri (Lerici, Sarzana, Comando Provinciale, La Spezia), Vigili del Fuoco, ISA 10, Parrocchia — e **estendibile al volo** dai form ("+ Nuovo ente…") senza migration. Su Gmail l'albero è `Istituzioni/<ente>` (in origine `Varie/<ente>`, rinominato il 2026-09-15). Le mail di ANCI/Regione/Governo sono instradate per dominio mittente
 - Priorità, stato (`IN_CORSO/SOSPESO/CONCLUSO/ARCHIVIATO`), diario note, documenti, responsabile con `ReferenteBox`
 - Filtri, vista compatta, export
 

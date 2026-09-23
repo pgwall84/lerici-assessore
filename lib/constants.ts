@@ -530,6 +530,7 @@ export const ALBERO_ETICHETTE_MAIL: NodoAlberoEtichette[] = [
   { etichetta: "Istituzioni/Carabinieri — Stazione La Spezia", categoria: "progetto", enteNome: "Carabinieri — Stazione La Spezia" },
   { etichetta: "Istituzioni/Vigili del Fuoco — Comando di La Spezia", categoria: "progetto", enteNome: "Vigili del Fuoco — Comando di La Spezia" },
   { etichetta: "Istituzioni/ISA 10", categoria: "progetto", enteNome: "ISA 10" },
+  { etichetta: "Istituzioni/Parrocchia", categoria: "progetto", enteNome: "Parrocchia" },
   // DUP/Bilancio (evolutiva 2026-07-26, Bilancio Fase 2 sezione 7): riconoscimento per parola
   // chiave nell'oggetto (classificaDup/classificaBilancio), non un'etichetta Gmail — stesso
   // trattamento di Varie/ANCI ecc. sopra.
