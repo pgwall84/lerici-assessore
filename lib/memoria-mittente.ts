@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { ALBERO_ETICHETTE_MAIL, ETICHETTA_DELEGA, ETICHETTA_NON_RILEVANTE, NOME_ENTE_FISSO, NOME_GESTORE_ENTRATA } from "@/lib/constants";
+import { ALBERO_ETICHETTE_MAIL, ETICHETTA_DELEGA, ETICHETTA_NON_RILEVANTE, NOME_ENTE_FISSO, NOME_GESTORE_ENTRATA, PREFISSO_ALTRE_DELEGHE } from "@/lib/constants";
 
 // Memoria del mittente (2026-09-21, richiesta di Marco: estendere l'automatismo il più possibile).
 // Un mittente che Marco ha sempre sistemato allo stesso modo diventa un segnale deterministico per
@@ -21,7 +21,7 @@ export function normalizzaEtichettaFinale(nome: string): string | null {
     if (parti.length === 1) return "Segnalazioni";
     return parti[1] in ETICHETTA_DELEGA ? `Segnalazioni/${parti[1]}` : null;
   }
-  if ((parti[0] === "Istituzioni" || parti[0] === "Gestori") && parti[1]) return `${parti[0]}/${parti[1]}`;
+  if ((parti[0] === "Istituzioni" || parti[0] === "Gestori" || parti[0] === PREFISSO_ALTRE_DELEGHE) && parti[1]) return `${parti[0]}/${parti[1]}`;
   return ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === nome) ? nome : null;
 }
 
@@ -50,6 +50,9 @@ function propostaDaEtichetta(et: string): { proposta: PropostaMemoria; minimo: n
   if (gruppo === "Istituzioni" && nome) {
     const fisso = (Object.entries(NOME_ENTE_FISSO) as [string, string][]).find(([, n]) => n.toLowerCase() === nome.toLowerCase());
     return { proposta: { categoriaProposta: fisso ? fisso[0] : `ENTE:${nome}`, etichettaProposta: et, binario: "AUTOMATICO" }, minimo: 2 };
+  }
+  if (gruppo === PREFISSO_ALTRE_DELEGHE && nome) {
+    return { proposta: { categoriaProposta: `ALTRA_DELEGA:${nome}`, etichettaProposta: et, binario: "AUTOMATICO" }, minimo: 2 };
   }
   if (gruppo === "Gestori" && nome) {
     const chiave = Object.entries(NOME_GESTORE_ENTRATA).find(([, n]) => n.toLowerCase() === nome.toLowerCase())?.[0];

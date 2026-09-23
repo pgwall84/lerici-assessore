@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { caricaAllegatiMail, type MailImport } from "@/lib/gmail";
+import { caricaAllegatiMail, dataRicezioneMail, type MailImport } from "@/lib/gmail";
 import { contentTypeDaNomeFile, estraiTestoDaFile, estraiVociZip, trovaOdgInZip } from "@/lib/estrazione-documenti";
 import { riformattaOdg } from "@/lib/claude";
 import { etichettaPerCategoria } from "@/lib/constants";
@@ -268,7 +268,7 @@ export async function eseguiProgettoVarie(m: MailImport, nomeEnte: string): Prom
   try {
     const ente = await trovaOCreaEnteVario(nomeEnte);
     const progetto = await prisma.progetto.create({
-      data: { titolo: m.titolo, enteVarioId: ente.id, tipo: "ATTIVITA", messageId: m.messageId },
+      data: { titolo: m.titolo, enteVarioId: ente.id, tipo: "ATTIVITA", messageId: m.messageId, dataRicezione: dataRicezioneMail(m) },
     });
     await Promise.all(m.allegati.map(async a => {
       const url = await caricaFile(`progetto-${progetto.id}`, a.buffer, a.filename);
@@ -295,12 +295,16 @@ export async function eseguiMailGestore(): Promise<EsitoEsecuzione> {
 }
 
 /**
- * Gestore Automatico per le categorie "ENTE:<nome>" (enti riconosciuti per indirizzo esatto,
- * enteEntrataPerIndirizzo in lib/classificatore.ts): stesso comportamento di ANCI/Regione/Governo.
+ * Gestore Automatico per le categorie con nome dinamico:
+ * - "ENTE:<nome>" (enti riconosciuti per indirizzo esatto, enteEntrataPerIndirizzo in
+ *   lib/classificatore.ts): stesso comportamento di ANCI/Regione/Governo;
+ * - "ALTRA_DELEGA:<nome>" (mail fuori dalle deleghe di Marco): sola etichetta, nessuna entità.
  * undefined per qualunque altra categoria.
  */
-export function gestoreAutomaticoEnte(categoria: string): ((m: MailImport) => Promise<EsitoEsecuzione>) | undefined {
-  return categoria.startsWith("ENTE:") ? (m => eseguiProgettoVarie(m, categoria.slice(5))) : undefined;
+export function gestoreAutomaticoDinamico(categoria: string): ((m: MailImport) => Promise<EsitoEsecuzione>) | undefined {
+  if (categoria.startsWith("ENTE:")) return m => eseguiProgettoVarie(m, categoria.slice(5));
+  if (categoria.startsWith("ALTRA_DELEGA:")) return () => eseguiMailGestore();
+  return undefined;
 }
 
 /**

@@ -416,6 +416,13 @@ Un mittente che Marco ha sempre sistemato allo stesso modo diventa un segnale de
 
 ---
 
+## 12. Data di ricezione e "Altre deleghe" (2026-09-22/23, richieste di Marco)
+
+- **Data di ricezione**: nella coda di revisione, se la mail non ha protocollo il sottotitolo mostra "Ricevuta il <data ora>" (header `Date`). Campo `dataRicezione` (DateTime?) su `Pratica`, `Progetto`, `Contestazione`, valorizzato alla creazione da mail (`dataRicezioneMail` in `lib/gmail.ts`) e mostrato nelle schede di dettaglio accanto alla data di creazione; le entità esistenti sono state valorizzate da Gmail. Distinto da `dataProtocollo`, che resta la data del protocollo.
+- **Altre deleghe**: mail non attinenti alle deleghe di Marco. Modello `AltraDelega` (nome unico, confronto case-insensitive, `lib/altre-deleghe.ts`), estendibile al volo: il pulsante "Altra delega" nella coda di revisione apre un selettore con le esistenti e "+ Nuova…". La conferma (`azione: "altra_delega"` in `/api/motore-mail/[id]/conferma`) crea prima la riga nel DB, poi l'etichetta Gmail `Altre deleghe/<nome>` (`getOrCreateLabel`) e archivia; **nessuna entità**, la riga `MailProcessata` completata è la traccia. Il nome dell'albero è la costante `PREFISSO_ALTRE_DELEGHE` in `lib/constants.ts`. Rientra nella memoria del mittente (sezione 11): dopo 2 mail sistemate allo stesso modo le successive sono automatiche (categoria `ALTRA_DELEGA:<nome>`).
+
+---
+
 ## Ordine di implementazione consigliato
 
 1. **Sezione 6.1** (Gestori: enum → modello, aggiunta Maris, fix default silenzioso di `classificaGestore`) — piccolo, autonomo, corregge un bug reale (default silenzioso)

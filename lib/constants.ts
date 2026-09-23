@@ -460,6 +460,8 @@ export function etichettaPerCategoria(categoria: string, delega?: Delega, enteNo
   // Enti riconosciuti per indirizzo esatto (enteEntrataPerIndirizzo): la categoria porta il nome
   // esatto dell'EnteVario dopo il prefisso "ENTE:" — nessuna tabella parallela da tenere allineata.
   if (categoria.startsWith("ENTE:")) return `Istituzioni/${categoria.slice(5)}`;
+  // Mail fuori dalle deleghe di Marco (2026-09-23): sola etichetta, nome esatto di AltraDelega.
+  if (categoria.startsWith("ALTRA_DELEGA:")) return `${PREFISSO_ALTRE_DELEGHE}/${categoria.slice(13)}`;
   if (categoria === "DUP") return "Giunta/Dup";
   if (categoria === "BILANCIO") return "Giunta/Bilancio";
   // Gestori in entrata (Fase 2 sezione 6.2): istradati per indirizzo mittente esatto (vedi
@@ -472,6 +474,9 @@ export function etichettaPerCategoria(categoria: string, delega?: Delega, enteNo
   }
   return null;
 }
+
+// Albero Gmail delle mail fuori dalle deleghe di Marco — unica costante da cambiare per rinominarlo.
+export const PREFISSO_ALTRE_DELEGHE = "Altre deleghe";
 
 export const ETICHETTA_INCERTO = "Incerto/Da classificare";
 export const ETICHETTA_NON_RILEVANTE = "Bassa priorità/Non rilevante";

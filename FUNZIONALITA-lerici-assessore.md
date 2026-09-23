@@ -150,6 +150,10 @@ Tabella `MailProcessata` come unica fonte di verità su cosa è stato importato 
 
 **Enti riconosciuti per indirizzo**: Questura, Carabinieri, Vigili del Fuoco e ISA 10 (tabella `ENTI_ENTRATA` in `lib/classificatore.ts`, indirizzo esatto) sono Automatici come ANCI/Regione/Governo: Progetto (Attività) sotto l'ente, etichetta `Istituzioni/<ente>`. ANCI/Regione/Governo sono instradati per dominio e per gli indirizzi PEC reali noti (Prefettura, PNRR Istruzione, ANCI Liguria).
 
+**Altre deleghe**: per le mail non attinenti alle deleghe di Marco, il pulsante "Altra delega" in revisione le etichetta `Altre deleghe/<nome>` (solo etichetta, nessuna entità; archiviate fuori INBOX). Le voci sono un modello (`AltraDelega`) e si creano al volo dal selettore ("+ Nuova…"), con creazione contestuale dell'etichetta Gmail.
+
+**Data di ricezione**: in revisione, senza protocollo compare "Ricevuta il …"; Pratica, Progetto e Contestazione nate da mail salvano `dataRicezione` e la mostrano nel dettaglio.
+
 **Memoria del mittente**: se Marco ha sempre sistemato allo stesso modo le mail di un mittente (stessa etichetta di classificazione, decisioni sue — più i "non rilevante" già decisi dall'AI con alta confidenza —; 2 mail per Istituzioni/Gestori, 3 per Non rilevante/Segnalazioni/Deleghe/Contestazioni; un solo esito diverso annulla), le nuove mail di quel mittente ricevono la stessa classificazione: Istituzioni/Gestori Automatici, Non rilevante smaltita subito, il resto Manuale già pre-compilato. Dati in `MailProcessata.emailMittente`/`etichettaFinale`; logica in `lib/memoria-mittente.ts`. Caselle interne del Comune escluse.
 
 **Gestori in entrata**: una mail che arriva da un indirizzo esatto di un gestore noto (ACAM Ambiente/Acque, ATC Esercizio, Enel, Maris, Ato Rifiuti — tabella `GESTORI_ENTRATA`, match per indirizzo, mai per dominio nudo) riceve solo l'etichetta `Gestori/<nome>`, senza creare nessuna Contestazione (decisione del 2026-09-21: non sono contestazioni; le apre il Comune e il gestore risponde). Se la mail risponde a una contestazione già tracciata, la continuazione forte la aggancia a quella prima di questa regola.

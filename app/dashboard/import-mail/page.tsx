@@ -82,6 +82,7 @@ const NUOVO_ENTE = "__nuovo__";
 
 // Stessa sentinella, stesso principio, per il selettore SottoTema (Fase 2, 2026-09-15).
 const NUOVO_SOTTOTEMA = "__nuovo__";
+const NUOVA_ALTRA_DELEGA = "__nuova__";
 
 type Voce = {
   mailProcessataId: string;
@@ -221,12 +222,19 @@ export default function ImportMailPage() {
   // SottoTema (Fase 2, 2026-09-15): caricati tutti una volta, filtrati per delega lato client nel
   // selettore sotto — stesso pattern di gestori/entiVari sopra.
   const [sottoTemi, setSottoTemi] = useState<SottoTema[]>([]);
+  // "Altre deleghe" (2026-09-23): mail fuori dalle deleghe di Marco, sola etichetta Gmail, estendibili
+  // al volo. Un solo pannello aperto alla volta (id della riga), scelta = nome esistente o NUOVA_ALTRA_DELEGA.
+  const [altreDeleghe, setAltreDeleghe] = useState<{ id: string; nome: string }[]>([]);
+  const [pannelloAltraDelega, setPannelloAltraDelega] = useState<string | null>(null);
+  const [altraDelegaSel, setAltraDelegaSel] = useState("");
+  const [altraDelegaNuova, setAltraDelegaNuova] = useState("");
   const sottoTemiByKey = useMemo(() => new Map(sottoTemi.map(st => [`${st.delega}|${st.nome}`, st.id])), [sottoTemi]);
 
   useEffect(() => {
     fetch("/api/gestori").then(r => r.ok ? r.json() : []).then(setGestori).catch(() => {});
     fetch("/api/enti-vari").then(r => r.ok ? r.json() : []).then(setEntiVari).catch(() => {});
     fetch("/api/sotto-temi").then(r => r.ok ? r.json() : []).then(setSottoTemi).catch(() => {});
+    fetch("/api/altre-deleghe").then(r => r.ok ? r.json() : []).then(setAltreDeleghe).catch(() => {});
   }, []);
 
   function caricaConteggi() {
@@ -396,6 +404,28 @@ export default function ImportMailPage() {
     alert(`Errore: ${JSON.stringify(err.error ?? res.status)}`);
   }
 
+  async function confermaAltraDelega(v: Voce) {
+    const nome = altraDelegaSel === NUOVA_ALTRA_DELEGA ? altraDelegaNuova.trim() : altraDelegaSel;
+    if (!nome) return;
+    setConfermando(v.mailProcessataId);
+    const res = await fetch(`/api/motore-mail/${v.mailProcessataId}/conferma`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ azione: "altra_delega", nome }),
+    });
+    setConfermando(null);
+    if (res.ok) {
+      setPannelloAltraDelega(null);
+      setAltraDelegaSel("");
+      setAltraDelegaNuova("");
+      rimuovi(v.mailProcessataId);
+      fetch("/api/altre-deleghe").then(r => r.ok ? r.json() : []).then(setAltreDeleghe).catch(() => {});
+      return;
+    }
+    const err = await res.json().catch(() => ({}));
+    alert(`Errore: ${JSON.stringify(err.error ?? res.status)}`);
+  }
+
   async function nonRilevante(v: Voce) {
     if (!confirm(`Segnare "${v.titolo}" come non rilevante?`)) return;
     setConfermando(v.mailProcessataId);
@@ -548,6 +578,13 @@ export default function ImportMailPage() {
                 <div className="flex flex-col items-end gap-1 shrink-0">
                   <div className="flex gap-2">
                     <button
+                      onClick={() => { setPannelloAltraDelega(pannelloAltraDelega === v.mailProcessataId ? null : v.mailProcessataId); setAltraDelegaSel(""); setAltraDelegaNuova(""); }}
+                      disabled={confermando === v.mailProcessataId}
+                      className="text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                    >
+                      🏷️ Altra delega
+                    </button>
+                    <button
                       onClick={() => nonRilevante(v)}
                       disabled={confermando === v.mailProcessataId}
                       className="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50"
@@ -567,6 +604,36 @@ export default function ImportMailPage() {
                   </button>
                 </div>
               </div>
+
+              {pannelloAltraDelega === v.mailProcessataId && (
+                <div className="border-t border-gray-100 p-3 space-y-2 bg-gray-50">
+                  <p className="text-xs text-gray-600">Mail non attinente alle tue deleghe: viene solo etichettata su Gmail come <strong>Altre deleghe / …</strong> (nessuna pratica creata).</p>
+                  <select
+                    value={altraDelegaSel}
+                    onChange={e => setAltraDelegaSel(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                  >
+                    <option value="">— scegli —</option>
+                    {altreDeleghe.map(a => <option key={a.id} value={a.nome}>{a.nome}</option>)}
+                    <option value={NUOVA_ALTRA_DELEGA}>+ Nuova…</option>
+                  </select>
+                  {altraDelegaSel === NUOVA_ALTRA_DELEGA && (
+                    <input
+                      value={altraDelegaNuova}
+                      onChange={e => setAltraDelegaNuova(e.target.value)}
+                      placeholder="es. Urbanistica"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  )}
+                  <button
+                    onClick={() => confermaAltraDelega(v)}
+                    disabled={confermando === v.mailProcessataId || !altraDelegaSel || (altraDelegaSel === NUOVA_ALTRA_DELEGA && !altraDelegaNuova.trim())}
+                    className="w-full bg-gray-700 hover:bg-gray-800 text-white rounded-lg py-2 text-sm font-medium disabled:opacity-50"
+                  >
+                    {altraDelegaSel === NUOVA_ALTRA_DELEGA ? "Crea etichetta e conferma" : "Etichetta come altra delega"}
+                  </button>
+                </div>
+              )}
 
               {espansa === v.mailProcessataId && (
                 <div className="border-t border-gray-100 p-3 space-y-3">

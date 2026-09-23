@@ -253,6 +253,7 @@ export default function ProgettoPage({ params }: { params: Promise<{ id: string 
         {progetto.descrizione && <p className="text-gray-700">{progetto.descrizione}</p>}
         {progetto.fonteFinanziamento && <p className="text-gray-500">💰 {progetto.fonteFinanziamento}</p>}
         <p className="text-gray-400 text-xs">
+          {progetto.dataRicezione && <>Ricevuto il {new Date(progetto.dataRicezione).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })} · </>}
           Creato il {new Date(progetto.createdAt).toLocaleDateString("it-IT")}
         </p>
         <MailOriginaleButton messageId={progetto.messageId} />

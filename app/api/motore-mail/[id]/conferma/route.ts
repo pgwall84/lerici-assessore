@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
-import { getMailPerId, marcaImportata, applicaEtichettaEArchivia, rimuoviEtichetta, getMappaEtichette, caricaAllegatiMail } from "@/lib/gmail";
+import { getMailPerId, dataRicezioneMail, marcaImportata, applicaEtichettaEArchivia, rimuoviEtichetta, getMappaEtichette, caricaAllegatiMail } from "@/lib/gmail";
 import { contentTypeDaNomeFile } from "@/lib/estrazione-documenti";
-import { etichettaPerCategoria, ALBERO_ETICHETTE_MAIL, ETICHETTE_SEGNALAZIONE, ETICHETTA_INCERTO } from "@/lib/constants";
+import { etichettaPerCategoria, ALBERO_ETICHETTE_MAIL, ETICHETTE_SEGNALAZIONE, ETICHETTA_INCERTO, PREFISSO_ALTRE_DELEGHE } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
-import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, eseguiCollegamentoAtto, eseguiProgettoVarie, eseguiDup, eseguiMailGestore, gestoreAutomaticoEnte, type EsitoEsecuzione } from "@/lib/import-automatico";
+import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiCollegamento, eseguiCollegamentoAtto, eseguiProgettoVarie, eseguiDup, eseguiMailGestore, gestoreAutomaticoDinamico, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { decodificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
 import { risolviEnteVarioId } from "@/lib/enti-vari";
 import { risolviSottoTemaId } from "@/lib/sotto-temi";
 import { normalizzaEtichettaFinale } from "@/lib/memoria-mittente";
+import { trovaOCreaAltraDelega } from "@/lib/altre-deleghe";
 import type { MailImport } from "@/lib/gmail";
 import type { Delega, StatoAtto, StatoPratica, StatoProgetto, EsitoContestazione, TipoProgetto } from "@prisma/client";
 import { z } from "zod";
@@ -79,6 +80,14 @@ const schemaEseguiAutomatico = z.object({
   categoria: z.string(),
   indiceOdgForzato: z.number().int().min(0).optional(),
   statoIniziale: z.enum(STATI_ATTO).optional(),
+});
+
+// Mail fuori dalle deleghe di Marco (2026-09-23): sola etichetta "Altre deleghe/<nome>", nessuna
+// entità. `nome` può essere nuovo: l'AltraDelega nasce al volo nel DB (prima) e l'etichetta Gmail
+// viene creata da applicaEtichettaEArchivia/getOrCreateLabel (dopo).
+const schemaAltraDelega = z.object({
+  azione: z.literal("altra_delega"),
+  nome: z.string().trim().min(1).max(100),
 });
 
 const GESTORI_AUTOMATICO: Record<string, (m: MailImport, indiceOdgForzato?: number, statoIniziale?: StatoAtto) => Promise<EsitoEsecuzione>> = {
@@ -159,7 +168,7 @@ async function applicaEtichetteFinali(rigaId: string, messageId: string, nomeEti
       // né nell'albero delle categorie né in ETICHETTE_SEGNALAZIONE. È di per sé un'etichetta di
       // STATO (in attesa di classificazione), superata non appena una categoria viene confermata,
       // quindi va rimossa qui esattamente come le altre etichette della tassonomia in conflitto.
-      const daRimuovere = etichetteAttuali.filter(e => e !== nomeEtichetta && (ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === e) || e.startsWith("Istituzioni/") || ETICHETTE_SEGNALAZIONE.includes(e) || e === ETICHETTA_INCERTO));
+      const daRimuovere = etichetteAttuali.filter(e => e !== nomeEtichetta && (ALBERO_ETICHETTE_MAIL.some(n => n.etichetta === e) || e.startsWith("Istituzioni/") || e.startsWith(`${PREFISSO_ALTRE_DELEGHE}/`) || ETICHETTE_SEGNALAZIONE.includes(e) || e === ETICHETTA_INCERTO));
       for (const e of daRimuovere) {
         try { await rimuoviEtichetta(messageId, e); } catch { /* comodo, non blocca l'esito */ }
       }
@@ -209,10 +218,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // Override esplicito da tree-picker: controllato PRIMA del ramo binario-implicito qui sotto,
   // così una riga già Automatico ma corretta a mano a un'altra categoria Automatico passa di qui,
   // non dal suo ramo "nativo" (che userebbe sempre riga.categoriaProposta, ignorando la scelta).
+  const parsedAltraDelega = schemaAltraDelega.safeParse(body);
+  if (parsedAltraDelega.success) {
+    const altra = await trovaOCreaAltraDelega(parsedAltraDelega.data.nome);
+    await prisma.mailProcessata.update({ where: { id }, data: { esito: "COMPLETATO", entitaCreataId: null } });
+    await applicaEtichetteFinali(id, riga.messageId, `${PREFISSO_ALTRE_DELEGHE}/${altra.nome}`, nomiEtichetteAttuali);
+    return NextResponse.json({ completato: true, entitaId: null });
+  }
+
   const parsedEseguiAutomatico = schemaEseguiAutomatico.safeParse(body);
   if (parsedEseguiAutomatico.success) {
     const { categoria, indiceOdgForzato, statoIniziale } = parsedEseguiAutomatico.data;
-    const gestore = GESTORI_AUTOMATICO[categoria] ?? gestoreAutomaticoEnte(categoria);
+    const gestore = GESTORI_AUTOMATICO[categoria] ?? gestoreAutomaticoDinamico(categoria);
     if (!gestore) return NextResponse.json({ error: "Categoria non riconosciuta" }, { status: 400 });
 
     // Atti/Giustifica non hanno un diario dove far confluire il messaggio corrente come nota —
@@ -246,7 +263,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const parsed = schemaAutomatico.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
-    const gestore = riga.categoriaProposta ? (GESTORI_AUTOMATICO[riga.categoriaProposta] ?? gestoreAutomaticoEnte(riga.categoriaProposta)) : undefined;
+    const gestore = riga.categoriaProposta ? (GESTORI_AUTOMATICO[riga.categoriaProposta] ?? gestoreAutomaticoDinamico(riga.categoriaProposta)) : undefined;
     if (!gestore) return NextResponse.json({ error: "Categoria Automatico non riconosciuta" }, { status: 500 });
 
     // CONTINUAZIONE esclusa: lì ci si aggancia a un'entità già esistente, non se ne crea una
@@ -371,6 +388,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           stato: (d.stato as StatoPratica) || "APERTA",
           priorita: "MEDIA",
           messageId: mailOrigine.messageId,
+          dataRicezione: dataRicezioneMail(mailOrigine),
           delega: d.delega as never,
           ...(sottoTemaIdRisolto ? { sottoTemaId: sottoTemaIdRisolto } : {}),
           ...(d.nomeMittente ? { segnalante: { create: { nome: d.nomeMittente, email: d.emailMittente || null } } } : {}),
@@ -394,6 +412,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           titolo: d.titolo,
           descrizione: d.descrizione || null,
           messageId: mailOrigine.messageId,
+          dataRicezione: dataRicezioneMail(mailOrigine),
           ...(d.delega ? { delega: d.delega as never } : {}),
           ...(enteVarioIdRisolto ? { enteVarioId: enteVarioIdRisolto } : {}),
           ...(d.stato ? { stato: d.stato as StatoProgetto } : {}),
@@ -419,6 +438,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           oggetto: d.titolo,
           descrizione: d.descrizione || null,
           messageId: mailOrigine.messageId,
+          dataRicezione: dataRicezioneMail(mailOrigine),
           // Il selettore "stato iniziale" generico lato client mappa qui sul campo esito
           // (nome specifico di Contestazione, StatoPratica/StatoProgetto altrove).
           ...(d.stato ? { esito: d.stato as EsitoContestazione } : {}),

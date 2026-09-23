@@ -146,6 +146,7 @@ export default function ContestazionePage({ params }: { params: Promise<{ id: st
           <p className="text-gray-500">📅 Inviata il {new Date(contestazione.dataInvio).toLocaleDateString("it-IT")}</p>
         )}
         <p className="text-gray-400 text-xs">
+          {contestazione.dataRicezione && <>Ricevuta il {new Date(contestazione.dataRicezione).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })} · </>}
           Creata il {new Date(contestazione.createdAt).toLocaleDateString("it-IT")}
         </p>
         <MailOriginaleButton messageId={contestazione.messageId} />

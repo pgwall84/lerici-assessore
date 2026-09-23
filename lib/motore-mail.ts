@@ -3,7 +3,7 @@ import { getMailsPaginato, getMappaEtichette, getMailPerId, marcaImportata, marc
 import { classificaMail } from "@/lib/claude";
 import { TASSONOMIA_MAIL, categoriaProposta, etichettaPerCategoria, ETICHETTA_NON_RILEVANTE, ETICHETTA_DELEGA_DA_SPECIFICARE, ALBERO_ETICHETTE_MAIL, ETICHETTE_SEGNALAZIONE, ETICHETTA_DELEGA, type VoceTassonomiaMail } from "@/lib/constants";
 import { classificaDelega, categoriaVariaPerDominio, classificaDup, classificaBilancio, categoriaGestoreEntrataPerIndirizzo, enteEntrataPerIndirizzo } from "@/lib/classificatore";
-import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiProgettoVarie, eseguiMailGestore, gestoreAutomaticoEnte, type EsitoEsecuzione } from "@/lib/import-automatico";
+import { eseguiConvocazione, eseguiMozioneOInterrogazione, eseguiVerbaleGiunta, eseguiGiustifica, eseguiContinuazione, eseguiProgettoVarie, eseguiMailGestore, gestoreAutomaticoDinamico, type EsitoEsecuzione } from "@/lib/import-automatico";
 import { trovaContinuazioneForte, trovaContinuazioneDebole, codificaEntita, trovaMessaggioPrecedenteNonProcessato } from "@/lib/continuazione";
 import { trovaOCreaEnteVario } from "@/lib/enti-vari";
 import { trovaOCreaSottoTema } from "@/lib/sotto-temi";
@@ -648,7 +648,7 @@ export async function eseguiMotoreMail(maxPagineScan = 20, maxEsecuzioni = 15): 
     });
 
     for (const riga of daEseguire) {
-      const gestore = riga.categoriaProposta ? (GESTORI_AUTOMATICO[riga.categoriaProposta] ?? gestoreAutomaticoEnte(riga.categoriaProposta)) : undefined;
+      const gestore = riga.categoriaProposta ? (GESTORI_AUTOMATICO[riga.categoriaProposta] ?? gestoreAutomaticoDinamico(riga.categoriaProposta)) : undefined;
       if (!gestore) { inAttesa++; continue; } // non dovrebbe succedere, ma non blocca il resto del giro
 
       const mail = await getMailPerId(riga.messageId);

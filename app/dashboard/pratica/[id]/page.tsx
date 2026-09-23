@@ -409,6 +409,7 @@ export default function PraticaPage({ params }: { params: Promise<{ id: string }
         {pratica.descrizione && <p className="text-gray-700">{pratica.descrizione}</p>}
         {pratica.luogo && <p className="text-gray-500">📍 {pratica.luogo}</p>}
         <p className="text-gray-400 text-xs">
+          {pratica.dataRicezione && <>Ricevuta il {new Date(pratica.dataRicezione).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })} · </>}
           Creata il {new Date(pratica.createdAt).toLocaleDateString("it-IT")}
           {pratica.chiusaAt && ` · Chiusa il ${new Date(pratica.chiusaAt).toLocaleDateString("it-IT")}`}
         </p>

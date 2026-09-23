@@ -636,3 +636,9 @@ export type MailImport = {
   allegati: { buffer: Buffer; filename: string; contentType: string }[];
   labelIds: string[];
 };
+
+/** Data di ricezione della mail (header Date) come Date, null se assente o illeggibile. */
+export function dataRicezioneMail(m: { data: string }): Date | null {
+  const d = new Date(m.data);
+  return isNaN(d.getTime()) ? null : d;
+}
