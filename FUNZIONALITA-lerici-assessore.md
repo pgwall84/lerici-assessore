@@ -150,7 +150,7 @@ Tabella `MailProcessata` come unica fonte di verità su cosa è stato importato 
 
 **Enti riconosciuti per indirizzo**: Questura, Carabinieri, Vigili del Fuoco e ISA 10 (tabella `ENTI_ENTRATA` in `lib/classificatore.ts`, indirizzo esatto) sono Automatici come ANCI/Regione/Governo: Progetto (Attività) sotto l'ente, etichetta `Istituzioni/<ente>`. ANCI/Regione/Governo sono instradati per dominio e per gli indirizzi PEC reali noti (Prefettura, PNRR Istruzione, ANCI Liguria).
 
-**Altre deleghe**: per le mail non attinenti alle deleghe di Marco, il pulsante "Altra delega" in revisione le etichetta `Altre deleghe/<nome>` (solo etichetta, nessuna entità; archiviate fuori INBOX). Le voci sono un modello (`AltraDelega`) e si creano al volo dal selettore ("+ Nuova…"), con creazione contestuale dell'etichetta Gmail.
+**Altre deleghe**: per le mail non attinenti alle deleghe di Marco, il pulsante "Altra delega" in revisione le etichetta `Varie/<nome>` (solo etichetta, nessuna entità; archiviate fuori INBOX). Le voci sono un modello (`AltraDelega`) e si creano al volo dal selettore ("+ Nuova…"), con creazione contestuale dell'etichetta Gmail.
 
 **Data di ricezione**: in revisione, senza protocollo compare "Ricevuta il …"; Pratica, Progetto e Contestazione nate da mail salvano `dataRicezione` e la mostrano nel dettaglio.
 

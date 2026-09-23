@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 
 // Materie/uffici fuori dalle deleghe di Marco (2026-09-23): destinazione di sola etichetta Gmail
-// "Altre deleghe/<nome>", estendibile al volo dalla schermata di revisione — stesso principio di
+// "Varie/<nome>", estendibile al volo dalla schermata di revisione — stesso principio di
 // trovaOCreaEnteVario/trovaOCreaSottoTema. Confronto case-insensitive per non creare doppioni
 // ("Urbanistica"/"urbanistica"), come già per enti (NOTE-TECNICHE #26) e etichette Gmail (#23).
 export async function trovaOCreaAltraDelega(nome: string) {

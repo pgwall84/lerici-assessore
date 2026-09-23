@@ -476,7 +476,7 @@ export function etichettaPerCategoria(categoria: string, delega?: Delega, enteNo
 }
 
 // Albero Gmail delle mail fuori dalle deleghe di Marco — unica costante da cambiare per rinominarlo.
-export const PREFISSO_ALTRE_DELEGHE = "Altre deleghe";
+export const PREFISSO_ALTRE_DELEGHE = "Varie";
 
 export const ETICHETTA_INCERTO = "Incerto/Da classificare";
 export const ETICHETTA_NON_RILEVANTE = "Bassa priorità/Non rilevante";

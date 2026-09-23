@@ -607,7 +607,7 @@ export default function ImportMailPage() {
 
               {pannelloAltraDelega === v.mailProcessataId && (
                 <div className="border-t border-gray-100 p-3 space-y-2 bg-gray-50">
-                  <p className="text-xs text-gray-600">Mail non attinente alle tue deleghe: viene solo etichettata su Gmail come <strong>Altre deleghe / …</strong> (nessuna pratica creata).</p>
+                  <p className="text-xs text-gray-600">Mail non attinente alle tue deleghe: viene solo etichettata su Gmail come <strong>Varie / …</strong> (nessuna pratica creata).</p>
                   <select
                     value={altraDelegaSel}
                     onChange={e => setAltraDelegaSel(e.target.value)}
